@@ -61,11 +61,6 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         unimplemented!();
     }
 
-    fn next_token_span(&mut self) -> Span {
-        // TODO: figure out if this is a good idea
-        self.tokens.peek().unwrap().span.clone()
-    }
-
     fn previous_span(&self) -> Span {
         self.last_token_span.clone()
     }
@@ -117,7 +112,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
     }
 
     fn eat_symbol(&mut self) -> Option<Spanned<String>> {
-        match self.tokens.peek() {
+        match self.peek() {
             Some(&Spanned { value: Token::Ident(_), .. }) => { }
             _ => {
                 self.expected_tokens.push(TokenKind::Ident);
@@ -136,7 +131,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
     }
     
     fn eat_literal(&mut self) -> Option<Spanned<Literal>> {
-        match self.tokens.peek() {
+        match self.peek() {
             Some(&Spanned { value: Token::Int(_), .. }) |
             Some(&Spanned { value: Token::Float(_), .. }) |
             Some(&Spanned { value: Token::Bool(_), .. }) => { }
@@ -163,7 +158,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
     }
 
     fn eat_operator(&mut self) -> Option<Spanned<String>> {
-        match self.tokens.peek() {
+        match self.peek() {
             Some(&Spanned { value: Token::Operator(_), .. }) => { }
             _ => {
                 self.expected_tokens.push(TokenKind::Operator);
@@ -420,7 +415,19 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
 
     fn deconstruct(&mut self) -> ParseResult<Node<Pattern>> {
         let tag_node = match self.eat_symbol() {
-            Some(Spanned { value, span }) => Node::new(value, span),
+            Some(Spanned { value, span }) => {
+                match Pattern::from_symbol(value, span.clone()) {
+                    p @ Pattern::Var(_) => {
+                        return Ok(Node::new(p, span));
+                    }
+                    Pattern::Deconstruct(ctor, _) => {
+                        ctor
+                    }
+                    p => {
+                        panic!("constructed bad pattern from symbol: {:?}", p);
+                    }
+                }
+            }
             None => {
                 return match self.pattern_term() {
                     MaybeParsed::Ok(pattern) => Ok(pattern),
@@ -455,7 +462,20 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         let span = tag_node.span.merge(&end_span);
         let pattern = Node::new(Pattern::Deconstruct(tag_node, args), span);
         if is_ok {
-            Ok(pattern)
+            if self.eat(Token::As) {
+                match self.eat_symbol() {
+                    Some(Spanned { value, span }) => {
+                        let node_span = pattern.span.merge(&span);
+                        let pattern = Pattern::As(Box::new(pattern), Node::new(value, span));
+                        Ok(Node::new(pattern, node_span))
+                    }
+                    None => {
+                        Err(pattern)
+                    }
+                }
+            } else {
+                Ok(pattern)
+            }
         } else {
             Err(pattern)
         }
@@ -596,7 +616,7 @@ mod tests {
                 panic!("found error pattern node");
             }
             Pattern::Infix(ref lhs, ref op, ref rhs) => {
-                output.push('(');
+                output.push_str("(opdec ");
                 output.push_str(&op.node);
                 output.push(' ');
                 write_pattern(&lhs.node, output);
@@ -668,15 +688,36 @@ mod tests {
             "(dec Some (var a))");
     }
 
-    fn infix_pattern() {
-        check_pattern(
-            "Pair a b : rest",
-            "(: (dec Pair (var a) (var b)) (var rest))");
-    }
-
+    #[test]
     fn basic_pattern_2() {
         check_pattern(
-            "Triple _ a 5",
-            "(dec Triple _ (var a) 5)");
+            "Triple _ a (Pair 1 _)",
+            "(dec Triple _ (var a) (parens (dec Pair 1 _)))");
+    }
+    
+    #[test]
+    fn basic_pattern_3() {
+        check_pattern(
+            "Triple _ a Pair 1 _",
+            "(dec Triple _ (var a) (dec Pair) 1 _)");
+    }
+
+    #[test]
+    fn infix_pattern() {
+        check_pattern(
+            "Pair a b :: rest",
+            "(opdec :: (dec Pair (var a) (var b)) (var rest))");
+    }
+
+    #[test]
+    fn parenthesised_var_pattern() {
+        check_pattern("(a)", "(parens (var a))")
+    }
+    
+    #[test]
+    fn alias_pattern() {
+        check_pattern(
+            "Some x as opt",
+            "(alias opt (dec Some (var x)))")
     }
 }

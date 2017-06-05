@@ -10,6 +10,7 @@ impl NodeId {
     }
 }
 
+#[derive(PartialEq, Eq, Debug, Hash, Clone)]
 pub struct Node<T> {
     pub node: T,
     pub span: Span,
@@ -26,6 +27,7 @@ impl<T> Node<T> {
     }
 }
 
+#[derive(PartialEq, Debug, Clone)]
 pub enum Literal {
     Int(i64),
     Float(f64),
@@ -34,6 +36,7 @@ pub enum Literal {
     Char(char),
 }
 
+#[derive(PartialEq, Debug, Clone)]
 pub enum Expr {
     Ident(String),
     Literal(Literal),
@@ -44,6 +47,7 @@ pub enum Expr {
     Error,
 }
 
+#[derive(PartialEq, Debug, Clone)]
 pub enum Pattern {
     Wildcard,
     Var(String),
@@ -65,6 +69,7 @@ impl Pattern {
     }
 }
 
+/* ???
 pub enum Symbol {
     Global { path: String, name: String },
     Local { name: String },
@@ -74,3 +79,4 @@ pub struct RawSymbol {
     pub name: String,
     pub path: Option<String>,
 }
+*/

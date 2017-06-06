@@ -1489,7 +1489,7 @@ in
     }
 
     #[test]
-    fn nedted_let() {
+    fn nested_let() {
         check_expr(
             "
 let

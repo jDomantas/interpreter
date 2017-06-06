@@ -25,6 +25,14 @@ impl<T> Node<T> {
             id: NodeId::new(0),
         }
     }
+
+    pub fn map<U, F: FnOnce(T) -> U>(self, f: F) -> Node<U> {
+        Node {
+            node: f(self.node),
+            span: self.span,
+            id: self.id,
+        }
+    }
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -46,6 +54,7 @@ pub enum Expr {
     Parenthesised(Box<Node<Expr>>),
     Lambda(Vec<Node<Pattern>>, Box<Node<Expr>>),
     Case(Box<Node<Expr>>, Vec<Node<CaseBranch>>),
+    Let(Vec<Node<LetDecl>>, Box<Node<Expr>>),
     Error,
 }
 
@@ -77,6 +86,118 @@ impl Pattern {
         }
     }
 }
+
+#[derive(PartialEq, Debug, Clone)]
+pub enum LetDecl {
+    Def(Def),
+    Type(TypeAnnot),
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct Def {
+    pub pattern: Node<Pattern>,
+    pub value: Node<Expr>,
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct TypeAnnot {
+    pub value: Node<String>,
+    pub type_: Node<Scheme>,
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub enum Type {
+    SelfType,
+    Var(String),
+    Concrete(String),
+    Apply(Box<Node<Type>>, Box<Node<Type>>),
+    Function(Box<Node<Type>>, Box<Node<Type>>),
+}
+
+impl Type {
+    pub fn from_symbol(symbol: String) -> Type {
+        if symbol == "self" {
+            Type::SelfType
+        } else if symbol.chars().nth(0).unwrap().is_uppercase() {
+            Type::Concrete(symbol)
+        } else {
+            Type::Var(symbol)
+        }
+    }
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct Scheme {
+    pub type_: Node<Type>,
+    pub vars: Vec<(Node<String>, Node<Type>)>,
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub enum Decl {
+    Let(LetDecl),
+    Infix(Associativity, Node<String>, Node<u64>),
+    TypeAlias(TypeAlias),
+    Union(UnionType),
+    Record(RecordType),
+    Trait(Trait),
+}
+
+#[derive(PartialEq, Eq, Debug, Hash, Copy, Clone)]
+pub enum Associativity {
+    Left,
+    Right,
+    None,
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct TypeAlias {
+    pub name: Node<String>,
+    pub vars: Vec<Node<String>>,
+    pub type_: Node<Type>,
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct UnionType {
+    pub name: Node<String>,
+    pub vars: Vec<Node<String>>,
+    pub cases: Vec<Node<UnionCase>>,
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct UnionCase {
+    pub tag: Node<String>,
+    pub args: Vec<Node<Type>>,
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct RecordType {
+    pub name: Node<String>,
+    pub vars: Vec<Node<String>>,
+    pub fields: Vec<(Node<String>, Node<Type>)>,
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct Trait {
+    pub name: Node<String>,
+    pub vars: Vec<Node<String>>,
+    pub values: Vec<Node<TypeAnnot>>,
+    pub base_traits: Vec<Node<Type>>,
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct Impl {
+    pub scheme: Scheme,
+    pub trait_: Node<Type>,
+    pub values: Vec<Node<Def>>,
+}
+
+#[derive(PartialEq, Eq, Debug, Hash, Clone)]
+pub enum Kind {
+    Star,
+    Arrow(Box<Kind>, Box<Kind>),
+}
+
+// impl Display for Kind { }
 
 /* ???
 pub enum Symbol {

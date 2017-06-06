@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::iter::Peekable;
 use position::{Span, Spanned, DUMMY_SPAN};
 use parsing::tokens::Token;
-use ast::{Expr, Literal, Pattern, CaseBranch, Node};
+use ast::{Expr, Literal, Pattern, CaseBranch, Node, LetDecl, Def, TypeAnnot, Scheme, Type};
 
 
 pub fn parse<I: Iterator<Item=Spanned<Token>>>(_tokens: I) -> ! {
@@ -34,9 +34,40 @@ enum MaybeParsed<T> {
     Empty,
 }
 
+impl<T> MaybeParsed<T> {
+    fn from_result(result: ParseResult<T>) -> MaybeParsed<T> {
+        match result {
+            Ok(x) => MaybeParsed::Ok(x),
+            Err(x) => MaybeParsed::Err(x),
+        }
+    }
+
+    fn map<U, F: FnOnce(T) -> U>(self, f: F) -> MaybeParsed<U> {
+        match self {
+            MaybeParsed::Ok(x) => MaybeParsed::Ok(f(x)),
+            MaybeParsed::Err(x) => MaybeParsed::Err(f(x)),
+            MaybeParsed::Empty => MaybeParsed::Empty,
+        }
+    }
+
+    fn is_ok(&self) -> bool {
+        match *self {
+            MaybeParsed::Ok(_) => true,
+            _ => false,
+        }
+    }
+}
+
+enum MaybeParsedType {
+    Ok(Node<Type>),
+    Err,
+    Empty,
+}
+
 struct ParseError;
 
 struct Parser<I: Iterator<Item=Spanned<Token>>> {
+    next_token: Option<Spanned<Token>>,
     tokens: Peekable<I>,
     expected_tokens: Vec<TokenKind>,
     errors: Vec<ParseError>,
@@ -46,8 +77,10 @@ struct Parser<I: Iterator<Item=Spanned<Token>>> {
 }
 
 impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
-    fn new(tokens: I) -> Parser<I> {
+    fn new(mut tokens: I) -> Parser<I> {
+        let next_token = tokens.next();
         Parser {
+            next_token: next_token,
             tokens: tokens.peekable(),
             expected_tokens: Vec::new(),
             errors: Vec::new(),
@@ -78,11 +111,11 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
     fn skip_to_aligned(&mut self) -> bool {
         let indent = self.current_indent;
         loop {
-            match self.tokens.peek() {
-                Some(&Spanned { value: Token::EndOfInput, .. }) => {
+            match self.next_token {
+                Some(Spanned { value: Token::EndOfInput, .. }) => {
                     return false;
                 }
-                Some(&Spanned { ref span, .. }) => {
+                Some(Spanned { ref span, .. }) => {
                     let column = span.start.column;
                     if column < indent {
                         return false;
@@ -99,8 +132,8 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         }
     }
 
-    fn peek(&mut self) -> Option<&Spanned<Token>> {
-        match self.tokens.peek() {
+    fn peek(&self) -> Option<&Spanned<Token>> {
+        match self.next_token {
             Some(ref token) => {
                 let token_column = token.span.start.column;
                 let order = if self.accept_aligned {
@@ -120,6 +153,27 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         }
     }
 
+    fn peek2(&mut self) -> Option<&Spanned<Token>> {
+        // next token might be too much to the left or missing altogehter
+        // so first we have to make sure it is there
+        if self.peek().is_none() {
+            return None;
+        }
+
+        match self.tokens.peek() {
+            Some(ref token) => {
+                if token.span.start.column > self.current_indent {
+                    Some(token)
+                } else {
+                    None
+                }
+            }
+            None => {
+                None
+            }
+        }
+    }
+
     fn consume(&mut self) -> Option<Spanned<Token>> {
         self.last_token_span = match self.peek() {
             Some(ref tok) => tok.span.clone(),
@@ -127,7 +181,9 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         };
         self.accept_aligned = false;
         self.expected_tokens.clear();
-        self.tokens.next()
+        let tok = self.next_token.take();
+        self.next_token = self.tokens.next();
+        tok
     }
 
     fn eat(&mut self, expected: Token) -> bool {
@@ -362,8 +418,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         if self.eat(Token::If) {
             self.if_()
         } else if self.eat(Token::Let) {
-            // TODO: parse let
-            unimplemented!()
+            self.let_()
         } else if self.eat(Token::Case) {
             self.case()
         } else if self.eat(Token::Backslash) {
@@ -589,8 +644,6 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
     }
 
     fn case(&mut self) -> ParseResult<Node<Expr>> {
-        let start_span = self.previous_span();
-
         let value = match self.expr(false) {
             Ok(expr) => expr,
             Err(_) => return Err(error_expr_node()),
@@ -603,14 +656,18 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
 
         let old_indent = self.align_on_next();
         let mut branches = Vec::new();
-        let mut span = start_span.merge(&self.previous_span());
+        let mut span = self.previous_span();
 
         loop {
             self.accept_aligned = true;
 
             if self.peek().is_none() {
                 if branches.is_empty() {
+                    // do this to fill wanted token list
+                    debug_assert!(self.case_branch().is_err());
                     self.emit_error();
+                    self.current_indent = old_indent;
+                    self.accept_aligned = false;
                     return Err(error_expr_node());
                 } else {
                     break;
@@ -619,11 +676,11 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
 
             match self.case_branch() {
                 Ok(branch) => {
-                    span = start_span.merge(&branch.span);
+                    span = span.merge(&branch.span);
                     branches.push(branch);
                 }
                 Err(branch) => {
-                    span = start_span.merge(&branch.span);
+                    span = span.merge(&branch.span);
                     branches.push(branch);
                     if !self.skip_to_aligned() {
                         break;
@@ -697,12 +754,377 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
             }
         }
     }
+
+    fn let_(&mut self) -> ParseResult<Node<Expr>> {
+        let old_indent = self.align_on_next();
+        let mut decls = Vec::new();
+        let mut span = self.previous_span();
+        let mut ate_in = false;
+
+        loop {
+            self.accept_aligned = true;
+
+            if self.peek().is_none() || { ate_in = self.eat(Token::In); ate_in } {
+                if decls.is_empty() {
+                    // do this to fill wanted token list
+                    debug_assert!(!self.let_decl().is_ok());
+                    self.emit_error();
+                    self.current_indent = old_indent;
+                    self.accept_aligned = false;
+                    return Err(error_expr_node());
+                } else {
+                    break;
+                }
+            }
+
+            match self.let_decl() {
+                MaybeParsed::Ok(decl) => {
+                    span = span.merge(&decl.span);
+                    decls.push(decl);
+                }
+                MaybeParsed::Err(decl) => {
+                    span = span.merge(&decl.span);
+                    decls.push(decl);
+                    if !self.skip_to_aligned() {
+                        break;
+                    }
+                }
+                MaybeParsed::Empty => {
+                    if !self.skip_to_aligned() {
+                        break;
+                    }
+                }
+            }
+        }
+
+        self.current_indent = old_indent;
+        self.accept_aligned = false;
+
+        if !ate_in && !self.eat(Token::In) {
+            self.emit_error();
+            return Err(error_expr_node());
+        }
+
+        match self.expr(false) {
+            Ok(expr) => {
+                span = span.merge(&expr.span);
+                Ok(Node::new(Expr::Let(decls, Box::new(expr)), span))
+            }
+            Err(expr) => {
+                span = span.merge(&expr.span);
+                Err(Node::new(Expr::Let(decls, Box::new(expr)), span))
+            }
+        }
+    }
+
+    fn let_decl(&mut self) -> MaybeParsed<Node<LetDecl>> {
+        let is_paren = match self.peek() {
+            Some(&Spanned { value: Token::OpenParen, .. }) => true,
+            _ => false,
+        };
+        let is_op = match self.peek2() {
+            Some(&Spanned { value: Token::Operator(_), .. }) => true,
+            _ => false,
+        };
+
+        if is_paren && is_op {
+            debug_assert!(self.eat(Token::OpenParen));
+            let symbol = match self.consume() {
+                Some(Spanned { value: Token::Operator(op), span }) => {
+                    Node::new(op, span)
+                }
+                _ => {
+                    panic!("expected to get operator");
+                }
+            };
+
+            if self.eat(Token::CloseParen) {
+                self.type_or_def(symbol)
+            } else {
+                self.emit_error();
+                MaybeParsed::Empty
+            }
+        } else if is_paren || is_op {
+            self.pattern_assign().map(|n| n.map(LetDecl::Def))
+        } else {
+            match self.eat_symbol() {
+                Some(Spanned { value, span }) => {
+                    self.type_or_def(Node::new(value, span))
+                }
+                None => {
+                    debug_assert!(!self.eat(Token::OpenParen));
+                    self.emit_error();
+                    MaybeParsed::Empty
+                }
+            }
+        }
+    }
+
+    fn scheme(&mut self) -> Option<Node<Scheme>> {
+        if self.eat(Token::OpenParen) {
+            let mut constraints = Vec::new();
+            loop {
+                let var = match self.eat_symbol() {
+                    Some(Spanned { value, span }) => Node::new(value, span),
+                    None => return None,
+                };
+                if !self.eat(Token::Colon) {
+                    self.emit_error();
+                    return None;
+                }
+                let type_ = match self.type_() {
+                    Some(type_) => type_,
+                    None => return None,
+                };
+                if self.eat(Token::CloseParen) {
+                    break;
+                } else if !self.eat(Token::Comma) {
+                    self.emit_error();
+                    return None;
+                }
+                constraints.push((var, type_));
+            }
+            if !self.eat(Token::FatArrow) {
+                self.emit_error();
+                return None;
+            }
+            match self.type_() {
+                Some(type_) => {
+                    let span = constraints[0].0.span.merge(&type_.span);
+                    let scheme = Scheme {
+                        vars: constraints,
+                        type_: type_,
+                    };
+                    Some(Node::new(scheme, span))
+                }
+                None => None,
+            }
+        } else {
+            self.type_().map(|type_| {
+                let span = type_.span.clone();
+                let scheme = Scheme {
+                    vars: Vec::new(),
+                    type_: type_,
+                };
+                Node::new(scheme, span)
+            })
+        }
+    }
+
+    fn type_term(&mut self) -> MaybeParsedType {
+        match self.eat_symbol() {
+            Some(Spanned { value, span }) => {
+                return MaybeParsedType::Ok(Node::new(Type::from_symbol(value), span));
+            }
+            _ => { }
+        }
+
+        if self.eat(Token::OpenParen) {
+            let type_ = match self.type_() {
+                Some(type_) => type_,
+                None => return MaybeParsedType::Err,
+            };
+
+            if self.eat(Token::Comma) {
+                // TODO: parse tuple type
+                unimplemented!()
+            } else if self.eat(Token::CloseParen) {
+                MaybeParsedType::Ok(type_)
+            } else {
+                self.emit_error();
+                MaybeParsedType::Err
+            }
+        } else {
+            MaybeParsedType::Empty
+        }
+    }
+
+    fn type_application(&mut self) -> Option<Node<Type>> {
+        let mut result = match self.type_term() {
+            MaybeParsedType::Ok(type_) => type_,
+            MaybeParsedType::Err |
+            MaybeParsedType::Empty => return None,
+        };
+
+        loop {
+            match self.type_term() {
+                MaybeParsedType::Ok(type_) => {
+                    let span = result.span.merge(&type_.span);
+                    result = Node::new(Type::Apply(Box::new(result), Box::new(type_)), span);
+                }
+                MaybeParsedType::Err => {
+                    return None;
+                }
+                MaybeParsedType::Empty => {
+                    return Some(result);
+                }
+            }
+        }
+    }
+
+    fn type_(&mut self) -> Option<Node<Type>> {
+        let arg = match self.type_application() {
+            Some(type_) => type_,
+            None => return None,
+        };
+
+        if self.eat(Token::Arrow) {
+            match self.type_() {
+                Some(result) => {
+                    let span = arg.span.merge(&result.span);
+                    Some(Node::new(Type::Function(Box::new(arg), Box::new(result)), span))
+                }
+                None => {
+                    None
+                }
+            }
+        } else {
+            Some(arg)
+        }
+    }
+
+    fn pattern_assign(&mut self) -> MaybeParsed<Node<Def>> {
+        let first = match self.pattern_term() {
+            MaybeParsed::Ok(pattern) => pattern,
+            MaybeParsed::Err(_) => return MaybeParsed::Empty,
+            MaybeParsed::Empty => return MaybeParsed::Empty,
+        };
+
+        if self.eat(Token::Equals) {
+            match self.expr(false) {
+                Ok(expr) => {
+                    let span = first.span.merge(&expr.span);
+                    MaybeParsed::Ok(Node::new(Def {
+                        pattern: first,
+                        value: expr,
+                    }, span))
+                }
+                Err(expr) => {
+                    let span = first.span.merge(&expr.span);
+                    MaybeParsed::Err(Node::new(Def {
+                        pattern: first,
+                        value: expr,
+                    }, span))
+                }
+            }
+        } else {
+            let (op, second) = match self.eat_operator() {
+                Some(Spanned { value, span }) => {
+                    match self.pattern_term() {
+                        MaybeParsed::Ok(pattern) => (Node::new(value, span), pattern),
+                        MaybeParsed::Err(_) => return MaybeParsed::Empty,
+                        MaybeParsed::Empty => return MaybeParsed::Empty,
+                    }
+                }
+                None => return MaybeParsed::Empty,
+            };
+
+            if !self.eat(Token::Equals) {
+                self.emit_error();
+                return MaybeParsed::Empty;
+            }
+
+            let pattern = op.map(Pattern::Var);
+            let params = vec![first, second];
+
+            let (expr, is_ok) = match self.expr(false) {
+                Ok(expr) => (expr, true),
+                Err(expr) => (expr, false),
+            };
+
+            let lambda_span = params[0].span.merge(&expr.span);
+            let expr = Node::new(Expr::Lambda(params, Box::new(expr)), lambda_span);
+            let span = pattern.span.merge(&expr.span);
+
+            let def = Def {
+                pattern: pattern,
+                value: expr,
+            };
+
+            let node = Node::new(def, span);
+
+            if is_ok {
+                MaybeParsed::Ok(node)
+            } else {
+                MaybeParsed::Err(node)
+            }
+        }
+    }
+
+    fn type_or_def(&mut self, symbol: Node<String>) -> MaybeParsed<Node<LetDecl>> {
+        if self.eat(Token::Colon) {
+            match self.scheme() {
+                Some(scheme) => {
+                    let node_span = symbol.span.merge(&scheme.span);
+                    MaybeParsed::Ok(Node::new(LetDecl::Type(TypeAnnot {
+                        value: symbol,
+                        type_: scheme,
+                    }), node_span))
+                }
+                None => {
+                    MaybeParsed::Empty
+                }
+            }
+        } else {
+            let mut params = Vec::new();
+            let pattern = symbol.map(Pattern::Var);
+            loop {
+                match self.pattern_term() {
+                    MaybeParsed::Ok(pattern) => params.push(pattern),
+                    MaybeParsed::Err(_) => {
+                        let span = pattern.span.clone();
+                        let def = LetDecl::Def(Def {
+                            pattern: pattern,
+                            value: error_expr_node(),
+                        });
+                        return MaybeParsed::Err(Node::new(def, span));
+                    }
+                    MaybeParsed::Empty => {
+                        if self.eat(Token::Equals) {
+                            break;
+                        } else {
+                            let span = pattern.span.clone();
+                            let def = LetDecl::Def(Def {
+                                pattern: pattern,
+                                value: error_expr_node(),
+                            });
+                            return MaybeParsed::Err(Node::new(def, span));
+                        }
+                    }
+                }
+            }
+
+            let (expr, is_ok) = match self.expr(false) {
+                Ok(expr) => (expr, true),
+                Err(expr) => (expr, false),
+            };
+
+            let expr = if !params.is_empty() {
+                let span = params[0].span.merge(&expr.span);
+                Node::new(Expr::Lambda(params, Box::new(expr)), span)
+            } else {
+                expr
+            };
+
+            let span = pattern.span.merge(&expr.span);
+            let node = Node::new(LetDecl::Def(Def {
+                pattern: pattern,
+                value: expr,
+            }), span);
+
+            if is_ok {
+                MaybeParsed::Ok(node)
+            } else {
+                MaybeParsed::Err(node)
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use parsing::lexer::lex;
-    use ast::{Expr, Pattern, Literal};
+    use ast::{Expr, Pattern, Literal, Type, Scheme, LetDecl, Def, TypeAnnot};
     use super::Parser;
 
     fn write_literal(literal: &Literal, output: &mut String) {
@@ -810,6 +1232,15 @@ mod tests {
                 }
                 output.push(')');
             }
+            Expr::Let(ref decls, ref value) => {
+                output.push_str("(let ");
+                for decl in decls {
+                    write_let_decl(&decl.node, output);
+                    output.push(' ');
+                }
+                write_expr(&value.node, output);
+                output.push(')');
+            }
         }
     }
 
@@ -858,6 +1289,63 @@ mod tests {
                 output.push_str(" ");
                 write_pattern(&pattern.node, output);
                 output.push_str(")");
+            }
+        }
+    }
+
+    fn write_let_decl(decl: &LetDecl, output: &mut String) {
+        match *decl {
+            LetDecl::Def(Def { ref pattern, ref value }) => {
+                output.push_str("(def ");
+                write_pattern(&pattern.node, output);
+                output.push(' ');
+                write_expr(&value.node, output);
+                output.push(')');
+            }
+            LetDecl::Type(TypeAnnot { ref value, ref type_ }) => {
+                output.push_str("(typeannot ");
+                output.push_str(&value.node);
+                output.push(' ');
+                write_scheme(&type_.node, output);
+                output.push(')');
+            }
+        }
+    }
+
+    fn write_scheme(scheme: &Scheme, output: &mut String) {
+        if scheme.vars.is_empty() {
+            write_type(&scheme.type_.node, output);
+        } else {
+            unimplemented!()
+        }
+    }
+
+    fn write_type(type_: &Type, output: &mut String) {
+        match *type_ {
+            Type::SelfType => {
+                output.push_str("self");
+            }
+            Type::Var(ref var) => {
+                output.push_str("(var ");
+                output.push_str(var);
+                output.push_str(")");
+            }
+            Type::Apply(ref a, ref b) => {
+                output.push_str("(apply ");
+                write_type(&a.node, output);
+                output.push(' ');
+                write_type(&b.node, output);
+                output.push(')');
+            }
+            Type::Concrete(ref t) => {
+                output.push_str(t);
+            }
+            Type::Function(ref a, ref b) => {
+                output.push_str("(fn ");
+                write_type(&a.node, output);
+                output.push(' ');
+                write_type(&b.node, output);
+                output.push(')');
             }
         }
     }
@@ -958,27 +1446,58 @@ mod tests {
     #[test]
     fn case() {
         check_expr(
-            r#"
+            "
 case n of
     1 -> true
     Some _ if false -> false
-    _ -> true
-            "#,
+    _ -> true",
             "(case n (1 true) ((dec Some _) false false) (_ true))");
     }
     
     #[test]
     fn nested_case() {
         check_expr(
-            r#"
+            "
 case n of
     A -> true
     B a -> case a of
         A -> 1
         B _ -> 2
         C -> 3
-    C -> 4
-            "#,
+    C -> 4",
             "(case n ((dec A) true) ((dec B (var a)) (case a ((dec A) 1) ((dec B _) 2) ((dec C) 3))) ((dec C) 4))");
+    }
+
+    #[test]
+    fn basic_let() {
+        check_expr(
+            "let a = 1 in a",
+            "(let (def (var a) 1) a)");
+    }
+    
+    #[test]
+    fn basic_let_2() {
+        check_expr(
+            "
+let
+    x = 1
+    a + b = 2
+    x : Int
+in
+    x + x",
+            "(let (def (var x) 1) (def (var +) (lambda ((var a) (var b)) 2)) (typeannot x Int) (+ x x))");
+    }
+
+    #[test]
+    fn nedted_let() {
+        check_expr(
+            "
+let
+    a + b = 3
+    (Wrapped x) = wrapped
+          in let
+       f _ = 3 + x
+     in f",
+            "(let (def (var +) (lambda ((var a) (var b)) 3)) (def (parens (dec Wrapped (var x))) wrapped) (let (def (var f) (lambda (_) (+ 3 x))) f))");
     }
 }

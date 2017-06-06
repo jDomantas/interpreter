@@ -45,7 +45,15 @@ pub enum Expr {
     Infix(Box<Node<Expr>>, Node<String>, Box<Node<Expr>>),
     Parenthesised(Box<Node<Expr>>),
     Lambda(Vec<Node<Pattern>>, Box<Node<Expr>>),
+    Case(Box<Node<Expr>>, Vec<Node<CaseBranch>>),
     Error,
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct CaseBranch {
+    pub pattern: Node<Pattern>,
+    pub value: Node<Expr>,
+    pub guard: Option<Node<Expr>>,
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -74,6 +82,17 @@ impl Pattern {
 pub enum Symbol {
     Global { path: String, name: String },
     Local { name: String },
+}
+
+pub enum RawSymbol {
+    Qualified(String, String),
+    Unqualified(String),
+    Trusted(String, String),
+}
+
+pub enum Symbol {
+    Global(String, String),
+    Local(String)
 }
 
 pub struct RawSymbol {

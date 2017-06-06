@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::iter::Peekable;
 use position::{Span, Spanned, DUMMY_SPAN};
 use parsing::tokens::Token;
-use ast::{Expr, Literal, Pattern, Node};
+use ast::{Expr, Literal, Pattern, CaseBranch, Node};
 
 
 pub fn parse<I: Iterator<Item=Spanned<Token>>>(_tokens: I) -> ! {
@@ -63,6 +63,40 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
 
     fn previous_span(&self) -> Span {
         self.last_token_span.clone()
+    }
+
+    fn align_on_next(&mut self) -> usize {
+        let token_column = self.peek()
+            .map(|s| s.span.start.column)
+            .unwrap_or(self.current_indent);
+
+        let old_indent = self.current_indent;
+        self.current_indent = token_column;
+        old_indent
+    }
+
+    fn skip_to_aligned(&mut self) -> bool {
+        let indent = self.current_indent;
+        loop {
+            match self.tokens.peek() {
+                Some(&Spanned { value: Token::EndOfInput, .. }) => {
+                    return false;
+                }
+                Some(&Spanned { ref span, .. }) => {
+                    let column = span.start.column;
+                    if column < indent {
+                        return false;
+                    } else if column == indent {
+                        return true;
+                    }
+                }
+                None => {
+                    panic!("parser skipped EndOfInput token");
+                }
+            }
+
+            self.consume();
+        }
     }
 
     fn peek(&mut self) -> Option<&Spanned<Token>> {
@@ -331,8 +365,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
             // TODO: parse let
             unimplemented!()
         } else if self.eat(Token::Case) {
-            // TODO: parse case
-            unimplemented!()
+            self.case()
         } else if self.eat(Token::Backslash) {
             self.lambda()
         } else if self.eat(Token::Do) {
@@ -340,68 +373,6 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
             unimplemented!()
         } else {
             self.expr_operation(can_section)
-        }
-    }
-
-    fn if_(&mut self) -> ParseResult<Node<Expr>> {
-        let start_span = self.previous_span();
-
-        let condition = try!(self.expr(false));
-        
-        if !self.eat(Token::Then) {
-            self.emit_error();
-            return Err(error_expr_node());
-        }
-
-        let then_branch = try!(self.expr(false));
-
-        if !self.eat(Token::Else) {
-            self.emit_error();
-            return Err(error_expr_node());
-        }
-
-        let else_branch = try!(self.expr(false));
-        let span = start_span.merge(&else_branch.span);
-        let expr = Expr::If(
-            Box::new(condition),
-            Box::new(then_branch),
-            Box::new(else_branch));
-        Ok(Node::new(expr, span))
-    }
-
-    fn lambda(&mut self) -> ParseResult<Node<Expr>> {
-        let start_span = self.previous_span();
-
-        let mut params = Vec::new();
-        loop {
-            match self.pattern_term() {
-                MaybeParsed::Ok(pattern) => params.push(pattern),
-                MaybeParsed::Err(_) => return Err(error_expr_node()),
-                MaybeParsed::Empty => {
-                    if params.is_empty() {
-                        self.emit_error();
-                        return Err(error_expr_node());
-                    } else {
-                        break;
-                    }
-                }
-            }
-        }
-
-        if !self.eat(Token::Arrow) {
-            self.emit_error();
-            return Err(error_expr_node());
-        }
-
-        match self.expr(false) {
-            Ok(expr) => {
-                let span = start_span.merge(&expr.span);
-                Ok(Node::new(Expr::Lambda(params, Box::new(expr)), span))
-            }
-            Err(expr) => {
-                let span = start_span.merge(&expr.span);
-                Err(Node::new(Expr::Lambda(params, Box::new(expr)), span))
-            }
         }
     }
 
@@ -554,6 +525,178 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
             }
         }
     }
+    
+    fn if_(&mut self) -> ParseResult<Node<Expr>> {
+        let start_span = self.previous_span();
+
+        let condition = try!(self.expr(false));
+        
+        if !self.eat(Token::Then) {
+            self.emit_error();
+            return Err(error_expr_node());
+        }
+
+        let then_branch = try!(self.expr(false));
+
+        if !self.eat(Token::Else) {
+            self.emit_error();
+            return Err(error_expr_node());
+        }
+
+        let else_branch = try!(self.expr(false));
+        let span = start_span.merge(&else_branch.span);
+        let expr = Expr::If(
+            Box::new(condition),
+            Box::new(then_branch),
+            Box::new(else_branch));
+        Ok(Node::new(expr, span))
+    }
+
+    fn lambda(&mut self) -> ParseResult<Node<Expr>> {
+        let start_span = self.previous_span();
+
+        let mut params = Vec::new();
+        loop {
+            match self.pattern_term() {
+                MaybeParsed::Ok(pattern) => params.push(pattern),
+                MaybeParsed::Err(_) => return Err(error_expr_node()),
+                MaybeParsed::Empty => {
+                    if params.is_empty() {
+                        self.emit_error();
+                        return Err(error_expr_node());
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+
+        if !self.eat(Token::Arrow) {
+            self.emit_error();
+            return Err(error_expr_node());
+        }
+
+        match self.expr(false) {
+            Ok(expr) => {
+                let span = start_span.merge(&expr.span);
+                Ok(Node::new(Expr::Lambda(params, Box::new(expr)), span))
+            }
+            Err(expr) => {
+                let span = start_span.merge(&expr.span);
+                Err(Node::new(Expr::Lambda(params, Box::new(expr)), span))
+            }
+        }
+    }
+
+    fn case(&mut self) -> ParseResult<Node<Expr>> {
+        let start_span = self.previous_span();
+
+        let value = match self.expr(false) {
+            Ok(expr) => expr,
+            Err(_) => return Err(error_expr_node()),
+        };
+
+        if !self.eat(Token::Of) {
+            self.emit_error();
+            return Err(error_expr_node());
+        }
+
+        let old_indent = self.align_on_next();
+        let mut branches = Vec::new();
+        let mut span = start_span.merge(&self.previous_span());
+
+        loop {
+            self.accept_aligned = true;
+
+            if self.peek().is_none() {
+                if branches.is_empty() {
+                    self.emit_error();
+                    return Err(error_expr_node());
+                } else {
+                    break;
+                }
+            }
+
+            match self.case_branch() {
+                Ok(branch) => {
+                    span = start_span.merge(&branch.span);
+                    branches.push(branch);
+                }
+                Err(branch) => {
+                    span = start_span.merge(&branch.span);
+                    branches.push(branch);
+                    if !self.skip_to_aligned() {
+                        break;
+                    }
+                }
+            }
+        }
+
+        self.current_indent = old_indent;
+        self.accept_aligned = false;
+
+        Ok(Node::new(Expr::Case(Box::new(value), branches), span))
+    }
+
+    fn case_branch(&mut self) -> ParseResult<Node<CaseBranch>> {
+        self.accept_aligned = true;
+        
+        let pattern = match self.pattern() {
+            Ok(pattern) => pattern,
+            Err(pattern) => {
+                let span = pattern.span.clone();
+                return Err(Node::new(CaseBranch {
+                    pattern: pattern,
+                    value: error_expr_node(),
+                    guard: None,
+                }, span));
+            }
+        };
+
+        let guard = if self.eat(Token::If) {
+            match self.expr(false) {
+                Ok(expr) => Some(expr),
+                Err(expr) => {
+                    let span = pattern.span.merge(&expr.span);
+                    return Err(Node::new(CaseBranch {
+                        pattern: pattern,
+                        value: error_expr_node(),
+                        guard: Some(expr),
+                    }, span));
+                }
+            }
+        } else {
+            None
+        };
+
+        if !self.eat(Token::Arrow) {
+            let span = pattern.span.clone();
+            return Err(Node::new(CaseBranch {
+                pattern: pattern,
+                value: error_expr_node(),
+                guard: None,
+            }, span));
+        }
+
+        match self.expr(false) {
+            Ok(expr) => {
+                let span = pattern.span.merge(&expr.span);
+                Ok(Node::new(CaseBranch {
+                    pattern: pattern,
+                    value: expr,
+                    guard: guard,
+                }, span))
+            }
+            Err(expr) => {
+                let span = pattern.span.merge(&expr.span);
+                Err(Node::new(CaseBranch {
+                    pattern: pattern,
+                    value: expr,
+                    guard: guard,
+                }, span))
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -646,6 +789,26 @@ mod tests {
                 output.push_str(") ");
                 write_expr(&value.node, output);
                 output.push_str(")");
+            }
+            Expr::Case(ref value, ref branches) => {
+                output.push_str("(case ");
+                write_expr(&value.node, output);
+                for branch in branches {
+                    output.push_str(" (");
+                    write_pattern(&branch.node.pattern.node, output);
+                    match branch.node.guard {
+                        Some(ref guard) => {
+                            output.push(' ');
+                            write_expr(&guard.node, output);
+                        }
+                        None => { }
+                    }
+                    output.push(' ');
+                    write_expr(&branch.node.value.node, output);
+                    output.push(')');
+
+                }
+                output.push(')');
             }
         }
     }
@@ -790,5 +953,32 @@ mod tests {
         check_expr(
             r#" \(Wrapped a) _ -> \_ -> a "#,
             "(lambda ((parens (dec Wrapped (var a))) _) (lambda (_) a))");
+    }
+
+    #[test]
+    fn case() {
+        check_expr(
+            r#"
+case n of
+    1 -> true
+    Some _ if false -> false
+    _ -> true
+            "#,
+            "(case n (1 true) ((dec Some _) false false) (_ true))");
+    }
+    
+    #[test]
+    fn nested_case() {
+        check_expr(
+            r#"
+case n of
+    A -> true
+    B a -> case a of
+        A -> 1
+        B _ -> 2
+        C -> 3
+    C -> 4
+            "#,
+            "(case n ((dec A) true) ((dec B (var a)) (case a ((dec A) 1) ((dec B _) 2) ((dec C) 3))) ((dec C) 4))");
     }
 }

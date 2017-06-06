@@ -195,6 +195,9 @@ impl<'a> Lexer<'a> {
                 ',' => {
                     return Some(self.single_char_token(Token::Comma));
                 }
+                '\\' => {
+                    return Some(self.single_char_token(Token::Backslash));
+                }
                 ch if ch.is_digit(10) => {
                     return Some(self.lex_number());
                 }

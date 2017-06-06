@@ -198,7 +198,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
                 Some(operator) => {
                     if self.eat(Token::CloseParen) {
                         // got something like (+)
-                        Expr::Ident(operator.value)
+                        Node::new(Expr::Ident(operator.value), self.previous_span())
                     } else {
                         match self.application() {
                             Ok(_expr) => {
@@ -212,7 +212,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
                 }
                 None => {
                     match self.expr(true) {
-                        Ok(expr) => Expr::Parenthesised(Box::new(expr)),
+                        Ok(expr) => expr,
                         Err(expr) => return MaybeParsed::Err(expr),
                     }
                 }
@@ -220,7 +220,11 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
 
             if self.eat(Token::CloseParen) {
                 let node_span = start_span.merge(&self.previous_span());
+                let expr = Expr::Parenthesised(Box::new(expr));
                 return MaybeParsed::Ok(Node::new(expr, node_span));
+            } else if self.eat(Token::Comma) {
+                // TODO: parse tuple
+                unimplemented!()
             } else {
                 // we need to have error node somewhere here
                 // so that subsequent passes would ignore this error
@@ -330,8 +334,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
             // TODO: parse case
             unimplemented!()
         } else if self.eat(Token::Backslash) {
-            // TODO: parse lambda
-            unimplemented!()
+            self.lambda()
         } else if self.eat(Token::Do) {
             // TODO: parse do
             unimplemented!()
@@ -366,6 +369,42 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         Ok(Node::new(expr, span))
     }
 
+    fn lambda(&mut self) -> ParseResult<Node<Expr>> {
+        let start_span = self.previous_span();
+
+        let mut params = Vec::new();
+        loop {
+            match self.pattern_term() {
+                MaybeParsed::Ok(pattern) => params.push(pattern),
+                MaybeParsed::Err(_) => return Err(error_expr_node()),
+                MaybeParsed::Empty => {
+                    if params.is_empty() {
+                        self.emit_error();
+                        return Err(error_expr_node());
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+
+        if !self.eat(Token::Arrow) {
+            self.emit_error();
+            return Err(error_expr_node());
+        }
+
+        match self.expr(false) {
+            Ok(expr) => {
+                let span = start_span.merge(&expr.span);
+                Ok(Node::new(Expr::Lambda(params, Box::new(expr)), span))
+            }
+            Err(expr) => {
+                let span = start_span.merge(&expr.span);
+                Err(Node::new(Expr::Lambda(params, Box::new(expr)), span))
+            }
+        }
+    }
+
     fn pattern_term(&mut self) -> MaybeParsed<Node<Pattern>> {
         if self.eat(Token::Underscore) {
             let span = self.previous_span();
@@ -390,13 +429,17 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
             let start_span = self.previous_span();
             
             let pattern = match self.pattern() {
-                Ok(expr) => Pattern::Parenthesised(Box::new(expr)),
-                Err(expr) => return MaybeParsed::Err(expr),
+                Ok(pattern) => pattern,
+                Err(pattern) => return MaybeParsed::Err(pattern),
             };
             
             if self.eat(Token::CloseParen) {
                 let node_span = start_span.merge(&self.previous_span());
+                let pattern = Pattern::Parenthesised(Box::new(pattern));
                 return MaybeParsed::Ok(Node::new(pattern, node_span));
+            } else if self.eat(Token::Comma) {
+                // TODO: parse tuple pattern
+                unimplemented!()
             } else {
                 // we need to have error node somewhere here
                 // so that subsequent passes would ignore this error
@@ -590,6 +633,20 @@ mod tests {
                 write_expr(&expr.node, output);
                 output.push_str(")");
             }
+            Expr::Lambda(ref params, ref value) => {
+                output.push_str("(lambda (");
+                let mut need_space = false;
+                for param in params {
+                    if need_space {
+                        output.push(' ');
+                    }
+                    write_pattern(&param.node, output);
+                    need_space = true;
+                }
+                output.push_str(") ");
+                write_expr(&value.node, output);
+                output.push_str(")");
+            }
         }
     }
 
@@ -711,13 +768,27 @@ mod tests {
 
     #[test]
     fn parenthesised_var_pattern() {
-        check_pattern("(a)", "(parens (var a))")
+        check_pattern("(a)", "(parens (var a))");
     }
     
     #[test]
     fn alias_pattern() {
         check_pattern(
             "Some x as opt",
-            "(alias opt (dec Some (var x)))")
+            "(alias opt (dec Some (var x)))");
+    }
+
+    #[test]
+    fn lambda() {
+        check_expr(
+            r#" \a b -> a "#,
+            "(lambda ((var a) (var b)) a)");
+    }
+
+    #[test]
+    fn lambda2() {
+        check_expr(
+            r#" \(Wrapped a) _ -> \_ -> a "#,
+            "(lambda ((parens (dec Wrapped (var a))) _) (lambda (_) a))");
     }
 }

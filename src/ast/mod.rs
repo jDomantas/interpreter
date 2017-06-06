@@ -44,6 +44,7 @@ pub enum Expr {
     If(Box<Node<Expr>>, Box<Node<Expr>>, Box<Node<Expr>>),
     Infix(Box<Node<Expr>>, Node<String>, Box<Node<Expr>>),
     Parenthesised(Box<Node<Expr>>),
+    Lambda(Vec<Node<Pattern>>, Box<Node<Expr>>),
     Error,
 }
 

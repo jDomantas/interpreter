@@ -425,4 +425,23 @@ mod tests {
             },
         ]);
     }
+
+    #[test]
+    fn comments() {
+        let tokens = lex_no_positions("0 {- 1 -} 2 -- 3 \n 4");
+        assert_eq!(tokens, vec![
+            Token::Int(0),
+            Token::Int(2),
+            Token::Int(4),
+        ]);
+    }
+
+    #[test]
+    fn ambiguous() {
+        let tokens = lex_no_positions("- -- - \n { {- } -}");
+        assert_eq!(tokens, vec![
+            Token::Operator("-".to_string()),
+            Token::OpenBrace,
+        ]);
+    }
 }

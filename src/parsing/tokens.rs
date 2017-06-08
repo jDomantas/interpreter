@@ -33,6 +33,7 @@ pub enum Token {
     Colon,
     Arrow,
     FatArrow,
+    BackArrow,
     Equals,
     Backslash,
     DotDot,

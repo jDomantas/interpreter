@@ -218,6 +218,26 @@ pub enum RawSymbol {
     Trusted(String, String),
 }
 
+impl RawSymbol {
+    fn full_name(self) -> String {
+        match self {
+            RawSymbol::Qualified(mut path, name) => {
+                path.push('.');
+                path.push_str(&name);
+                path
+            }
+            RawSymbol::Trusted(mut path, name) => {
+                path.push('.');
+                path.push_str(&name);
+                path
+            }
+            RawSymbol::Unqualified(name) => {
+                name
+            }
+        }
+    }
+}
+
 #[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Hash, Clone)]
 pub enum Symbol {
     Global(String, String),

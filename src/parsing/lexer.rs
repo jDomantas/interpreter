@@ -318,6 +318,7 @@ fn special_operator(op: &str) -> Option<Token> {
         ".." => Some(Token::DotDot),
         "," => Some(Token::Comma),
         "|" => Some(Token::Pipe),
+        "<-" => Some(Token::BackArrow),
         _ => None,
     }
 }

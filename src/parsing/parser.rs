@@ -465,8 +465,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         } else if self.eat(Token::Backslash) {
             self.lambda()
         } else if self.eat(Token::Do) {
-            // TODO: parse do
-            unimplemented!()
+            self.do_expr()
         } else {
             self.expr_operation(can_section)
         }
@@ -1160,6 +1159,173 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
             }
         }
     }
+
+    fn do_expr(&mut self) -> ParseResult<ExprNode> {
+        let old_indent = self.align_on_next();
+
+        match self.do_statement() {
+            MaybeParsed::Ok(expr) => {
+                self.current_indent = old_indent;
+                Ok(expr)
+            }
+            MaybeParsed::Err(expr) => {
+                self.current_indent = old_indent;
+                Err(expr)
+            }
+            MaybeParsed::Empty => {
+                self.emit_error();
+                self.current_indent = old_indent;
+                Err(error_expr_node())
+            }
+        }
+    }
+
+    fn do_statement(&mut self) -> MaybeParsed<ExprNode> {
+        self.accept_aligned = true;
+        if self.eat(Token::Let) {
+            return match self.do_let() {
+                Ok(expr) => MaybeParsed::Ok(expr),
+                Err(expr) => MaybeParsed::Err(expr),
+            };
+        } else if self.eat(Token::If) {
+            return match self.do_if() {
+                Ok(expr) => MaybeParsed::Ok(expr),
+                Err(expr) => MaybeParsed::Err(expr),
+            };
+        }
+        self.expected_tokens.push(TokenKind::Token(Token::OpenParen));
+        self.expected_tokens.push(TokenKind::Ident);
+        self.expected_tokens.push(TokenKind::VarName);
+        if self.peek().is_none() {
+            return MaybeParsed::Empty;
+        }
+        if self.peek().map(|t| &t.value) == Some(&Token::OpenParen) ||
+            self.peek2().map(|t| &t.value) == Some(&Token::BackArrow) {
+            // pattern <- expr
+            match self.pattern() {
+                Ok(pattern) => {
+                    if !self.eat(Token::BackArrow) {
+                        self.emit_error();
+                        return MaybeParsed::Err(error_expr_node());
+                    }
+                    let arrow_span = self.previous_span();
+                    match self.expr(false) {
+                        Ok(expr) => {
+                            let (rest, is_ok) = match self.do_statement() {
+                                MaybeParsed::Ok(rest) => (rest, true),
+                                MaybeParsed::Err(rest) => (rest, false),
+                                MaybeParsed::Empty => {
+                                    self.emit_error();
+                                    return MaybeParsed::Err(error_expr_node());
+                                }
+                            };
+                            let apply_span = pattern.span.merge(&rest.span);
+                            let args = vec![pattern];
+                            let lambda_span = rest.span.clone();
+                            let lambda = Node::new(Expr::Lambda(args, Box::new(rest)), lambda_span);
+                            let bind = RawSymbol::Trusted("Core.Monad".to_string(), "bind".to_string());
+                            let bind_node = Node::new(Expr::Ident(bind), arrow_span);
+                            let apply = Node::new(Expr::Apply(Box::new(bind_node), vec![expr, lambda]), apply_span);
+                            if is_ok {
+                                MaybeParsed::Ok(apply)
+                            } else {
+                                MaybeParsed::Err(apply)
+                            }
+                        }
+                        Err(_) => {
+                            MaybeParsed::Err(error_expr_node())
+                        }
+                    }
+                }
+                Err(_) => {
+                    MaybeParsed::Err(error_expr_node())
+                }
+            }
+        } else {
+            match self.expr(false) {
+                Ok(expr) => {
+                    let (rest, is_ok) = match self.do_statement() {
+                        MaybeParsed::Ok(expr) => (expr, true),
+                        MaybeParsed::Err(expr) => (expr, false),
+                        MaybeParsed::Empty => return MaybeParsed::Ok(expr),
+                    };
+                    let apply_span = expr.span.merge(&rest.span);
+                    let args = vec![Node::new(Pattern::Wildcard, DUMMY_SPAN.clone())];
+                    let lambda_span = rest.span.clone();
+                    let lambda = Node::new(Expr::Lambda(args, Box::new(rest)), lambda_span);
+                    let bind = RawSymbol::Trusted("Core.Monad".to_string(), "bind".to_string());
+                    let bind_node = Node::new(Expr::Ident(bind), DUMMY_SPAN.clone());
+                    let apply = Node::new(Expr::Apply(Box::new(bind_node), vec![expr, lambda]), apply_span);
+                    if is_ok {
+                        MaybeParsed::Ok(apply)
+                    } else {
+                        MaybeParsed::Err(apply)
+                    }
+                }
+                Err(_) => {
+                    MaybeParsed::Err(error_expr_node())
+                }
+            }
+        }
+    }
+
+    fn do_if(&mut self) -> ParseResult<ExprNode> {
+        let if_span = self.previous_span();
+
+        let cond = match self.expr(false) {
+            Ok(expr) => expr,
+            Err(_) => return Err(error_expr_node()),
+        };
+
+        let (rest, is_ok) = match self.do_statement() {
+            MaybeParsed::Ok(rest) => (rest, true),
+            MaybeParsed::Err(rest) => (rest, false),
+            MaybeParsed::Empty => {
+                self.emit_error();
+                return Err(error_expr_node());
+            }
+        };
+
+        let empty = RawSymbol::Trusted("Core.Monad".to_string(), "empty".to_string());
+        let empty_node = Node::new(Expr::Ident(empty), DUMMY_SPAN.clone());
+        let span = if_span.merge(&rest.span);
+        let if_ = Expr::If(Box::new(cond), Box::new(rest), Box::new(empty_node));
+        if is_ok {
+            Ok(Node::new(if_, span))
+        } else {
+            Err(Node::new(if_, span))
+        }
+    }
+
+    fn do_let(&mut self) -> ParseResult<ExprNode> {
+        let let_span = self.previous_span();
+
+        let def = match self.pattern_assign() {
+            MaybeParsed::Ok(def) => def.map(LetDecl::Def),
+            MaybeParsed::Err(_) => return Err(error_expr_node()),
+            MaybeParsed::Empty => {
+                self.emit_error();
+                return Err(error_expr_node());
+            }
+        };
+
+        let (rest, is_ok) = match self.do_statement() {
+            MaybeParsed::Ok(rest) => (rest, true),
+            MaybeParsed::Err(rest) => (rest, false),
+            MaybeParsed::Empty => {
+                self.emit_error();
+                return Err(error_expr_node());
+            }
+        };
+
+        let span = let_span.merge(&rest.span);
+        let e = Expr::Let(vec![def], Box::new(rest));
+        if is_ok {
+            Ok(Node::new(e, span))
+        } else {
+            Err(Node::new(e, span))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1559,5 +1725,25 @@ let
        f _ = 3 + x
      in f",
             "(let (def (var +) (lambda ((var a) (var b)) 3)) (def (parens (dec Wrapped (var x))) wrapped) (let (def (var f) (lambda (_) (+ 3 x))) f))");
+    }
+    
+    #[test]
+    fn basic_do() {
+        check_expr(
+            "
+do  a <- value
+    foo",
+            "(apply #Core.Monad.bind value (lambda ((var a)) foo))");
+    }
+    
+    #[test]
+    fn do_if() {
+        check_expr(
+            "
+do  a <- value
+    let b = a
+    if b
+    c",
+            "(apply #Core.Monad.bind value (lambda ((var a)) (let (def (var b) a) (if b c #Core.Monad.empty))))");
     }
 }

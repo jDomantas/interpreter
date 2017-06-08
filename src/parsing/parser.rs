@@ -1184,7 +1184,10 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
     fn record(&mut self) -> ParseResult<Vec<(Node<String>, Node<Type<RawSymbol>>)>> {
         let mut fields = Vec::new();
         while !self.eat(Token::CloseBrace) {
-            let name = try!(self.eat_unqualified_name());
+            let name = match self.eat_unqualified_name() {
+                Some(Spanned { value, span }) => Node::new(value, span),
+                None => return Err(()),
+            };
             try!(self.expect(Token::Colon));
             let type_ = try!(self.type_());
             fields.push((name, type_));
@@ -1201,7 +1204,10 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
     }
 
     fn union_case(&mut self) -> ParseResult<Node<UnionCase<RawSymbol>>> {
-        let name = try!(self.eat_unqualified_name());
+        let name = match self.eat_unqualified_name() {
+            Some(Spanned { value, span }) => Node::new(value, span),
+            None => return Err(()),
+        };
         let mut args = Vec::new();
         while let Some(result) = self.type_term() {
             args.push(try!(result));

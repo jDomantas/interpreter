@@ -5,7 +5,7 @@ use ast::RawSymbol;
 pub enum Token {
     Ident(RawSymbol),
     Float(f64),
-    Int(i64),
+    Int(u64),
     Operator(String),
     Bool(bool),
     Module,
@@ -43,6 +43,8 @@ pub enum Token {
     CloseParen,
     OpenBracket,
     CloseBracket,
+    OpenBrace,
+    CloseBrace,
     EndOfInput,
     Error,
 }
@@ -64,4 +66,5 @@ pub enum TokenKind {
     VarName,
     Literal,
     Operator,
+    Int,
 }

@@ -37,7 +37,7 @@ impl<T> Node<T> {
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum Literal {
-    Int(i64),
+    Int(u64),
     Float(f64),
     Bool(bool),
     Str(String),

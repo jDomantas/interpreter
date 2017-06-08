@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::iter::Peekable;
 use position::{Span, Spanned, DUMMY_SPAN};
 use parsing::tokens::{Token, TokenKind};
-use ast::{Expr, Literal, Pattern, CaseBranch, Node, LetDecl, Def, TypeAnnot, Scheme, Type, RawSymbol};
+use ast::{Expr, Literal, Pattern, CaseBranch, Node, LetDecl, Decl, Def, TypeAnnot, Associativity, Scheme, Type, TypeAlias, UnionType, UnionCase, RecordType, RawSymbol};
 
 
 pub fn parse<I: Iterator<Item=Spanned<Token>>>(_tokens: I) -> ! {
@@ -1086,6 +1086,137 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         let span = let_span.merge(&rest.span);
         let e = Expr::Let(vec![def], Box::new(rest));
         Ok(Node::new(e, span))
+    }
+
+    fn fixity(&mut self, associativity: Associativity) -> ParseResult<Node<Decl<RawSymbol>>> {
+        let span = self.previous_span();
+
+        let op = match self.eat_operator() {
+            Some(Spanned { value, span }) => Node::new(value, span),
+            None => {
+                self.emit_error();
+                return Err(());
+            }
+        };
+
+        match self.peek() {
+            Some(&Spanned { value: Token::Int(_), .. }) => { }
+            _ => {
+                self.expected_tokens.push(TokenKind::Int);
+                return Err(());
+            }
+        }
+
+        let precedence = match self.consume() {
+            Some(Spanned { value: Token::Int(precedence), span }) => {
+                Node::new(precedence, span)
+            }
+            _ => {
+                panic!("Parser::peek and Parser::consume returned different reults");
+            }
+        };
+
+        let span = span.merge(&self.previous_span());
+
+        Ok(Node::new(Decl::Infix(associativity, op, precedence), span))
+    }
+
+    fn type_decl(&mut self) -> ParseResult<Node<Decl<RawSymbol>>> {
+        let span = self.previous_span();
+
+        let is_alias = self.eat(Token::Alias);
+
+        let name = match self.eat_unqualified_name() {
+            Some(Spanned { value, span }) => Node::new(value, span),
+            None => return Err(()),
+        };
+
+        let mut vars = Vec::new();
+        while let Some(Spanned { value, span }) = self.eat_var_name() {
+            vars.push(Node::new(value, span));
+        }
+
+        try!(self.expect(Token::Equals));
+
+        if is_alias {
+            let type_ = self.type_().ok();
+            let span = span.merge(&self.previous_span());
+            Ok(Node::new(Decl::TypeAlias(TypeAlias {
+                name: name,
+                vars: vars,
+                type_: type_,
+            }), span))
+        } else if self.eat(Token::OpenBrace) {
+            let fields = self.record().unwrap_or_else(|_| Vec::new());
+            let span = span.merge(&self.previous_span());
+            Ok(Node::new(Decl::Record(RecordType {
+                name: name,
+                vars: vars,
+                fields: fields,
+            }), span))
+        } else {
+            // allow pipe before first case, but not mandatory
+            self.eat(Token::Pipe);
+            let mut cases = Vec::new();
+            loop {
+                match self.union_case() {
+                    Ok(case) => {
+                        cases.push(case);
+                        if !self.eat(Token::Pipe) {
+                            break;
+                        }
+                    }
+                    Err(_) => {
+                        cases.clear();
+                        break;
+                    }
+                }
+            }
+            let span = span.merge(&self.previous_span());
+            Ok(Node::new(Decl::Union(UnionType {
+                name: name,
+                vars: vars,
+                cases: cases,
+            }), span))
+        }
+    }
+
+    fn record(&mut self) -> ParseResult<Vec<(Node<String>, Node<Type<RawSymbol>>)>> {
+        let mut fields = Vec::new();
+        while !self.eat(Token::CloseBrace) {
+            let name = try!(self.eat_unqualified_name());
+            try!(self.expect(Token::Colon));
+            let type_ = try!(self.type_());
+            fields.push((name, type_));
+            if !self.eat(Token::Comma) {
+                if !self.eat(Token::CloseBrace) {
+                    return Err(());
+                } else {
+                    break;
+                }
+            }
+        }
+        
+        Ok(fields)
+    }
+
+    fn union_case(&mut self) -> ParseResult<Node<UnionCase<RawSymbol>>> {
+        let name = try!(self.eat_unqualified_name());
+        let mut args = Vec::new();
+        while let Some(result) = self.type_term() {
+            args.push(try!(result));
+        }
+
+        let span = if args.is_empty() {
+            name.span.clone()
+        } else {
+            name.span.merge(&args[args.len() - 1].span)
+        };
+
+        Ok(Node::new(UnionCase {
+            tag: name,
+            args: args,
+        }, span))
     }
 }
 

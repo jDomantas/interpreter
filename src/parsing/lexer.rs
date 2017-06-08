@@ -147,7 +147,7 @@ impl<'a> Lexer<'a> {
            ch.is_alphanumeric() || ch == '_' || ch == '.'
         });
 
-        if let Ok(number) = i64::from_str(&number) {
+        if let Ok(number) = u64::from_str(&number) {
             return Spanned::new(Token::Int(number), span);
         }
 

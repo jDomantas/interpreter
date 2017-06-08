@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::iter::Peekable;
 use position::{Span, Spanned, DUMMY_SPAN};
-use parsing::tokens::Token;
+use parsing::tokens::{Token, TokenKind};
 use ast::{Expr, Literal, Pattern, CaseBranch, Node, LetDecl, Def, TypeAnnot, Scheme, Type, RawSymbol};
 
 
@@ -10,65 +10,11 @@ pub fn parse<I: Iterator<Item=Spanned<Token>>>(_tokens: I) -> ! {
     unimplemented!()
 }
 
-#[derive(PartialEq, Debug, Clone)]
-enum TokenKind {
-    Token(Token),
-    Ident,
-    UnqualifiedName,
-    VarName,
-    Literal,
-    Operator,
-}
-
 type ExprNode = Node<Expr<RawSymbol>>;
 type PatternNode = Node<Pattern<RawSymbol>>;
 type TypeNode = Node<Type<RawSymbol>>;
 
-fn error_expr_node() -> ExprNode {
-    Node::new(Expr::Error, DUMMY_SPAN.clone())
-}
-
-fn error_pattern_node() -> PatternNode {
-    Node::new(Pattern::Error, DUMMY_SPAN.clone())
-}
-
-type ParseResult<T> = Result<T, T>;
-
-enum MaybeParsed<T> {
-    Ok(T),
-    Err(T),
-    Empty,
-}
-
-impl<T> MaybeParsed<T> {
-    fn from_result(result: ParseResult<T>) -> MaybeParsed<T> {
-        match result {
-            Ok(x) => MaybeParsed::Ok(x),
-            Err(x) => MaybeParsed::Err(x),
-        }
-    }
-
-    fn map<U, F: FnOnce(T) -> U>(self, f: F) -> MaybeParsed<U> {
-        match self {
-            MaybeParsed::Ok(x) => MaybeParsed::Ok(f(x)),
-            MaybeParsed::Err(x) => MaybeParsed::Err(f(x)),
-            MaybeParsed::Empty => MaybeParsed::Empty,
-        }
-    }
-
-    fn is_ok(&self) -> bool {
-        match *self {
-            MaybeParsed::Ok(_) => true,
-            _ => false,
-        }
-    }
-}
-
-enum MaybeParsedType {
-    Ok(Node<Type<RawSymbol>>),
-    Err,
-    Empty,
-}
+type ParseResult<T> = Result<T, ()>;
 
 struct ParseError;
 
@@ -307,17 +253,17 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         }
     }
     
-    fn expr_term(&mut self) -> MaybeParsed<ExprNode> {
+    fn expr_term(&mut self) -> Option<ParseResult<ExprNode>> {
         match self.eat_symbol() {
             Some(Spanned { value, span }) => {
-                return MaybeParsed::Ok(Node::new(Expr::Ident(value), span));
+                return Some(Ok(Node::new(Expr::Ident(value), span)));
             }
             None => { }
         }
 
         match self.eat_literal() {
             Some(Spanned { value, span }) => {
-                return MaybeParsed::Ok(Node::new(Expr::Literal(value), span));
+                return Some(Ok(Node::new(Expr::Literal(value), span)));
             }
             None => { }
         }
@@ -337,14 +283,14 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
                                 // TODO: make sectioned operator
                                 unimplemented!()
                             }
-                            Err(_) => return MaybeParsed::Err(error_expr_node()),
+                            Err(_) => return Some(Err(())),
                         }
                     }
                 }
                 None => {
                     match self.expr(true) {
                         Ok(expr) => expr,
-                        Err(expr) => return MaybeParsed::Err(expr),
+                        Err(_) => return Some(Err(())),
                     }
                 }
             };
@@ -352,15 +298,13 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
             if self.eat(Token::CloseParen) {
                 let node_span = start_span.merge(&self.previous_span());
                 let expr = Expr::Parenthesised(Box::new(expr));
-                return MaybeParsed::Ok(Node::new(expr, node_span));
+                return Some(Ok(Node::new(expr, node_span)));
             } else if self.eat(Token::Comma) {
                 // TODO: parse tuple
                 unimplemented!()
             } else {
-                // we need to have error node somewhere here
-                // so that subsequent passes would ignore this error
                 self.emit_error();
-                return MaybeParsed::Err(error_expr_node());
+                return Some(Err(()));
             }
         }
 
@@ -369,36 +313,30 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
             panic!("list literals are not implemented");
         }
 
-        MaybeParsed::Empty
+        None
     }
 
     fn application(&mut self) -> ParseResult<ExprNode> {
         let function = match self.expr_term() {
-            MaybeParsed::Ok(expr) => expr,
-            MaybeParsed::Empty => {
+            Some(Ok(expr)) => expr,
+            None => {
                 self.emit_error();
-                return Err(error_expr_node());
+                return Err(());
             }
-            MaybeParsed::Err(expr) => return Err(expr),
+            Some(Err(_)) => return Err(()),
         };
         
         let mut args = Vec::new();
-        let mut is_ok = true;
-        let mut end_span = function.span.clone();
+        let mut span = function.span.clone();
 
-        loop {
-            match self.expr_term() {
-                MaybeParsed::Ok(expr) => {
-                    end_span = expr.span.clone();
+        while let Some(result) = self.expr_term() {
+            match result {
+                Ok(expr) => {
+                    span = span.merge(&expr.span);
                     args.push(expr);
                 }
-                MaybeParsed::Empty => {
-                    break;
-                }
-                MaybeParsed::Err(expr) => {
-                    args.push(expr);
-                    is_ok = false;
-                    break;
+                Err(_) => {
+                    return Err(());
                 }
             }
         }
@@ -406,15 +344,10 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         let node = if args.is_empty() {
             function
         } else {
-            let span = function.span.merge(&end_span);
             Node::new(Expr::Apply(Box::new(function), args), span)
         };
 
-        if is_ok {
-            Ok(node)
-        } else {
-            Err(node)
-        }
+        Ok(node)
     }
 
     fn expr_operation(&mut self, mut can_section: bool) -> ParseResult<ExprNode> {
@@ -444,13 +377,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
                     let lhs = Box::new(result);
                     result = Node::new(Expr::Infix(lhs, op, rhs), span);
                 }
-                Err(rhs) => {
-                    let span = result.span.merge(&rhs.span);
-                    let rhs = Box::new(rhs);
-                    let op = Node::new(RawSymbol::Unqualified(operator.value), operator.span);
-                    let lhs = Box::new(result);
-                    return Err(Node::new(Expr::Infix(lhs, op, rhs), span));
-                }
+                Err(_) => return Err(()),
             }
         }
     }
@@ -471,22 +398,22 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         }
     }
 
-    fn pattern_term(&mut self) -> MaybeParsed<PatternNode> {
+    fn pattern_term(&mut self) -> Option<ParseResult<PatternNode>> {
         if self.eat(Token::Underscore) {
             let span = self.previous_span();
-            return MaybeParsed::Ok(Node::new(Pattern::Wildcard, span));
+            return Some(Ok(Node::new(Pattern::Wildcard, span)));
         }
 
         match self.eat_symbol() {
             Some(Spanned { value, span }) => {
-                return MaybeParsed::Ok(Node::new(Pattern::from_symbol(value, span.clone()), span));
+                return Some(Ok(Node::new(Pattern::from_symbol(value, span.clone()), span)));
             }
             None => { }
         }
 
         match self.eat_literal() {
             Some(Spanned { value, span }) => {
-                return MaybeParsed::Ok(Node::new(Pattern::Literal(value), span));
+                return Some(Ok(Node::new(Pattern::Literal(value), span)));
             }
             None => { }
         }
@@ -496,21 +423,19 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
             
             let pattern = match self.pattern() {
                 Ok(pattern) => pattern,
-                Err(pattern) => return MaybeParsed::Err(pattern),
+                Err(_) => return Some(Err(())),
             };
             
             if self.eat(Token::CloseParen) {
                 let node_span = start_span.merge(&self.previous_span());
                 let pattern = Pattern::Parenthesised(Box::new(pattern));
-                return MaybeParsed::Ok(Node::new(pattern, node_span));
+                return Some(Ok(Node::new(pattern, node_span)));
             } else if self.eat(Token::Comma) {
                 // TODO: parse tuple pattern
                 unimplemented!()
             } else {
-                // we need to have error node somewhere here
-                // so that subsequent passes would ignore this error
                 self.emit_error();
-                return MaybeParsed::Err(error_pattern_node());
+                return Some(Err(()));
             }
         }
 
@@ -519,14 +444,14 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
             panic!("list literals are not implemented");
         }
 
-        MaybeParsed::Empty
+        None
     }
 
     fn deconstruct(&mut self) -> ParseResult<PatternNode> {
         let tag_node = match self.eat_symbol() {
             Some(Spanned { value, span }) => {
                 match Pattern::from_symbol(value, span.clone()) {
-                    p @ Pattern::Var(_) => {
+                    p@Pattern::Var(_) => {
                         return Ok(Node::new(p, span));
                     }
                     Pattern::Deconstruct(ctor, _) => {
@@ -539,54 +464,45 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
             }
             None => {
                 return match self.pattern_term() {
-                    MaybeParsed::Ok(pattern) => Ok(pattern),
-                    MaybeParsed::Err(pattern) => Err(pattern),
-                    MaybeParsed::Empty => {
+                    Some(Ok(pattern)) => Ok(pattern),
+                    Some(Err(_)) => Err(()),
+                    None => {
                         self.emit_error();
-                        Err(error_pattern_node())
+                        Err(())
                     }
                 };
             }
         };
 
         let mut args = Vec::new();
-        let mut end_span = tag_node.span.clone();
-        let mut is_ok = true;
+        let mut span = tag_node.span.clone();
 
-        loop {
-            match self.pattern_term() {
-                MaybeParsed::Ok(pattern) => {
-                    end_span = pattern.span.clone();
+        while let Some(result) = self.pattern_term() {
+            match result {
+                Ok(pattern) => {
+                    span = span.merge(&pattern.span);
                     args.push(pattern);
                 }
-                MaybeParsed::Err(pattern) => {
-                    args.push(pattern);
-                    is_ok = false;
-                    break;
+                Err(_) => {
+                    return Err(());
                 }
-                MaybeParsed::Empty => break,
             }
         }
 
-        let span = tag_node.span.merge(&end_span);
         let pattern = Node::new(Pattern::Deconstruct(tag_node, args), span);
-        if is_ok {
-            if self.eat(Token::As) {
-                match self.eat_unqualified_name() {
-                    Some(Spanned { value, span }) => {
-                        let node_span = pattern.span.merge(&span);
-                        let pattern = Pattern::As(Box::new(pattern), Node::new(value, span));
-                        Ok(Node::new(pattern, node_span))
-                    }
-                    None => {
-                        Err(pattern)
-                    }
+        if self.eat(Token::As) {
+            match self.eat_unqualified_name() {
+                Some(Spanned { value, span }) => {
+                    let node_span = pattern.span.merge(&span);
+                    let pattern = Pattern::As(Box::new(pattern), Node::new(value, span));
+                    Ok(Node::new(pattern, node_span))
                 }
-            } else {
-                Ok(pattern)
+                None => {
+                    Err(())
+                }
             }
         } else {
-            Err(pattern)
+            Ok(pattern)
         }
     }
 
@@ -610,12 +526,8 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
                     let lhs = Box::new(result);
                     result = Node::new(Pattern::Infix(lhs, op, rhs), span);
                 }
-                Err(rhs) => {
-                    let span = result.span.merge(&rhs.span);
-                    let rhs = Box::new(rhs);
-                    let op = Node::new(RawSymbol::Unqualified(operator.value), operator.span);
-                    let lhs = Box::new(result);
-                    return Err(Node::new(Pattern::Infix(lhs, op, rhs), span));
+                Err(_) => {
+                    return Err(());
                 }
             }
         }
@@ -628,14 +540,14 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         
         if !self.eat(Token::Then) {
             self.emit_error();
-            return Err(error_expr_node());
+            return Err(());
         }
 
         let then_branch = try!(self.expr(false));
 
         if !self.eat(Token::Else) {
             self.emit_error();
-            return Err(error_expr_node());
+            return Err(());
         }
 
         let else_branch = try!(self.expr(false));
@@ -651,24 +563,21 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         let start_span = self.previous_span();
 
         let mut params = Vec::new();
-        loop {
-            match self.pattern_term() {
-                MaybeParsed::Ok(pattern) => params.push(pattern),
-                MaybeParsed::Err(_) => return Err(error_expr_node()),
-                MaybeParsed::Empty => {
-                    if params.is_empty() {
-                        self.emit_error();
-                        return Err(error_expr_node());
-                    } else {
-                        break;
-                    }
-                }
+        while let Some(result) = self.pattern_term() {
+            match result {
+                Ok(pattern) => params.push(pattern),
+                Err(_) => return Err(()),
             }
+        }
+
+        if params.is_empty() {
+            self.emit_error();
+            return Err(());
         }
 
         if !self.eat(Token::Arrow) {
             self.emit_error();
-            return Err(error_expr_node());
+            return Err(());
         }
 
         match self.expr(false) {
@@ -676,27 +585,27 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
                 let span = start_span.merge(&expr.span);
                 Ok(Node::new(Expr::Lambda(params, Box::new(expr)), span))
             }
-            Err(expr) => {
-                let span = start_span.merge(&expr.span);
-                Err(Node::new(Expr::Lambda(params, Box::new(expr)), span))
+            Err(_) => {
+                Err(())
             }
         }
     }
 
     fn case(&mut self) -> ParseResult<ExprNode> {
+        let mut span = self.previous_span();
+
         let value = match self.expr(false) {
             Ok(expr) => expr,
-            Err(_) => return Err(error_expr_node()),
+            Err(_) => return Err(()),
         };
 
         if !self.eat(Token::Of) {
             self.emit_error();
-            return Err(error_expr_node());
+            return Err(());
         }
 
         let old_indent = self.align_on_next();
         let mut branches = Vec::new();
-        let mut span = self.previous_span();
 
         loop {
             self.accept_aligned = true;
@@ -708,7 +617,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
                     self.emit_error();
                     self.current_indent = old_indent;
                     self.accept_aligned = false;
-                    return Err(error_expr_node());
+                    return Err(());
                 } else {
                     break;
                 }
@@ -719,9 +628,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
                     span = span.merge(&branch.span);
                     branches.push(branch);
                 }
-                Err(branch) => {
-                    span = span.merge(&branch.span);
-                    branches.push(branch);
+                Err(_) => {
                     if !self.skip_to_aligned() {
                         break;
                     }
@@ -740,39 +647,20 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         
         let pattern = match self.pattern() {
             Ok(pattern) => pattern,
-            Err(pattern) => {
-                let span = pattern.span.clone();
-                return Err(Node::new(CaseBranch {
-                    pattern: pattern,
-                    value: error_expr_node(),
-                    guard: None,
-                }, span));
-            }
+            Err(_) => return Err(()),
         };
 
         let guard = if self.eat(Token::If) {
             match self.expr(false) {
                 Ok(expr) => Some(expr),
-                Err(expr) => {
-                    let span = pattern.span.merge(&expr.span);
-                    return Err(Node::new(CaseBranch {
-                        pattern: pattern,
-                        value: error_expr_node(),
-                        guard: Some(expr),
-                    }, span));
-                }
+                Err(_) => return Err(()),
             }
         } else {
             None
         };
 
         if !self.eat(Token::Arrow) {
-            let span = pattern.span.clone();
-            return Err(Node::new(CaseBranch {
-                pattern: pattern,
-                value: error_expr_node(),
-                guard: None,
-            }, span));
+            return Err(());
         }
 
         match self.expr(false) {
@@ -784,14 +672,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
                     guard: guard,
                 }, span))
             }
-            Err(expr) => {
-                let span = pattern.span.merge(&expr.span);
-                Err(Node::new(CaseBranch {
-                    pattern: pattern,
-                    value: expr,
-                    guard: guard,
-                }, span))
-            }
+            Err(_) => Err(()),
         }
     }
 
@@ -811,25 +692,18 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
                     self.emit_error();
                     self.current_indent = old_indent;
                     self.accept_aligned = false;
-                    return Err(error_expr_node());
+                    return Err(());
                 } else {
                     break;
                 }
             }
 
             match self.let_decl() {
-                MaybeParsed::Ok(decl) => {
+                Ok(decl) => {
                     span = span.merge(&decl.span);
                     decls.push(decl);
                 }
-                MaybeParsed::Err(decl) => {
-                    span = span.merge(&decl.span);
-                    decls.push(decl);
-                    if !self.skip_to_aligned() {
-                        break;
-                    }
-                }
-                MaybeParsed::Empty => {
+                Err(_) => {
                     if !self.skip_to_aligned() {
                         break;
                     }
@@ -842,7 +716,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
 
         if !ate_in && !self.eat(Token::In) {
             self.emit_error();
-            return Err(error_expr_node());
+            return Err(());
         }
 
         match self.expr(false) {
@@ -850,14 +724,13 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
                 span = span.merge(&expr.span);
                 Ok(Node::new(Expr::Let(decls, Box::new(expr)), span))
             }
-            Err(expr) => {
-                span = span.merge(&expr.span);
-                Err(Node::new(Expr::Let(decls, Box::new(expr)), span))
+            Err(_) => {
+                Err(())
             }
         }
     }
 
-    fn let_decl(&mut self) -> MaybeParsed<Node<LetDecl<RawSymbol>>> {
+    fn let_decl(&mut self) -> ParseResult<Node<LetDecl<RawSymbol>>> {
         let is_paren = match self.peek() {
             Some(&Spanned { value: Token::OpenParen, .. }) => true,
             _ => false,
@@ -868,7 +741,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         };
 
         if is_paren && is_op {
-            debug_assert!(self.eat(Token::OpenParen));
+            assert!(self.eat(Token::OpenParen));
             let symbol = match self.consume() {
                 Some(Spanned { value: Token::Operator(op), span }) => {
                     Node::new(op, span)
@@ -882,7 +755,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
                 self.type_or_def(symbol)
             } else {
                 self.emit_error();
-                MaybeParsed::Empty
+                Err(())
             }
         } else if is_paren || is_op {
             self.pattern_assign().map(|n| n.map(LetDecl::Def))
@@ -894,50 +767,50 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
                 None => {
                     debug_assert!(!self.eat(Token::OpenParen));
                     self.emit_error();
-                    MaybeParsed::Empty
+                    Err(())
                 }
             }
         }
     }
 
-    fn scheme(&mut self) -> Option<Node<Scheme<RawSymbol>>> {
+    fn scheme(&mut self) -> ParseResult<Node<Scheme<RawSymbol>>> {
         if self.eat(Token::OpenParen) {
             let mut constraints = Vec::new();
             loop {
                 let var = match self.eat_var_name() {
                     Some(Spanned { value, span }) => Node::new(value, span),
-                    None => return None,
+                    None => return Err(()),
                 };
                 if !self.eat(Token::Colon) {
                     self.emit_error();
-                    return None;
+                    return Err(());
                 }
                 let type_ = match self.type_() {
-                    Some(type_) => type_,
-                    None => return None,
+                    Ok(type_) => type_,
+                    Err(_) => return Err(()),
                 };
                 if self.eat(Token::CloseParen) {
                     break;
                 } else if !self.eat(Token::Comma) {
                     self.emit_error();
-                    return None;
+                    return Err(());
                 }
                 constraints.push((var, type_));
             }
             if !self.eat(Token::FatArrow) {
                 self.emit_error();
-                return None;
+                return Err(());
             }
             match self.type_() {
-                Some(type_) => {
+                Ok(type_) => {
                     let span = constraints[0].0.span.merge(&type_.span);
                     let scheme = Scheme {
                         vars: constraints,
                         type_: type_,
                     };
-                    Some(Node::new(scheme, span))
+                    Ok(Node::new(scheme, span))
                 }
-                None => None,
+                Err(_) => Err(()),
             }
         } else {
             self.type_().map(|type_| {
@@ -951,99 +824,96 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         }
     }
 
-    fn type_term(&mut self) -> MaybeParsedType {
+    fn type_term(&mut self) -> Option<ParseResult<TypeNode>> {
         match self.eat_symbol() {
             Some(Spanned { value, span }) => {
-                return MaybeParsedType::Ok(Node::new(Type::from_symbol(value), span));
+                return Some(Ok(Node::new(Type::from_symbol(value), span)));
             }
             _ => { }
         }
 
         if self.eat(Token::OpenParen) {
             let type_ = match self.type_() {
-                Some(type_) => type_,
-                None => return MaybeParsedType::Err,
+                Ok(type_) => type_,
+                Err(()) => return Some(Err(())),
             };
 
             if self.eat(Token::Comma) {
                 // TODO: parse tuple type
                 unimplemented!()
             } else if self.eat(Token::CloseParen) {
-                MaybeParsedType::Ok(type_)
+                Some(Ok(type_))
             } else {
                 self.emit_error();
-                MaybeParsedType::Err
+                Some(Err(()))
             }
         } else {
-            MaybeParsedType::Empty
+            None
         }
     }
 
-    fn type_application(&mut self) -> Option<TypeNode> {
+    fn type_application(&mut self) -> ParseResult<TypeNode> {
         let mut result = match self.type_term() {
-            MaybeParsedType::Ok(type_) => type_,
-            MaybeParsedType::Err |
-            MaybeParsedType::Empty => return None,
+            Some(Ok(type_)) => type_,
+            Some(Err(_)) | None => return Err(()),
         };
 
-        loop {
-            match self.type_term() {
-                MaybeParsedType::Ok(type_) => {
+        while let Some(res) = self.type_term() {
+            match res {
+                Ok(type_) => {
                     let span = result.span.merge(&type_.span);
                     result = Node::new(Type::Apply(Box::new(result), Box::new(type_)), span);
                 }
-                MaybeParsedType::Err => {
-                    return None;
-                }
-                MaybeParsedType::Empty => {
-                    return Some(result);
+                Err(_) => {
+                    return Err(());
                 }
             }
         }
+
+        Ok(result)
     }
 
-    fn type_(&mut self) -> Option<TypeNode> {
+    fn type_(&mut self) -> ParseResult<TypeNode> {
         let arg = match self.type_application() {
-            Some(type_) => type_,
-            None => return None,
+            Ok(type_) => type_,
+            Err(_) => return Err(()),
         };
 
         if self.eat(Token::Arrow) {
             match self.type_() {
-                Some(result) => {
+                Ok(result) => {
                     let span = arg.span.merge(&result.span);
-                    Some(Node::new(Type::Function(Box::new(arg), Box::new(result)), span))
+                    Ok(Node::new(Type::Function(Box::new(arg), Box::new(result)), span))
                 }
-                None => {
-                    None
+                Err(()) => {
+                    Err(())
                 }
             }
         } else {
-            Some(arg)
+            Ok(arg)
         }
     }
 
-    fn pattern_assign(&mut self) -> MaybeParsed<Node<Def<RawSymbol>>> {
+    fn pattern_assign(&mut self) -> ParseResult<Node<Def<RawSymbol>>> {
         let first = match self.pattern_term() {
-            MaybeParsed::Ok(pattern) => pattern,
-            MaybeParsed::Err(_) => return MaybeParsed::Empty,
-            MaybeParsed::Empty => return MaybeParsed::Empty,
+            Some(Ok(pattern)) => pattern,
+            Some(Err(_)) | None => return Err(()),
         };
 
         if self.eat(Token::Equals) {
             match self.expr(false) {
                 Ok(expr) => {
                     let span = first.span.merge(&expr.span);
-                    MaybeParsed::Ok(Node::new(Def {
+                    Ok(Node::new(Def {
                         pattern: first,
-                        value: expr,
+                        value: Some(expr),
                     }, span))
                 }
-                Err(expr) => {
-                    let span = first.span.merge(&expr.span);
-                    MaybeParsed::Err(Node::new(Def {
+                Err(()) => {
+                    let span = first.span.clone();
+                    Ok(Node::new(Def {
                         pattern: first,
-                        value: expr,
+                        value: None,
                     }, span))
                 }
             }
@@ -1051,58 +921,53 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
             let (op, second) = match self.eat_operator() {
                 Some(Spanned { value, span }) => {
                     match self.pattern_term() {
-                        MaybeParsed::Ok(pattern) => (Node::new(value, span), pattern),
-                        MaybeParsed::Err(_) => return MaybeParsed::Empty,
-                        MaybeParsed::Empty => return MaybeParsed::Empty,
+                        Some(Ok(pattern)) => (Node::new(value, span), pattern),
+                        Some(Err(_)) | None => return Err(()),
                     }
                 }
-                None => return MaybeParsed::Empty,
+                None => return Err(()),
             };
 
             if !self.eat(Token::Equals) {
                 self.emit_error();
-                return MaybeParsed::Empty;
+                return Err(());
             }
 
             let pattern = op.map(Pattern::Var);
             let params = vec![first, second];
+            let span;
 
-            let (expr, is_ok) = match self.expr(false) {
-                Ok(expr) => (expr, true),
-                Err(expr) => (expr, false),
+            let expr = match self.expr(false) {
+                Ok(expr) => {
+                    let lambda_span = params[0].span.merge(&expr.span);
+                    span = lambda_span.clone();
+                    Some(Node::new(Expr::Lambda(params, Box::new(expr)), lambda_span))
+                }
+                Err(_) => {
+                    span = pattern.span.clone();
+                    None
+                }
             };
-
-            let lambda_span = params[0].span.merge(&expr.span);
-            let expr = Node::new(Expr::Lambda(params, Box::new(expr)), lambda_span);
-            let span = pattern.span.merge(&expr.span);
-
-            let def = Def {
+            
+            Ok(Node::new(Def {
                 pattern: pattern,
                 value: expr,
-            };
-
-            let node = Node::new(def, span);
-
-            if is_ok {
-                MaybeParsed::Ok(node)
-            } else {
-                MaybeParsed::Err(node)
-            }
+            }, span))
         }
     }
 
-    fn type_or_def(&mut self, symbol: Node<String>) -> MaybeParsed<Node<LetDecl<RawSymbol>>> {
+    fn type_or_def(&mut self, symbol: Node<String>) -> ParseResult<Node<LetDecl<RawSymbol>>> {
         if self.eat(Token::Colon) {
             match self.scheme() {
-                Some(scheme) => {
+                Ok(scheme) => {
                     let node_span = symbol.span.merge(&scheme.span);
-                    MaybeParsed::Ok(Node::new(LetDecl::Type(TypeAnnot {
+                    Ok(Node::new(LetDecl::Type(TypeAnnot {
                         value: symbol,
                         type_: scheme,
                     }), node_span))
                 }
-                None => {
-                    MaybeParsed::Empty
+                Err(_) => {
+                    Err(())
                 }
             }
         } else {
@@ -1110,53 +975,51 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
             let pattern = symbol.map(Pattern::Var);
             loop {
                 match self.pattern_term() {
-                    MaybeParsed::Ok(pattern) => params.push(pattern),
-                    MaybeParsed::Err(_) => {
+                    Some(Ok(pattern)) => params.push(pattern),
+                    Some(Err(_)) => {
                         let span = pattern.span.clone();
                         let def = LetDecl::Def(Def {
                             pattern: pattern,
-                            value: error_expr_node(),
+                            value: None,
                         });
-                        return MaybeParsed::Err(Node::new(def, span));
+                        return Ok(Node::new(def, span));
                     }
-                    MaybeParsed::Empty => {
+                    None => {
                         if self.eat(Token::Equals) {
                             break;
                         } else {
                             let span = pattern.span.clone();
                             let def = LetDecl::Def(Def {
                                 pattern: pattern,
-                                value: error_expr_node(),
+                                value: None,
                             });
-                            return MaybeParsed::Err(Node::new(def, span));
+                            return Ok(Node::new(def, span));
                         }
                     }
                 }
             }
-
-            let (expr, is_ok) = match self.expr(false) {
-                Ok(expr) => (expr, true),
-                Err(expr) => (expr, false),
+            
+            let span;
+            let expr = match self.expr(false) {
+                Ok(expr) => {
+                    span = pattern.span.merge(&expr.span);
+                    if params.is_empty() {
+                        Some(expr)
+                    } else {
+                        let lambda_span = params[0].span.merge(&expr.span);
+                        Some(Node::new(Expr::Lambda(params, Box::new(expr)), lambda_span))
+                    }
+                }
+                Err(_) => {
+                    span = pattern.span.clone();
+                    None
+                }
             };
-
-            let expr = if !params.is_empty() {
-                let span = params[0].span.merge(&expr.span);
-                Node::new(Expr::Lambda(params, Box::new(expr)), span)
-            } else {
-                expr
-            };
-
-            let span = pattern.span.merge(&expr.span);
-            let node = Node::new(LetDecl::Def(Def {
+            
+            Ok(Node::new(LetDecl::Def(Def {
                 pattern: pattern,
                 value: expr,
-            }), span);
-
-            if is_ok {
-                MaybeParsed::Ok(node)
-            } else {
-                MaybeParsed::Err(node)
-            }
+            }), span))
         }
     }
 
@@ -1164,40 +1027,34 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         let old_indent = self.align_on_next();
 
         match self.do_statement() {
-            MaybeParsed::Ok(expr) => {
+            Some(Ok(expr)) => {
                 self.current_indent = old_indent;
                 Ok(expr)
             }
-            MaybeParsed::Err(expr) => {
+            Some(Err(_)) => {
                 self.current_indent = old_indent;
-                Err(expr)
+                Err(())
             }
-            MaybeParsed::Empty => {
+            None => {
                 self.emit_error();
                 self.current_indent = old_indent;
-                Err(error_expr_node())
+                Err(())
             }
         }
     }
 
-    fn do_statement(&mut self) -> MaybeParsed<ExprNode> {
+    fn do_statement(&mut self) -> Option<ParseResult<ExprNode>> {
         self.accept_aligned = true;
         if self.eat(Token::Let) {
-            return match self.do_let() {
-                Ok(expr) => MaybeParsed::Ok(expr),
-                Err(expr) => MaybeParsed::Err(expr),
-            };
+            return Some(self.do_let());
         } else if self.eat(Token::If) {
-            return match self.do_if() {
-                Ok(expr) => MaybeParsed::Ok(expr),
-                Err(expr) => MaybeParsed::Err(expr),
-            };
+            return Some(self.do_if());
         }
         self.expected_tokens.push(TokenKind::Token(Token::OpenParen));
         self.expected_tokens.push(TokenKind::Ident);
         self.expected_tokens.push(TokenKind::VarName);
         if self.peek().is_none() {
-            return MaybeParsed::Empty;
+            return None;
         }
         if self.peek().map(|t| &t.value) == Some(&Token::OpenParen) ||
             self.peek2().map(|t| &t.value) == Some(&Token::BackArrow) {
@@ -1206,17 +1063,19 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
                 Ok(pattern) => {
                     if !self.eat(Token::BackArrow) {
                         self.emit_error();
-                        return MaybeParsed::Err(error_expr_node());
+                        return Some(Err(()));
                     }
                     let arrow_span = self.previous_span();
                     match self.expr(false) {
                         Ok(expr) => {
-                            let (rest, is_ok) = match self.do_statement() {
-                                MaybeParsed::Ok(rest) => (rest, true),
-                                MaybeParsed::Err(rest) => (rest, false),
-                                MaybeParsed::Empty => {
+                            let rest = match self.do_statement() {
+                                Some(Ok(rest)) => rest,
+                                Some(Err(_)) => {
+                                    return Some(Err(()));
+                                }
+                                None => {
                                     self.emit_error();
-                                    return MaybeParsed::Err(error_expr_node());
+                                    return Some(Err(()));
                                 }
                             };
                             let apply_span = pattern.span.merge(&rest.span);
@@ -1226,28 +1085,24 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
                             let bind = RawSymbol::Trusted("Core.Monad".to_string(), "bind".to_string());
                             let bind_node = Node::new(Expr::Ident(bind), arrow_span);
                             let apply = Node::new(Expr::Apply(Box::new(bind_node), vec![expr, lambda]), apply_span);
-                            if is_ok {
-                                MaybeParsed::Ok(apply)
-                            } else {
-                                MaybeParsed::Err(apply)
-                            }
+                            Some(Ok(apply))
                         }
                         Err(_) => {
-                            MaybeParsed::Err(error_expr_node())
+                            Some(Err(()))
                         }
                     }
                 }
                 Err(_) => {
-                    MaybeParsed::Err(error_expr_node())
+                    Some(Err(()))
                 }
             }
         } else {
             match self.expr(false) {
                 Ok(expr) => {
-                    let (rest, is_ok) = match self.do_statement() {
-                        MaybeParsed::Ok(expr) => (expr, true),
-                        MaybeParsed::Err(expr) => (expr, false),
-                        MaybeParsed::Empty => return MaybeParsed::Ok(expr),
+                    let rest = match self.do_statement() {
+                        Some(Ok(expr)) => expr,
+                        Some(Err(_)) => return Some(Err(())),
+                        None => return Some(Ok(expr)),
                     };
                     let apply_span = expr.span.merge(&rest.span);
                     let args = vec![Node::new(Pattern::Wildcard, DUMMY_SPAN.clone())];
@@ -1256,14 +1111,10 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
                     let bind = RawSymbol::Trusted("Core.Monad".to_string(), "bind".to_string());
                     let bind_node = Node::new(Expr::Ident(bind), DUMMY_SPAN.clone());
                     let apply = Node::new(Expr::Apply(Box::new(bind_node), vec![expr, lambda]), apply_span);
-                    if is_ok {
-                        MaybeParsed::Ok(apply)
-                    } else {
-                        MaybeParsed::Err(apply)
-                    }
+                    Some(Ok(apply))
                 }
                 Err(_) => {
-                    MaybeParsed::Err(error_expr_node())
+                    Some(Err(()))
                 }
             }
         }
@@ -1274,15 +1125,15 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
 
         let cond = match self.expr(false) {
             Ok(expr) => expr,
-            Err(_) => return Err(error_expr_node()),
+            Err(_) => return Err(()),
         };
 
-        let (rest, is_ok) = match self.do_statement() {
-            MaybeParsed::Ok(rest) => (rest, true),
-            MaybeParsed::Err(rest) => (rest, false),
-            MaybeParsed::Empty => {
+        let rest = match self.do_statement() {
+            Some(Ok(rest)) => rest,
+            Some(Err(_)) => return Err(()),
+            None => {
                 self.emit_error();
-                return Err(error_expr_node());
+                return Err(());
             }
         };
 
@@ -1290,41 +1141,29 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         let empty_node = Node::new(Expr::Ident(empty), DUMMY_SPAN.clone());
         let span = if_span.merge(&rest.span);
         let if_ = Expr::If(Box::new(cond), Box::new(rest), Box::new(empty_node));
-        if is_ok {
-            Ok(Node::new(if_, span))
-        } else {
-            Err(Node::new(if_, span))
-        }
+        Ok(Node::new(if_, span))
     }
 
     fn do_let(&mut self) -> ParseResult<ExprNode> {
         let let_span = self.previous_span();
 
         let def = match self.pattern_assign() {
-            MaybeParsed::Ok(def) => def.map(LetDecl::Def),
-            MaybeParsed::Err(_) => return Err(error_expr_node()),
-            MaybeParsed::Empty => {
-                self.emit_error();
-                return Err(error_expr_node());
-            }
+            Ok(def) => def.map(LetDecl::Def),
+            Err(_) => return Err(()),
         };
 
-        let (rest, is_ok) = match self.do_statement() {
-            MaybeParsed::Ok(rest) => (rest, true),
-            MaybeParsed::Err(rest) => (rest, false),
-            MaybeParsed::Empty => {
+        let rest = match self.do_statement() {
+            Some(Ok(rest)) => rest,
+            Some(Err(_)) => return Err(()),
+            None => {
                 self.emit_error();
-                return Err(error_expr_node());
+                return Err(());
             }
         };
 
         let span = let_span.merge(&rest.span);
         let e = Expr::Let(vec![def], Box::new(rest));
-        if is_ok {
-            Ok(Node::new(e, span))
-        } else {
-            Err(Node::new(e, span))
-        }
+        Ok(Node::new(e, span))
     }
 }
 
@@ -1391,9 +1230,6 @@ mod tests {
                     write_expr(&arg.node, output);
                 }
                 output.push(')');
-            }
-            Expr::Error => {
-                panic!("found error node");
             }
             Expr::Ident(ref symbol) => {
                 write_symbol(symbol, output);
@@ -1489,9 +1325,6 @@ mod tests {
                 }
                 output.push(')');
             }
-            Pattern::Error => {
-                panic!("found error pattern node");
-            }
             Pattern::Infix(ref lhs, ref op, ref rhs) => {
                 output.push_str("(opdec ");
                 write_symbol(&op.node, output);
@@ -1525,7 +1358,7 @@ mod tests {
                 output.push_str("(def ");
                 write_pattern(&pattern.node, output);
                 output.push(' ');
-                write_expr(&value.node, output);
+                write_expr(&value.as_ref().unwrap().node, output);
                 output.push(')');
             }
             LetDecl::Type(TypeAnnot { ref value, ref type_ }) => {

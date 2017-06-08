@@ -55,7 +55,6 @@ pub enum Expr<Sym> {
     Lambda(Vec<Node<Pattern<Sym>>>, Box<Node<Expr<Sym>>>),
     Case(Box<Node<Expr<Sym>>>, Vec<Node<CaseBranch<Sym>>>),
     Let(Vec<Node<LetDecl<Sym>>>, Box<Node<Expr<Sym>>>),
-    Error,
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -74,7 +73,6 @@ pub enum Pattern<Sym> {
     Infix(Box<Node<Pattern<Sym>>>, Node<Sym>, Box<Node<Pattern<Sym>>>),
     As(Box<Node<Pattern<Sym>>>, Node<String>),
     Parenthesised(Box<Node<Pattern<Sym>>>),
-    Error,
 }
 
 impl Pattern<RawSymbol> {
@@ -104,7 +102,8 @@ pub enum LetDecl<Sym> {
 #[derive(PartialEq, Debug, Clone)]
 pub struct Def<Sym> {
     pub pattern: Node<Pattern<Sym>>,
-    pub value: Node<Expr<Sym>>,
+    // if none, then value could not be parsed completely
+    pub value: Option<Node<Expr<Sym>>>,
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -167,7 +166,8 @@ pub enum Associativity {
 pub struct TypeAlias<Sym> {
     pub name: Node<String>,
     pub vars: Vec<Node<String>>,
-    pub type_: Node<Type<Sym>>,
+    // if none, then type could not be parsed completely
+    pub type_: Option<Node<Type<Sym>>>,
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -194,8 +194,8 @@ pub struct RecordType<Sym> {
 pub struct Trait<Sym> {
     pub name: Node<String>,
     pub vars: Vec<Node<String>>,
-    pub values: Vec<Node<TypeAnnot<Sym>>>,
     pub base_traits: Vec<Node<Type<Sym>>>,
+    pub values: Vec<Node<TypeAnnot<Sym>>>,
 }
 
 #[derive(PartialEq, Debug, Clone)]

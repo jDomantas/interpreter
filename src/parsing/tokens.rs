@@ -55,3 +55,13 @@ impl Token {
         }
     }
 }
+
+#[derive(PartialEq, Clone, Debug)]
+pub enum TokenKind {
+    Token(Token),
+    Ident,
+    UnqualifiedName,
+    VarName,
+    Literal,
+    Operator,
+}

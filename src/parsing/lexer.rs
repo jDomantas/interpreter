@@ -16,6 +16,7 @@ pub fn lex(source: &str) -> Vec<Spanned<Token>> {
 
 struct Lexer<'a> {
     source: Peekable<Chars<'a>>,
+    current: Option<char>,
     line: usize,
     column: usize,
     panicking: bool,
@@ -23,20 +24,27 @@ struct Lexer<'a> {
 
 impl<'a> Lexer<'a> {
     fn new(source: &str) -> Lexer {
+        let mut chars = source.chars();
+        let current = chars.next();
         Lexer {
-            source: source.chars().peekable(),
+            source: chars.peekable(),
+            current: current,
             line: 1,
             column: 1,
             panicking: false,
         }
     }
 
-    fn peek(&mut self) -> Option<char> {
+    fn peek(&self) -> Option<char> {
+        self.current
+    }
+
+    fn peek2(&mut self) -> Option<char> {
         self.source.peek().map(|x| *x)
     }
 
     fn advance(&mut self) {
-        match self.source.next() {
+        match self.current {
             Some('\n') => {
                 self.line += 1;
                 self.column = 1;
@@ -46,6 +54,7 @@ impl<'a> Lexer<'a> {
             }
             None => { }
         }
+        self.current = self.source.next();
     }
 
     fn consume(&mut self) -> Option<char> {
@@ -85,7 +94,11 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn skip_block_comment(&mut self, opened_at: Span) {
+    fn skip_block_comment(&mut self) {
+        let start = self.current_position();
+        debug_assert!(self.consume() == Some('{'));
+        debug_assert!(self.consume() == Some('-'));
+        let opened_at = start.span_to(&self.current_position());
         let mut nesting = 1_usize;
         loop {
             match self.consume() {
@@ -111,19 +124,6 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn check_block_comment(&mut self) {
-        let position = self.current_position();
-        self.advance();
-        if self.check('-') {
-            let opened_at = position.span_to(&self.current_position());
-            self.skip_block_comment(opened_at);
-        } else {
-            let error_span = position.span_to(&position);
-            // TODO: invalid '{', report error?
-            panic!("unknown char at {:?}", error_span);
-        }
-    }
-
     fn collect_chars<F: FnMut(char) -> bool>(&mut self, mut can_take: F) -> (String, Span) {
         let start = self.current_position();
         let mut end = self.current_position();
@@ -146,6 +146,7 @@ impl<'a> Lexer<'a> {
         let (number, span) = self.collect_chars(|ch| {
            ch.is_alphanumeric() || ch == '_' || ch == '.'
         });
+        debug_assert!(!number.is_empty());
 
         if let Ok(number) = u64::from_str(&number) {
             return Spanned::new(Token::Int(number), span);
@@ -162,6 +163,7 @@ impl<'a> Lexer<'a> {
     fn lex_ident(&mut self) -> Spanned<Token> {
         // TODO: lex idents with dots in names
         let (mut name, mut span) = self.collect_chars(is_symbol_char);
+        debug_assert!(!name.is_empty());
 
         if let Some(token) = ident_keyword(&name) {
             return Spanned::new(token, span);
@@ -173,6 +175,7 @@ impl<'a> Lexer<'a> {
             match self.peek() {
                 Some(ch) if is_symbol_char(ch) && !ch.is_digit(10) => {
                     let (segment, segment_span) = self.collect_chars(is_symbol_char);
+                    debug_assert!(!segment.is_empty());
                     if ident_keyword(&segment).is_some() {
                         // TODO: report error, keyword in path
                         panic!("keyword in path");
@@ -202,6 +205,12 @@ impl<'a> Lexer<'a> {
 
     fn lex_operator(&mut self) -> Spanned<Token> {
         let (op, span) = self.collect_chars(is_operator_char);
+        debug_assert!(!op.is_empty());
+
+        if self.peek() == Some('}') && op.chars().next_back() == Some('-') {
+            // end of comment before starting one
+            panic!("end of comment");
+        }
 
         Spanned::new(Token::Operator(op), span)
     }
@@ -230,6 +239,25 @@ impl<'a> Lexer<'a> {
                 }
                 '\\' => {
                     return Some(self.single_char_token(Token::Backslash));
+                }
+                '-' => {
+                    if self.peek2() == Some('-') {
+                        self.skip_line_comment();
+                    } else if self.peek2() == Some('}') {
+                        panic!("end of comment");
+                    } else {
+                        return Some(self.lex_operator());
+                    }
+                }
+                '{' => {
+                    if self.peek2() == Some('-') {
+                        self.skip_block_comment();
+                    } else {
+                        return Some(self.single_char_token(Token::OpenBrace));
+                    }
+                }
+                '}' => {
+                    return Some(self.single_char_token(Token::CloseBrace));
                 }
                 ch if ch.is_digit(10) => {
                     return Some(self.lex_number());

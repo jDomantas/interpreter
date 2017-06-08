@@ -161,11 +161,43 @@ impl<'a> Lexer<'a> {
 
     fn lex_ident(&mut self) -> Spanned<Token> {
         // TODO: lex idents with dots in names
-        let (ident, span) = self.collect_chars(|ch| {
-            ch.is_alphanumeric() || ch == '_'
-        });
+        let (mut name, mut span) = self.collect_chars(is_symbol_char);
 
-        Spanned::new(Token::Ident(RawSymbol::Unqualified(ident)), span)
+        if let Some(token) = ident_keyword(&name) {
+            return Spanned::new(token, span);
+        }
+
+        let mut path = String::new();
+
+        while self.check('.') {
+            match self.peek() {
+                Some(ch) if is_symbol_char(ch) && !ch.is_digit(10) => {
+                    let (segment, segment_span) = self.collect_chars(is_symbol_char);
+                    if ident_keyword(&segment).is_some() {
+                        // TODO: report error, keyword in path
+                        panic!("keyword in path");
+                    }
+                    if !path.is_empty() {
+                        path.push('.');
+                    }
+                    path.push_str(&name);
+                    name = segment;
+                    span = span.merge(&segment_span);
+                }
+                _ => {
+                    // TODO: report error, expected path to continue
+                    panic!("expected identifier");
+                }
+            }
+        }
+
+        let symbol = if path.is_empty() {
+            RawSymbol::Unqualified(name)
+        } else {
+            RawSymbol::Qualified(path, name)
+        };
+
+        Spanned::new(Token::Ident(symbol), span)
     }
 
     fn lex_operator(&mut self) -> Spanned<Token> {
@@ -236,6 +268,10 @@ impl<'a> Lexer<'a> {
         }
         None
     }
+}
+
+fn is_symbol_char(ch: char) -> bool {
+    ch.is_alphanumeric() || ch == '_'
 }
 
 fn is_operator_char(ch: char) -> bool {
@@ -324,6 +360,16 @@ mod tests {
             Token::Int(1),
             Token::Float(1.0),
             Token::Operator("+".to_string()),
+        ]);
+    }
+
+    #[test]
+    fn qualified_symbol_lexing() {
+        let tokens = lex_no_positions("foo bar.foo foo.baz.bar");
+        assert_eq!(tokens, vec![
+            Token::Ident(RawSymbol::Unqualified("foo".to_string())),
+            Token::Ident(RawSymbol::Qualified("bar".to_string(), "foo".to_string())),
+            Token::Ident(RawSymbol::Qualified("foo.baz".to_string(), "bar".to_string())),
         ]);
     }
 

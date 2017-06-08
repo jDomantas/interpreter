@@ -1,5 +1,6 @@
 use std::str::{Chars, FromStr};
 use std::iter::Peekable;
+use ast::RawSymbol;
 use parsing::tokens::Token;
 use position::{Position, Span, Spanned};
 
@@ -164,7 +165,7 @@ impl<'a> Lexer<'a> {
             ch.is_alphanumeric() || ch == '_'
         });
 
-        Spanned::new(Token::Ident(ident), span)
+        Spanned::new(Token::Ident(RawSymbol::Unqualified(ident)), span)
     }
 
     fn lex_operator(&mut self) -> Spanned<Token> {
@@ -287,10 +288,10 @@ fn special_operator(op: &str) -> Option<Token> {
 
 fn change_special(token: Token) -> Token {
     match token {
-        Token::Ident(ident) => {
-            match ident_keyword(&ident) {
+        Token::Ident(RawSymbol::Unqualified(name)) => {
+            match ident_keyword(&name) {
                 Some(token) => token,
-                None => Token::Ident(ident),
+                None => Token::Ident(RawSymbol::Unqualified(name)),
             }
         }
         Token::Operator(op) => {
@@ -305,6 +306,7 @@ fn change_special(token: Token) -> Token {
 
 #[cfg(test)]
 mod tests {
+    use ast::RawSymbol;
     use position::{Position, Span, Spanned};
     use parsing::tokens::Token;
     use parsing::lexer::lex;
@@ -317,8 +319,8 @@ mod tests {
     fn basic_lexing() {
         let tokens = lex_no_positions("a b 1 1.0 +");
         assert_eq!(tokens, vec![
-            Token::Ident("a".to_string()),
-            Token::Ident("b".to_string()),
+            Token::Ident(RawSymbol::Unqualified("a".to_string())),
+            Token::Ident(RawSymbol::Unqualified("b".to_string())),
             Token::Int(1),
             Token::Float(1.0),
             Token::Operator("+".to_string()),
@@ -354,7 +356,7 @@ mod tests {
         let tokens = lex("a =\n1");
         assert_eq!(tokens, vec![
             Spanned {
-                value: Token::Ident("a".to_string()),
+                value: Token::Ident(RawSymbol::Unqualified("a".to_string())),
                 span: Span {
                     start: Position { line: 1, column: 1 },
                     end: Position { line: 1, column: 1 }

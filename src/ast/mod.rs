@@ -45,101 +45,115 @@ pub enum Literal {
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub enum Expr {
-    Ident(String),
+pub enum Expr<Sym> {
+    Ident(Sym),
     Literal(Literal),
-    Apply(Box<Node<Expr>>, Vec<Node<Expr>>),
-    If(Box<Node<Expr>>, Box<Node<Expr>>, Box<Node<Expr>>),
-    Infix(Box<Node<Expr>>, Node<String>, Box<Node<Expr>>),
-    Parenthesised(Box<Node<Expr>>),
-    Lambda(Vec<Node<Pattern>>, Box<Node<Expr>>),
-    Case(Box<Node<Expr>>, Vec<Node<CaseBranch>>),
-    Let(Vec<Node<LetDecl>>, Box<Node<Expr>>),
+    Apply(Box<Node<Expr<Sym>>>, Vec<Node<Expr<Sym>>>),
+    If(Box<Node<Expr<Sym>>>, Box<Node<Expr<Sym>>>, Box<Node<Expr<Sym>>>),
+    Infix(Box<Node<Expr<Sym>>>, Node<Sym>, Box<Node<Expr<Sym>>>),
+    Parenthesised(Box<Node<Expr<Sym>>>),
+    Lambda(Vec<Node<Pattern<Sym>>>, Box<Node<Expr<Sym>>>),
+    Case(Box<Node<Expr<Sym>>>, Vec<Node<CaseBranch<Sym>>>),
+    Let(Vec<Node<LetDecl<Sym>>>, Box<Node<Expr<Sym>>>),
     Error,
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub struct CaseBranch {
-    pub pattern: Node<Pattern>,
-    pub value: Node<Expr>,
-    pub guard: Option<Node<Expr>>,
+pub struct CaseBranch<Sym> {
+    pub pattern: Node<Pattern<Sym>>,
+    pub value: Node<Expr<Sym>>,
+    pub guard: Option<Node<Expr<Sym>>>,
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub enum Pattern {
+pub enum Pattern<Sym> {
     Wildcard,
     Var(String),
     Literal(Literal),
-    Deconstruct(Node<String>, Vec<Node<Pattern>>),
-    Infix(Box<Node<Pattern>>, Node<String>, Box<Node<Pattern>>),
-    As(Box<Node<Pattern>>, Node<String>),
-    Parenthesised(Box<Node<Pattern>>),
+    Deconstruct(Node<Sym>, Vec<Node<Pattern<Sym>>>),
+    Infix(Box<Node<Pattern<Sym>>>, Node<Sym>, Box<Node<Pattern<Sym>>>),
+    As(Box<Node<Pattern<Sym>>>, Node<String>),
+    Parenthesised(Box<Node<Pattern<Sym>>>),
     Error,
 }
 
-impl Pattern {
-    pub fn from_symbol(symbol: String, span: Span) -> Pattern {
-        if symbol.chars().nth(0).unwrap().is_uppercase() {
-            Pattern::Deconstruct(Node::new(symbol, span), Vec::new())
-        } else {
-            Pattern::Var(symbol)
+impl Pattern<RawSymbol> {
+    pub fn from_symbol(symbol: RawSymbol, span: Span) -> Pattern<RawSymbol> {
+        match symbol {
+            RawSymbol::Qualified(_, _) |
+            RawSymbol::Trusted(_, _) => {
+                Pattern::Deconstruct(Node::new(symbol, span), Vec::new())
+            }
+            RawSymbol::Unqualified(name) => {
+                if name.chars().nth(0).unwrap().is_uppercase() {
+                    Pattern::Deconstruct(Node::new(RawSymbol::Unqualified(name), span), Vec::new())
+                } else {
+                    Pattern::Var(name)
+                }
+            }
         }
     }
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub enum LetDecl {
-    Def(Def),
-    Type(TypeAnnot),
+pub enum LetDecl<Sym> {
+    Def(Def<Sym>),
+    Type(TypeAnnot<Sym>),
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub struct Def {
-    pub pattern: Node<Pattern>,
-    pub value: Node<Expr>,
+pub struct Def<Sym> {
+    pub pattern: Node<Pattern<Sym>>,
+    pub value: Node<Expr<Sym>>,
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub struct TypeAnnot {
+pub struct TypeAnnot<Sym> {
     pub value: Node<String>,
-    pub type_: Node<Scheme>,
+    pub type_: Node<Scheme<Sym>>,
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub enum Type {
+pub enum Type<Sym> {
     SelfType,
     Var(String),
-    Concrete(String),
-    Apply(Box<Node<Type>>, Box<Node<Type>>),
-    Function(Box<Node<Type>>, Box<Node<Type>>),
+    Concrete(Sym),
+    Apply(Box<Node<Type<Sym>>>, Box<Node<Type<Sym>>>),
+    Function(Box<Node<Type<Sym>>>, Box<Node<Type<Sym>>>),
 }
 
-impl Type {
-    pub fn from_symbol(symbol: String) -> Type {
-        if symbol == "self" {
-            Type::SelfType
-        } else if symbol.chars().nth(0).unwrap().is_uppercase() {
-            Type::Concrete(symbol)
-        } else {
-            Type::Var(symbol)
+impl Type<RawSymbol> {
+    pub fn from_symbol(symbol: RawSymbol) -> Type<RawSymbol> {
+        match symbol {
+            RawSymbol::Qualified(_, _) |
+            RawSymbol::Trusted(_, _) => {
+                Type::Concrete(symbol)
+            }
+            RawSymbol::Unqualified(name) => {
+                if name.chars().nth(0).unwrap().is_uppercase() {
+                    Type::Concrete(RawSymbol::Unqualified(name))
+                } else {
+                    Type::Var(name)
+                }
+            }
         }
     }
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub struct Scheme {
-    pub type_: Node<Type>,
-    pub vars: Vec<(Node<String>, Node<Type>)>,
+pub struct Scheme<Sym> {
+    pub type_: Node<Type<Sym>>,
+    pub vars: Vec<(Node<String>, Node<Type<Sym>>)>,
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub enum Decl {
-    Let(LetDecl),
+pub enum Decl<Sym> {
+    Let(LetDecl<Sym>),
     Infix(Associativity, Node<String>, Node<u64>),
-    TypeAlias(TypeAlias),
-    Union(UnionType),
-    Record(RecordType),
-    Trait(Trait),
+    TypeAlias(TypeAlias<Sym>),
+    Union(UnionType<Sym>),
+    Record(RecordType<Sym>),
+    Trait(Trait<Sym>),
 }
 
 #[derive(PartialEq, Eq, Debug, Hash, Copy, Clone)]
@@ -150,45 +164,45 @@ pub enum Associativity {
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub struct TypeAlias {
+pub struct TypeAlias<Sym> {
     pub name: Node<String>,
     pub vars: Vec<Node<String>>,
-    pub type_: Node<Type>,
+    pub type_: Node<Type<Sym>>,
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub struct UnionType {
+pub struct UnionType<Sym> {
     pub name: Node<String>,
     pub vars: Vec<Node<String>>,
-    pub cases: Vec<Node<UnionCase>>,
+    pub cases: Vec<Node<UnionCase<Sym>>>,
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub struct UnionCase {
+pub struct UnionCase<Sym> {
     pub tag: Node<String>,
-    pub args: Vec<Node<Type>>,
+    pub args: Vec<Node<Type<Sym>>>,
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub struct RecordType {
+pub struct RecordType<Sym> {
     pub name: Node<String>,
     pub vars: Vec<Node<String>>,
-    pub fields: Vec<(Node<String>, Node<Type>)>,
+    pub fields: Vec<(Node<String>, Node<Type<Sym>>)>,
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub struct Trait {
+pub struct Trait<Sym> {
     pub name: Node<String>,
     pub vars: Vec<Node<String>>,
-    pub values: Vec<Node<TypeAnnot>>,
-    pub base_traits: Vec<Node<Type>>,
+    pub values: Vec<Node<TypeAnnot<Sym>>>,
+    pub base_traits: Vec<Node<Type<Sym>>>,
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub struct Impl {
-    pub scheme: Scheme,
-    pub trait_: Node<Type>,
-    pub values: Vec<Node<Def>>,
+pub struct Impl<Sym> {
+    pub scheme: Scheme<Sym>,
+    pub trait_: Node<Type<Sym>>,
+    pub values: Vec<Node<Def<Sym>>>,
 }
 
 #[derive(PartialEq, Eq, Debug, Hash, Clone)]
@@ -197,27 +211,15 @@ pub enum Kind {
     Arrow(Box<Kind>, Box<Kind>),
 }
 
-// impl Display for Kind { }
-
-/* ???
-pub enum Symbol {
-    Global { path: String, name: String },
-    Local { name: String },
-}
-
+#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Hash, Clone)]
 pub enum RawSymbol {
     Qualified(String, String),
     Unqualified(String),
     Trusted(String, String),
 }
 
+#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Hash, Clone)]
 pub enum Symbol {
     Global(String, String),
-    Local(String)
+    Local(String),
 }
-
-pub struct RawSymbol {
-    pub name: String,
-    pub path: Option<String>,
-}
-*/

@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::iter::Peekable;
 use position::{Span, Spanned, DUMMY_SPAN};
 use parsing::tokens::Token;
-use ast::{Expr, Literal, Pattern, CaseBranch, Node, LetDecl, Def, TypeAnnot, Scheme, Type};
+use ast::{Expr, Literal, Pattern, CaseBranch, Node, LetDecl, Def, TypeAnnot, Scheme, Type, RawSymbol};
 
 
 pub fn parse<I: Iterator<Item=Spanned<Token>>>(_tokens: I) -> ! {
@@ -14,15 +14,21 @@ pub fn parse<I: Iterator<Item=Spanned<Token>>>(_tokens: I) -> ! {
 enum TokenKind {
     Token(Token),
     Ident,
+    UnqualifiedName,
+    VarName,
     Literal,
     Operator,
 }
 
-fn error_expr_node() -> Node<Expr> {
+type ExprNode = Node<Expr<RawSymbol>>;
+type PatternNode = Node<Pattern<RawSymbol>>;
+type TypeNode = Node<Type<RawSymbol>>;
+
+fn error_expr_node() -> ExprNode {
     Node::new(Expr::Error, DUMMY_SPAN.clone())
 }
 
-fn error_pattern_node() -> Node<Pattern> {
+fn error_pattern_node() -> PatternNode {
     Node::new(Pattern::Error, DUMMY_SPAN.clone())
 }
 
@@ -59,7 +65,7 @@ impl<T> MaybeParsed<T> {
 }
 
 enum MaybeParsedType {
-    Ok(Node<Type>),
+    Ok(Node<Type<RawSymbol>>),
     Err,
     Empty,
 }
@@ -201,13 +207,11 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         is_good
     }
 
-    fn eat_symbol(&mut self) -> Option<Spanned<String>> {
+    fn eat_symbol(&mut self) -> Option<Spanned<RawSymbol>> {
+        self.expected_tokens.push(TokenKind::Ident);
         match self.peek() {
             Some(&Spanned { value: Token::Ident(_), .. }) => { }
-            _ => {
-                self.expected_tokens.push(TokenKind::Ident);
-                return None;
-            }
+            _ => return None,
         }
 
         match self.consume() {
@@ -220,15 +224,54 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         }
     }
     
+    fn eat_unqualified_name(&mut self) -> Option<Spanned<String>> {
+        self.expected_tokens.push(TokenKind::Ident);
+        match self.peek() {
+            Some(&Spanned { value: Token::Ident(RawSymbol::Unqualified(_)), .. }) => { }
+            _ => return None,
+        }
+
+        match self.consume() {
+            Some(Spanned { value: Token::Ident(RawSymbol::Unqualified(name)), span }) => {
+                Some(Spanned::new(name, span))
+            }
+            _ => {
+                panic!("Parser::peek and Parser::consume returned different results");
+            }
+        }
+    }
+
+    fn eat_var_name(&mut self) -> Option<Spanned<String>> {
+        self.expected_tokens.push(TokenKind::VarName);
+        match self.peek() {
+            Some(&Spanned { value: Token::Ident(RawSymbol::Unqualified(ref name)), .. }) => {
+                if name.chars().nth(0).unwrap().is_uppercase() {
+                    return None;
+                }
+            }
+            _ => {
+                return None;
+            }
+        }
+
+        match self.consume() {
+            Some(Spanned { value: Token::Ident(RawSymbol::Unqualified(name)), span }) => {
+                debug_assert!(!name.chars().nth(0).unwrap().is_uppercase());
+                Some(Spanned::new(name, span))
+            }
+            _ => {
+                panic!("Parser::peek and Parser::consume returned different results");
+            }
+        }
+    }
+    
     fn eat_literal(&mut self) -> Option<Spanned<Literal>> {
+        self.expected_tokens.push(TokenKind::Literal);
         match self.peek() {
             Some(&Spanned { value: Token::Int(_), .. }) |
             Some(&Spanned { value: Token::Float(_), .. }) |
             Some(&Spanned { value: Token::Bool(_), .. }) => { }
-            _ => {
-                self.expected_tokens.push(TokenKind::Literal);
-                return None;
-            }
+            _ => return None,
         }
 
         match self.consume() {
@@ -248,12 +291,10 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
     }
 
     fn eat_operator(&mut self) -> Option<Spanned<String>> {
+        self.expected_tokens.push(TokenKind::Operator);
         match self.peek() {
             Some(&Spanned { value: Token::Operator(_), .. }) => { }
-            _ => {
-                self.expected_tokens.push(TokenKind::Operator);
-                return None;
-            }
+            _ => return None,
         }
 
         match self.consume() {
@@ -266,7 +307,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         }
     }
     
-    fn expr_term(&mut self) -> MaybeParsed<Node<Expr>> {
+    fn expr_term(&mut self) -> MaybeParsed<ExprNode> {
         match self.eat_symbol() {
             Some(Spanned { value, span }) => {
                 return MaybeParsed::Ok(Node::new(Expr::Ident(value), span));
@@ -288,7 +329,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
                 Some(operator) => {
                     if self.eat(Token::CloseParen) {
                         // got something like (+)
-                        Node::new(Expr::Ident(operator.value), self.previous_span())
+                        Node::new(Expr::Ident(RawSymbol::Unqualified(operator.value)), self.previous_span())
                     } else {
                         match self.application() {
                             Ok(_expr) => {
@@ -331,7 +372,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         MaybeParsed::Empty
     }
 
-    fn application(&mut self) -> ParseResult<Node<Expr>> {
+    fn application(&mut self) -> ParseResult<ExprNode> {
         let function = match self.expr_term() {
             MaybeParsed::Ok(expr) => expr,
             MaybeParsed::Empty => {
@@ -376,7 +417,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         }
     }
 
-    fn expr_operation(&mut self, mut can_section: bool) -> ParseResult<Node<Expr>> {
+    fn expr_operation(&mut self, mut can_section: bool) -> ParseResult<ExprNode> {
         let mut result = match self.application() {
             Ok(expr) => expr,
             Err(expr) => return Err(expr),
@@ -399,14 +440,14 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
                 Ok(rhs) => {
                     let span = result.span.merge(&rhs.span);
                     let rhs = Box::new(rhs);
-                    let op = Node::new(operator.value, operator.span);
+                    let op = Node::new(RawSymbol::Unqualified(operator.value), operator.span);
                     let lhs = Box::new(result);
                     result = Node::new(Expr::Infix(lhs, op, rhs), span);
                 }
                 Err(rhs) => {
                     let span = result.span.merge(&rhs.span);
                     let rhs = Box::new(rhs);
-                    let op = Node::new(operator.value, operator.span);
+                    let op = Node::new(RawSymbol::Unqualified(operator.value), operator.span);
                     let lhs = Box::new(result);
                     return Err(Node::new(Expr::Infix(lhs, op, rhs), span));
                 }
@@ -414,7 +455,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         }
     }
 
-    fn expr(&mut self, can_section: bool) -> ParseResult<Node<Expr>> {
+    fn expr(&mut self, can_section: bool) -> ParseResult<ExprNode> {
         if self.eat(Token::If) {
             self.if_()
         } else if self.eat(Token::Let) {
@@ -431,7 +472,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         }
     }
 
-    fn pattern_term(&mut self) -> MaybeParsed<Node<Pattern>> {
+    fn pattern_term(&mut self) -> MaybeParsed<PatternNode> {
         if self.eat(Token::Underscore) {
             let span = self.previous_span();
             return MaybeParsed::Ok(Node::new(Pattern::Wildcard, span));
@@ -482,7 +523,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         MaybeParsed::Empty
     }
 
-    fn deconstruct(&mut self) -> ParseResult<Node<Pattern>> {
+    fn deconstruct(&mut self) -> ParseResult<PatternNode> {
         let tag_node = match self.eat_symbol() {
             Some(Spanned { value, span }) => {
                 match Pattern::from_symbol(value, span.clone()) {
@@ -532,7 +573,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         let pattern = Node::new(Pattern::Deconstruct(tag_node, args), span);
         if is_ok {
             if self.eat(Token::As) {
-                match self.eat_symbol() {
+                match self.eat_unqualified_name() {
                     Some(Spanned { value, span }) => {
                         let node_span = pattern.span.merge(&span);
                         let pattern = Pattern::As(Box::new(pattern), Node::new(value, span));
@@ -550,7 +591,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         }
     }
 
-    fn pattern(&mut self) -> ParseResult<Node<Pattern>> {
+    fn pattern(&mut self) -> ParseResult<PatternNode> {
         let mut result = match self.deconstruct() {
             Ok(pattern) => pattern,
             Err(pattern) => return Err(pattern),
@@ -566,14 +607,14 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
                 Ok(rhs) => {
                     let span = result.span.merge(&rhs.span);
                     let rhs = Box::new(rhs);
-                    let op = Node::new(operator.value, operator.span);
+                    let op = Node::new(RawSymbol::Unqualified(operator.value), operator.span);
                     let lhs = Box::new(result);
                     result = Node::new(Pattern::Infix(lhs, op, rhs), span);
                 }
                 Err(rhs) => {
                     let span = result.span.merge(&rhs.span);
                     let rhs = Box::new(rhs);
-                    let op = Node::new(operator.value, operator.span);
+                    let op = Node::new(RawSymbol::Unqualified(operator.value), operator.span);
                     let lhs = Box::new(result);
                     return Err(Node::new(Pattern::Infix(lhs, op, rhs), span));
                 }
@@ -581,7 +622,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         }
     }
     
-    fn if_(&mut self) -> ParseResult<Node<Expr>> {
+    fn if_(&mut self) -> ParseResult<ExprNode> {
         let start_span = self.previous_span();
 
         let condition = try!(self.expr(false));
@@ -607,7 +648,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         Ok(Node::new(expr, span))
     }
 
-    fn lambda(&mut self) -> ParseResult<Node<Expr>> {
+    fn lambda(&mut self) -> ParseResult<ExprNode> {
         let start_span = self.previous_span();
 
         let mut params = Vec::new();
@@ -643,7 +684,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         }
     }
 
-    fn case(&mut self) -> ParseResult<Node<Expr>> {
+    fn case(&mut self) -> ParseResult<ExprNode> {
         let value = match self.expr(false) {
             Ok(expr) => expr,
             Err(_) => return Err(error_expr_node()),
@@ -695,7 +736,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         Ok(Node::new(Expr::Case(Box::new(value), branches), span))
     }
 
-    fn case_branch(&mut self) -> ParseResult<Node<CaseBranch>> {
+    fn case_branch(&mut self) -> ParseResult<Node<CaseBranch<RawSymbol>>> {
         self.accept_aligned = true;
         
         let pattern = match self.pattern() {
@@ -755,7 +796,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         }
     }
 
-    fn let_(&mut self) -> ParseResult<Node<Expr>> {
+    fn let_(&mut self) -> ParseResult<ExprNode> {
         let old_indent = self.align_on_next();
         let mut decls = Vec::new();
         let mut span = self.previous_span();
@@ -817,7 +858,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         }
     }
 
-    fn let_decl(&mut self) -> MaybeParsed<Node<LetDecl>> {
+    fn let_decl(&mut self) -> MaybeParsed<Node<LetDecl<RawSymbol>>> {
         let is_paren = match self.peek() {
             Some(&Spanned { value: Token::OpenParen, .. }) => true,
             _ => false,
@@ -847,7 +888,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         } else if is_paren || is_op {
             self.pattern_assign().map(|n| n.map(LetDecl::Def))
         } else {
-            match self.eat_symbol() {
+            match self.eat_var_name() {
                 Some(Spanned { value, span }) => {
                     self.type_or_def(Node::new(value, span))
                 }
@@ -860,11 +901,11 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         }
     }
 
-    fn scheme(&mut self) -> Option<Node<Scheme>> {
+    fn scheme(&mut self) -> Option<Node<Scheme<RawSymbol>>> {
         if self.eat(Token::OpenParen) {
             let mut constraints = Vec::new();
             loop {
-                let var = match self.eat_symbol() {
+                let var = match self.eat_var_name() {
                     Some(Spanned { value, span }) => Node::new(value, span),
                     None => return None,
                 };
@@ -939,7 +980,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         }
     }
 
-    fn type_application(&mut self) -> Option<Node<Type>> {
+    fn type_application(&mut self) -> Option<TypeNode> {
         let mut result = match self.type_term() {
             MaybeParsedType::Ok(type_) => type_,
             MaybeParsedType::Err |
@@ -962,7 +1003,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         }
     }
 
-    fn type_(&mut self) -> Option<Node<Type>> {
+    fn type_(&mut self) -> Option<TypeNode> {
         let arg = match self.type_application() {
             Some(type_) => type_,
             None => return None,
@@ -983,7 +1024,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         }
     }
 
-    fn pattern_assign(&mut self) -> MaybeParsed<Node<Def>> {
+    fn pattern_assign(&mut self) -> MaybeParsed<Node<Def<RawSymbol>>> {
         let first = match self.pattern_term() {
             MaybeParsed::Ok(pattern) => pattern,
             MaybeParsed::Err(_) => return MaybeParsed::Empty,
@@ -1051,7 +1092,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         }
     }
 
-    fn type_or_def(&mut self, symbol: Node<String>) -> MaybeParsed<Node<LetDecl>> {
+    fn type_or_def(&mut self, symbol: Node<String>) -> MaybeParsed<Node<LetDecl<RawSymbol>>> {
         if self.eat(Token::Colon) {
             match self.scheme() {
                 Some(scheme) => {
@@ -1124,8 +1165,27 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
 #[cfg(test)]
 mod tests {
     use parsing::lexer::lex;
-    use ast::{Expr, Pattern, Literal, Type, Scheme, LetDecl, Def, TypeAnnot};
+    use ast::{Expr, Pattern, Literal, Type, Scheme, LetDecl, Def, TypeAnnot, RawSymbol};
     use super::Parser;
+
+    fn write_symbol(symbol: &RawSymbol, output: &mut String) {
+        match *symbol {
+            RawSymbol::Qualified(ref path, ref name) => {
+                output.push_str(path);
+                output.push_str(".");
+                output.push_str(name);
+            }
+            RawSymbol::Unqualified(ref name) => {
+                output.push_str(name);
+            }
+            RawSymbol::Trusted(ref path, ref name) => {
+                output.push_str("#");
+                output.push_str(path);
+                output.push_str(".");
+                output.push_str(name);
+            }
+        }
+    }
 
     fn write_literal(literal: &Literal, output: &mut String) {
         match *literal {
@@ -1155,7 +1215,7 @@ mod tests {
         }
     }
 
-    fn write_expr(expr: &Expr, output: &mut String) {
+    fn write_expr(expr: &Expr<RawSymbol>, output: &mut String) {
         match *expr {
             Expr::Apply(ref f, ref args) => {
                 output.push_str("(apply ");
@@ -1169,8 +1229,8 @@ mod tests {
             Expr::Error => {
                 panic!("found error node");
             }
-            Expr::Ident(ref ident) => {
-                output.push_str(&ident);
+            Expr::Ident(ref symbol) => {
+                write_symbol(symbol, output);
             }
             Expr::If(ref cond, ref then, ref else_) => {
                 output.push_str("(if ");
@@ -1183,7 +1243,7 @@ mod tests {
             }
             Expr::Infix(ref lhs, ref op, ref rhs) => {
                 output.push('(');
-                output.push_str(&op.node);
+                write_symbol(&op.node, output);
                 output.push(' ');
                 write_expr(&lhs.node, output);
                 output.push(' ');
@@ -1244,7 +1304,7 @@ mod tests {
         }
     }
 
-    fn write_pattern(pattern: &Pattern, output: &mut String) {
+    fn write_pattern(pattern: &Pattern<RawSymbol>, output: &mut String) {
         match *pattern {
             Pattern::Wildcard => {
                 output.push('_');
@@ -1256,7 +1316,7 @@ mod tests {
             }
             Pattern::Deconstruct(ref tag, ref args) => {
                 output.push_str("(dec ");
-                output.push_str(&tag.node);
+                write_symbol(&tag.node, output);
                 for arg in args {
                     output.push(' ');
                     write_pattern(&arg.node, output);
@@ -1268,7 +1328,7 @@ mod tests {
             }
             Pattern::Infix(ref lhs, ref op, ref rhs) => {
                 output.push_str("(opdec ");
-                output.push_str(&op.node);
+                write_symbol(&op.node, output);
                 output.push(' ');
                 write_pattern(&lhs.node, output);
                 output.push(' ');
@@ -1293,7 +1353,7 @@ mod tests {
         }
     }
 
-    fn write_let_decl(decl: &LetDecl, output: &mut String) {
+    fn write_let_decl(decl: &LetDecl<RawSymbol>, output: &mut String) {
         match *decl {
             LetDecl::Def(Def { ref pattern, ref value }) => {
                 output.push_str("(def ");
@@ -1312,7 +1372,7 @@ mod tests {
         }
     }
 
-    fn write_scheme(scheme: &Scheme, output: &mut String) {
+    fn write_scheme(scheme: &Scheme<RawSymbol>, output: &mut String) {
         if scheme.vars.is_empty() {
             write_type(&scheme.type_.node, output);
         } else {
@@ -1320,7 +1380,7 @@ mod tests {
         }
     }
 
-    fn write_type(type_: &Type, output: &mut String) {
+    fn write_type(type_: &Type<RawSymbol>, output: &mut String) {
         match *type_ {
             Type::SelfType => {
                 output.push_str("self");
@@ -1338,7 +1398,7 @@ mod tests {
                 output.push(')');
             }
             Type::Concrete(ref t) => {
-                output.push_str(t);
+                write_symbol(&t, output);
             }
             Type::Function(ref a, ref b) => {
                 output.push_str("(fn ");

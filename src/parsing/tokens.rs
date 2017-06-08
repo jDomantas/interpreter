@@ -1,6 +1,9 @@
+use ast::RawSymbol;
+
+
 #[derive(PartialEq, Clone, Debug)]
 pub enum Token {
-    Ident(String),
+    Ident(RawSymbol),
     Float(f64),
     Int(i64),
     Operator(String),

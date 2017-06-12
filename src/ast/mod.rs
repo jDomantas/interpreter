@@ -153,6 +153,7 @@ pub enum Decl<Sym> {
     Union(UnionType<Sym>),
     Record(RecordType<Sym>),
     Trait(Trait<Sym>),
+    Impl(Impl<Sym>),
 }
 
 #[derive(PartialEq, Eq, Debug, Hash, Copy, Clone)]
@@ -200,9 +201,48 @@ pub struct Trait<Sym> {
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct Impl<Sym> {
-    pub scheme: Scheme<Sym>,
+    pub scheme: Node<Scheme<Sym>>,
     pub trait_: Node<Type<Sym>>,
     pub values: Vec<Node<Def<Sym>>>,
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct ModuleDef {
+    pub name: Node<String>,
+    pub exposing: Vec<Node<ListItem<ExposedItem<RawSymbol>>>>,
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct Import {
+    pub name: Node<String>,
+    pub alias: Option<Node<String>>,
+    pub exposing: Vec<Node<ListItem<ExposedItem<String>>>>,
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct ExposedItem<Sym> {
+    pub name: Node<Sym>,
+    pub alias: Option<Node<String>>,
+    pub subitems: Vec<Node<ListItem<ExposedSubitem>>>,
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct ExposedSubitem {
+    pub name: Node<String>,
+    pub alias: Option<Node<String>>,
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub enum ListItem<T> {
+    Concrete(T),
+    All,
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct Module<Sym> {
+    pub def: Node<ModuleDef>,
+    pub imports: Vec<Node<Import>>,
+    pub items: Vec<Node<Decl<Sym>>>,
 }
 
 #[derive(PartialEq, Eq, Debug, Hash, Clone)]

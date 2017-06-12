@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::iter::Peekable;
 use position::{Span, Spanned, DUMMY_SPAN};
 use parsing::tokens::{Token, TokenKind};
-use ast::{Expr, Literal, Pattern, CaseBranch, Node, LetDecl, Decl, Def, TypeAnnot, Associativity, Scheme, Type, TypeAlias, UnionType, UnionCase, RecordType, RawSymbol};
+use ast::{Expr, Literal, Pattern, CaseBranch, Node, LetDecl, Decl, Def, TypeAnnot, Associativity, Scheme, Type, TypeAlias, UnionType, UnionCase, RecordType, RawSymbol, Trait, Impl};
 
 
 pub fn parse<I: Iterator<Item=Spanned<Token>>>(_tokens: I) -> ! {
@@ -46,6 +46,10 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         unimplemented!();
     }
 
+    fn useless_type_annotation(&mut self, span: Span) {
+        unimplemented!()
+    }
+
     fn previous_span(&self) -> Span {
         self.last_token_span.clone()
     }
@@ -81,6 +85,14 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
             }
 
             self.consume();
+        }
+    }
+
+    fn is_at_end(&self) -> bool {
+        if let Some(token) = self.next_token {
+            token.value == Token::EndOfInput
+        } else {
+            panic!("skipped EndOfInput token");
         }
     }
 
@@ -284,7 +296,8 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
                 Some(operator) => {
                     if self.eat(Token::CloseParen) {
                         // got something like (+)
-                        Node::new(Expr::Ident(RawSymbol::Unqualified(operator.value)), self.previous_span())
+                        let span = start_span.merge(&self.previous_span());
+                        Node::new(Expr::Ident(RawSymbol::Unqualified(operator.value)), span)
                     } else {
                         match self.application() {
                             Ok(_expr) => {
@@ -1223,6 +1236,146 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
             tag: name,
             args: args,
         }, span))
+    }
+
+    fn trait_(&mut self) -> ParseResult<Node<Trait<RawSymbol>>> {
+        let span = self.previous_span();
+
+        let name = match self.eat_unqualified_name() {
+            Some(Spanned { value, span }) => Node::new(value, span),
+            None => return Err(()),
+        };
+
+        let mut vars = Vec::new();
+        while let Some(Spanned { value, span }) = self.eat_var_name() {
+            vars.push(Node::new(value, span));
+        }
+
+        let mut base_traits = Vec::new();
+        if self.eat(Token::Colon) {
+            loop {
+                base_traits.push(try!(self.type_()));
+                if !self.eat(Token::Comma) {
+                    break;
+                }
+            }
+        }
+
+        try!(self.expect(Token::Where));
+
+        let old_indent = self.align_on_next();
+
+        let mut values = Vec::new();
+        loop {
+            self.accept_aligned = true;
+            match self.type_annot() {
+                Some(Ok(annot)) => values.push(annot),
+                Some(Err(_)) => {
+                    if !self.skip_to_aligned() {
+                        break;
+                    }
+                }
+                None => break,
+            }
+        }
+
+        self.accept_aligned = false;
+        self.current_indent = old_indent;
+
+        let span = span.merge(&self.previous_span());
+        Ok(Node::new(Trait {
+            name: name,
+            vars: vars,
+            base_traits: base_traits,
+            values: values,
+        }, span))
+    }
+
+    fn type_annot(&mut self) -> Option<ParseResult<Node<TypeAnnot<RawSymbol>>>> {
+        let symbol = if self.eat(Token::OpenParen) {
+            let span = self.previous_span();
+            let name = match self.eat_operator() {
+                Some(Spanned { value, span }) => value,
+                None => return Some(Err(())),
+            };
+            try!(self.expect(Token::CloseParen));
+            let span = span.merge(&self.previous_span());
+            Node::new(name, span)
+        } else {
+            match self.eat_unqualified_name() {
+                Some(Spanned { value, span }) => Node::new(value, span),
+                None => {
+                    return if self.peek().is_none() {
+                        None
+                    } else {
+                        Some(Err(()))
+                    };
+                }
+            }
+        };
+
+        try!(self.expect(Token::Comma));
+
+        let type_ = try!(self.scheme());
+        let span = symbol.span.merge(&type_.span);
+
+        Some(Ok(Node::new(TypeAnnot {
+            value: symbol,
+            type_: type_,
+        }, span)))
+    }
+
+    fn impl_(&mut self) -> ParseResult<Node<Impl<RawSymbol>>> {
+        let span = self.previous_span();
+        let scheme = try!(self.scheme());
+        try!(self.expect(Token::Colon));
+        let trait_ = try!(self.type_());
+        try!(self.expect(Token::Where));
+        let mut values = Vec::new();
+        let old_indent = self.align_on_next();
+
+        loop {
+            self.accept_aligned = true;
+            if self.peek().is_none() {
+                break;
+            }
+
+            let decl = match self.let_decl() {
+                Ok(decl) => {
+                    let Node { node, span, .. } = decl;
+                    match node {
+                        LetDecl::Def(def) => values.push(Node::new(def, span)),
+                        LetDecl::Type(_) => self.useless_type_annotation(span),
+                    }
+                }
+                Err(()) => {
+                    break;
+                }
+            };
+        }
+
+        self.accept_aligned = true;
+        self.current_indent = old_indent;
+
+        let span = span.merge(&self.previous_span());
+        
+        Ok(Node::new(Impl {
+            scheme: scheme,
+            trait_: trait_,
+            values: values,
+        }, span))
+    }
+
+    fn decl(&mut self) -> ParseResult<Node<Decl<RawSymbol>>> {
+        if self.eat(Token::Type) {
+            self.type_decl()
+        } else if self.eat(Token::Trait) {
+            self.trait_().map(|n| n.map(Decl::Trait))
+        } else if self.eat(Token::Impl) {
+            self.impl_().map(|n| n.map(Decl::Impl))
+        } else {
+            self.let_decl().map(|n| n.map(Decl::Let))
+        }
     }
 }
 

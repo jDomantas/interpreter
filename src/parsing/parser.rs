@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 use std::iter::Peekable;
-use position::{Span, Spanned, DUMMY_SPAN};
+use errors::ParseError;
+use position::{Position, Span, Spanned, DUMMY_SPAN};
 use parsing::tokens::{Token, TokenKind};
 use ast::{
     Expr, Literal, Pattern, CaseBranch, Node, LetDecl, Decl, Def, TypeAnnot,
@@ -10,10 +11,10 @@ use ast::{
 };
 
 
-pub fn parse_module<I>(tokens: I) -> (Option<Module<RawSymbol>>, Vec<ParseError>)
+pub fn parse_module<I>(tokens: I, require_def: bool) -> (Option<Module<RawSymbol>>, Vec<ParseError>)
         where I: Iterator<Item=Spanned<Token>> {
     let mut parser = Parser::new(tokens);
-    let module = parser.module().ok();
+    let module = parser.module(require_def).ok();
     debug_assert!(parser.is_at_end());
 
     (module, parser.errors)
@@ -24,11 +25,6 @@ type PatternNode = Node<Pattern<RawSymbol>>;
 type TypeNode = Node<Type<RawSymbol>>;
 
 type ParseResult<T> = Result<T, ()>;
-
-pub struct ParseError {
-    pub message: String,
-    pub span: Span,
-}
 
 struct Parser<I: Iterator<Item=Spanned<Token>>> {
     next_token: Option<Spanned<Token>>,
@@ -1628,13 +1624,22 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         }, span))
     }
 
-    fn module(&mut self) -> ParseResult<Module<RawSymbol>> {
+    fn module(&mut self, require_def: bool) -> ParseResult<Module<RawSymbol>> {
         self.accept_aligned = true;
         self.current_indent = 1;
 
-        let def = match self.module_def() {
-            Ok(def) => def,
-            Err(()) => return Err(()),
+        let def = if require_def {
+            match self.module_def() {
+                Ok(def) => def,
+                Err(()) => return Err(()),
+            }
+        } else {
+            let span = Span::new(&Position::new(1, 1), &Position::new(1, 1));
+            let def = ModuleDef {
+                name: Node::new("<main>".to_string(), span.clone()),
+                exposing: Vec::new(),
+            };
+            Node::new(def, span)
         };
 
         let mut imports = Vec::new();

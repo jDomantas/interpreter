@@ -1,11 +1,12 @@
 use std::str::{Chars, FromStr};
 use std::iter::Peekable;
 use ast::RawSymbol;
+use errors::ParseError;
 use parsing::tokens::Token;
 use position::{Position, Span, Spanned};
 
 
-pub fn lex(source: &str) -> (Vec<Spanned<Token>>, Vec<LexError>) {
+pub fn lex(source: &str) -> (Vec<Spanned<Token>>, Vec<ParseError>) {
     let mut lexer = Lexer::new(source);
     let mut tokens = Vec::new();
     while let Some(token) = lexer.next_token() {
@@ -14,18 +15,13 @@ pub fn lex(source: &str) -> (Vec<Spanned<Token>>, Vec<LexError>) {
     (tokens, lexer.errors)
 }
 
-pub struct LexError {
-    pub message: String,
-    pub span: Span,
-}
-
 struct Lexer<'a> {
     source: Peekable<Chars<'a>>,
     current: Option<char>,
     line: usize,
     column: usize,
     panicking: bool,
-    errors: Vec<LexError>,
+    errors: Vec<ParseError>,
 }
 
 impl<'a> Lexer<'a> {
@@ -43,7 +39,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn emit_error(&mut self, message: &str, span: Span) {
-        self.errors.push(LexError {
+        self.errors.push(ParseError {
             message: message.to_string(),
             span: span,
         });

@@ -101,6 +101,13 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         self.last_token_span.clone()
     }
 
+    fn next_span(&self) -> Span {
+        match self.next_token {
+            Some(Spanned { ref span, .. }) => span.clone(),
+            _ => panic!("skipped EndOfInput token"),
+        }
+    }
+
     fn align_on_next(&mut self) -> usize {
         let token_column = self.peek()
             .map(|s| s.span.start.column)
@@ -342,20 +349,27 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
 
             let expr = match self.eat_operator() {
                 Some(operator) => {
-                    if self.eat(Token::CloseParen) {
+                    return if self.eat(Token::CloseParen) {
                         // got something like (+)
                         let span = start_span.merge(&self.previous_span());
-                        Node::new(Expr::Ident(RawSymbol::Unqualified(operator.value)), span)
+                        let symbol = RawSymbol::Unqualified(operator.value);
+                        Some(Ok(Node::new(Expr::Ident(symbol), span)))
                     } else {
                         match self.application() {
-                            Ok(_expr) => {
+                            Ok(expr) => {
+                                if !self.eat(Token::CloseParen) {
+                                    self.emit_error();
+                                    return Some(Err(()));
+                                }
+                                let Spanned { value, span } = operator;
+                                let operator = Node::new(value, span);
+                                let span = start_span.merge(&self.previous_span());
                                 // got something like (+ a)
-                                // TODO: make sectioned operator
-                                unimplemented!()
+                                Some(Ok(operator_right_section(operator, expr, span)))
                             }
-                            Err(_) => return Some(Err(())),
+                            Err(_) => Some(Err(())),
                         }
-                    }
+                    };
                 }
                 None => {
                     match self.expr(true) {
@@ -415,6 +429,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
     }
 
     fn expr_operation(&mut self, mut can_section: bool) -> ParseResult<ExprNode> {
+        let start_span = self.previous_span();
         let mut result = try!(self.application());
         
         loop {
@@ -424,8 +439,10 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
             };
 
             if can_section && self.peek().map(|x| &x.value) == Some(&Token::CloseParen) {
-                // TODO: make lambda from operator
-                unimplemented!()
+                // got something like (a +)
+                let span = start_span.merge(&self.next_span());
+                let operator = Node::new(operator.value, operator.span);
+                return Ok(operator_left_section(operator, result, span));
             } else {
                 can_section = false;
             }
@@ -497,8 +514,8 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         }
 
         if self.eat(Token::OpenBracket) {
-            // TODO: parse list literal
-            panic!("list literals are not implemented");
+            // TODO: parse list pattern
+            panic!("list patterns are not implemented");
         }
 
         None
@@ -1646,6 +1663,32 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
 
         Ok(module)
     }
+}
+
+fn operator_right_section(operator: Node<String>, expr: ExprNode, span: Span) -> ExprNode {
+    let pattern = Pattern::Var("#".to_string());
+    let pattern_node = Node::new(pattern, operator.span.clone());
+    let value = Expr::Ident(RawSymbol::Unqualified("#".to_string()));
+    let value_node = Node::new(value, operator.span.clone());
+    let operator = Node::new(RawSymbol::Unqualified(operator.node), operator.span);
+    let body = Expr::Infix(Box::new(value_node), operator, Box::new(expr));
+    let body_node = Node::new(body, span.clone());
+    let lambda = Expr::Lambda(vec![pattern_node], Box::new(body_node));
+    let lambda_node = Node::new(lambda, span);
+    lambda_node
+}
+
+fn operator_left_section(operator: Node<String>, expr: ExprNode, span: Span) -> ExprNode {
+    let pattern = Pattern::Var("#".to_string());
+    let pattern_node = Node::new(pattern, operator.span.clone());
+    let value = Expr::Ident(RawSymbol::Unqualified("#".to_string()));
+    let value_node = Node::new(value, operator.span.clone());
+    let operator = Node::new(RawSymbol::Unqualified(operator.node), operator.span);
+    let body = Expr::Infix(Box::new(expr), operator, Box::new(value_node));
+    let body_node = Node::new(body, span.clone());
+    let lambda = Expr::Lambda(vec![pattern_node], Box::new(body_node));
+    let lambda_node = Node::new(lambda, span);
+    lambda_node
 }
 
 #[cfg(test)]

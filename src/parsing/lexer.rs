@@ -5,13 +5,18 @@ use parsing::tokens::Token;
 use position::{Position, Span, Spanned};
 
 
-pub fn lex(source: &str) -> Vec<Spanned<Token>> {
+pub fn lex(source: &str) -> (Vec<Spanned<Token>>, Vec<LexError>) {
     let mut lexer = Lexer::new(source);
     let mut tokens = Vec::new();
     while let Some(token) = lexer.next_token() {
         tokens.push(token);
     }
-    tokens
+    (tokens, lexer.errors)
+}
+
+pub struct LexError {
+    pub message: String,
+    pub span: Span,
 }
 
 struct Lexer<'a> {
@@ -20,6 +25,7 @@ struct Lexer<'a> {
     line: usize,
     column: usize,
     panicking: bool,
+    errors: Vec<LexError>,
 }
 
 impl<'a> Lexer<'a> {
@@ -32,7 +38,15 @@ impl<'a> Lexer<'a> {
             line: 1,
             column: 1,
             panicking: false,
+            errors: Vec::new(),
         }
+    }
+
+    fn emit_error(&mut self, message: &str, span: Span) {
+        self.errors.push(LexError {
+            message: message.to_string(),
+            span: span,
+        });
     }
 
     fn peek(&self) -> Option<char> {
@@ -116,8 +130,8 @@ impl<'a> Lexer<'a> {
                     }
                 }
                 None => {
-                    // TODO: unterminated block comment, report error?
-                    panic!("unterminated block comment: {:?}", opened_at);
+                    self.emit_error("unterminated block comment", opened_at);
+                    break;
                 }
                 _ => { }
             }
@@ -156,12 +170,11 @@ impl<'a> Lexer<'a> {
             return Spanned::new(Token::Float(number), span);
         }
         
-        // TODO: error reporting
-        panic!("bad number ({}) at {:?}", number, span);
+        self.emit_error("invalid number literal", span.clone());
+        Spanned::new(Token::Error, span)
     }
 
     fn lex_ident(&mut self) -> Spanned<Token> {
-        // TODO: lex idents with dots in names
         let (mut name, mut span) = self.collect_chars(is_symbol_char);
         debug_assert!(!name.is_empty());
 
@@ -177,8 +190,8 @@ impl<'a> Lexer<'a> {
                     let (segment, segment_span) = self.collect_chars(is_symbol_char);
                     debug_assert!(!segment.is_empty());
                     if ident_keyword(&segment).is_some() {
-                        // TODO: report error, keyword in path
-                        panic!("keyword in path");
+                        self.emit_error("path contains keyword", segment_span);
+                        return Spanned::new(Token::Error, span);
                     }
                     if !path.is_empty() {
                         path.push('.');
@@ -188,8 +201,9 @@ impl<'a> Lexer<'a> {
                     span = span.merge(&segment_span);
                 }
                 _ => {
-                    // TODO: report error, expected path to continue
-                    panic!("expected identifier");
+                    let error_span = self.current_position().span_to(&self.current_position());
+                    self.emit_error("missing path segment", error_span);
+                    return Spanned::new(Token::Error, span);
                 }
             }
         }
@@ -208,8 +222,15 @@ impl<'a> Lexer<'a> {
         debug_assert!(!op.is_empty());
 
         if self.peek() == Some('}') && op.chars().next_back() == Some('-') {
-            // end of comment before starting one
-            panic!("end of comment");
+            let end_position = self.current_position();
+            let start_position = Position {
+                line: end_position.line,
+                column: end_position.column - 1,
+            };
+            let error_span = start_position.span_to(&end_position);
+            self.emit_error("unexpected end of block comment", error_span);
+            self.consume();
+            return Spanned::new(Token::Error, span);
         }
 
         Spanned::new(Token::Operator(op), span)
@@ -269,15 +290,17 @@ impl<'a> Lexer<'a> {
                     return Some(self.lex_operator());
                 }
                 '\t' => {
-                    // TODO: report error, tab character
-                    panic!("tab found at {:?}", self.current_position());
+                    let span = self.current_position().span_to(&self.current_position());
+                    self.emit_error("tab character", span);
+                    self.advance();
                 }
                 ch if ch.is_whitespace() => {
                     self.advance();
                 }
                 _ => {
-                    // TODO: report error, unrecognized char
-                    panic!("unknown char at {:?}", self.current_position());
+                    let span = self.current_position().span_to(&self.current_position());
+                    self.emit_error("unknown character", span);
+                    self.advance();
                 }
             }
         }
@@ -377,7 +400,9 @@ mod tests {
     use parsing::lexer::lex;
 
     fn lex_no_positions(source: &str) -> Vec<Token> {
-        lex(source).into_iter().map(|tok| tok.value).collect()
+        let (tokens, errors) = lex(source);
+        assert!(errors.is_empty());
+        tokens.into_iter().map(|tok| tok.value).collect()
     }
 
     #[test]
@@ -428,7 +453,8 @@ mod tests {
 
     #[test]
     fn positions() {
-        let tokens = lex("a =\n1");
+        let (tokens, errors) = lex("a =\n1");
+        assert!(errors.is_empty());
         assert_eq!(tokens, vec![
             Spanned {
                 value: Token::Ident(RawSymbol::Unqualified("a".to_string())),

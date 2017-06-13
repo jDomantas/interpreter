@@ -10,9 +10,13 @@ use ast::{
 };
 
 
-pub fn parse<I: Iterator<Item=Spanned<Token>>>(_tokens: I) -> ! {
-    // let mut parser = Parser::new(tokens);
-    unimplemented!()
+pub fn parse_module<I>(tokens: I) -> (Option<Module<RawSymbol>>, Vec<ParseError>)
+        where I: Iterator<Item=Spanned<Token>> {
+    let mut parser = Parser::new(tokens);
+    let module = parser.module().ok();
+    debug_assert!(parser.is_at_end());
+
+    (module, parser.errors)
 }
 
 type ExprNode = Node<Expr<RawSymbol>>;
@@ -21,7 +25,10 @@ type TypeNode = Node<Type<RawSymbol>>;
 
 type ParseResult<T> = Result<T, ()>;
 
-struct ParseError;
+pub struct ParseError {
+    pub message: String,
+    pub span: Span,
+}
 
 struct Parser<I: Iterator<Item=Spanned<Token>>> {
     next_token: Option<Spanned<Token>>,
@@ -48,7 +55,46 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
     }
 
     fn emit_error(&mut self) {
-        unimplemented!();
+        let (token, span) = match self.next_token {
+            // don't report errors on error tokens,
+            // these will be reported by lexer
+            Some(Spanned { value: Token::Error, .. }) => return,
+            Some(Spanned { ref value, ref span }) => (value, span.clone()),
+            _ => panic!("skipped EndOfInput token"),
+        };
+
+        self.expected_tokens.sort_by_key(TokenKind::to_string);
+        self.expected_tokens.dedup();
+
+        let any_matches = self.expected_tokens.iter().any(|kind| kind.matches_token(token));
+
+        let mut message = if self.expected_tokens.len() == 0 {
+            panic!("no tokens expected but got error");
+        } else if self.expected_tokens.len() == 1 {
+            format!("Expected {}", self.expected_tokens[0].to_string())
+        } else {
+            let mut message = "Expected one of: ".to_string();
+            let mut add_comma = false;
+            for token in &self.expected_tokens {
+                if add_comma {
+                    message.push_str(", ");
+                }
+                message.push_str(&token.to_string());
+                add_comma = true;
+            }
+            message
+        };
+
+        message.push('.');
+
+        if any_matches {
+            message.push_str(" Make sure that your code is properly indented.");
+        }
+
+        self.errors.push(ParseError {
+            message: message,
+            span: span,
+        });
     }
 
     fn previous_span(&self) -> Span {
@@ -1845,21 +1891,25 @@ mod tests {
     }
 
     fn check_expr(source: &str, expected: &str) {
-        let tokens = lex(source);
+        let (tokens, errors) = lex(source);
+        assert!(errors.is_empty());
         let mut parser = Parser::new(tokens.into_iter());
         let expr = parser.expr(false).ok().unwrap();
         let mut printed = String::new();
         write_expr(&expr.node, &mut printed);
         assert_eq!(expected, printed);
+        assert!(parser.errors.is_empty());
     }
 
     fn check_pattern(source: &str, expected: &str) {
-        let tokens = lex(source);
+        let (tokens, errors) = lex(source);
+        assert!(errors.is_empty());
         let mut parser = Parser::new(tokens.into_iter());
         let pattern = parser.pattern().ok().unwrap();
         let mut printed = String::new();
         write_pattern(&pattern.node, &mut printed);
         assert_eq!(expected, printed);
+        assert!(parser.errors.is_empty());
     }
 
     #[test]

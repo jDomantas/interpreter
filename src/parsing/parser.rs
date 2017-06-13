@@ -2,7 +2,12 @@ use std::cmp::Ordering;
 use std::iter::Peekable;
 use position::{Span, Spanned, DUMMY_SPAN};
 use parsing::tokens::{Token, TokenKind};
-use ast::{Expr, Literal, Pattern, CaseBranch, Node, LetDecl, Decl, Def, TypeAnnot, Associativity, Scheme, Type, TypeAlias, UnionType, UnionCase, RecordType, RawSymbol, Trait, Impl};
+use ast::{
+    Expr, Literal, Pattern, CaseBranch, Node, LetDecl, Decl, Def, TypeAnnot,
+    Associativity, Scheme, Type, TypeAlias, UnionType, UnionCase, RecordType,
+    RawSymbol, Trait, Impl, ListItem, ExposedItem, ExposedSubitem, ModuleDef,
+    Import, Module,
+};
 
 
 pub fn parse<I: Iterator<Item=Spanned<Token>>>(_tokens: I) -> ! {
@@ -46,10 +51,6 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         unimplemented!();
     }
 
-    fn useless_type_annotation(&mut self, span: Span) {
-        unimplemented!()
-    }
-
     fn previous_span(&self) -> Span {
         self.last_token_span.clone()
     }
@@ -66,6 +67,8 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
 
     fn skip_to_aligned(&mut self) -> bool {
         let indent = self.current_indent;
+        // skip at least one to make sure we do not get stuck on aligned error
+        self.consume();
         loop {
             match self.next_token {
                 Some(Spanned { value: Token::EndOfInput, .. }) => {
@@ -89,10 +92,9 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
     }
 
     fn is_at_end(&self) -> bool {
-        if let Some(token) = self.next_token {
-            token.value == Token::EndOfInput
-        } else {
-            panic!("skipped EndOfInput token");
+        match self.next_token {
+            Some(ref token) => token.value == Token::EndOfInput,
+            None => panic!("skipped EndOfInput token"),
         }
     }
 
@@ -654,7 +656,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
             if self.peek().is_none() || self.peek().map(|t| &t.value) == Some(&Token::In) {
                 if decls.is_empty() {
                     // do this to fill wanted token list
-                    debug_assert!(!self.let_decl().is_ok());
+                    debug_assert!(!self.let_decl(true).is_ok());
                     self.emit_error();
                     self.current_indent = old_indent;
                     self.accept_aligned = false;
@@ -664,7 +666,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
                 }
             }
 
-            match self.let_decl() {
+            match self.let_decl(true) {
                 Ok(decl) => {
                     span = span.merge(&decl.span);
                     decls.push(decl);
@@ -693,7 +695,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         }
     }
 
-    fn let_decl(&mut self) -> ParseResult<Node<LetDecl<RawSymbol>>> {
+    fn let_decl(&mut self, allow_type: bool) -> ParseResult<Node<LetDecl<RawSymbol>>> {
         let is_paren = match self.peek() {
             Some(&Spanned { value: Token::OpenParen, .. }) => true,
             _ => false,
@@ -715,7 +717,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
             };
 
             if self.eat(Token::CloseParen) {
-                self.type_or_def(symbol)
+                self.type_or_def(symbol, allow_type)
             } else {
                 self.emit_error();
                 Err(())
@@ -725,7 +727,7 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         } else {
             match self.eat_var_name() {
                 Some(Spanned { value, span }) => {
-                    self.type_or_def(Node::new(value, span))
+                    self.type_or_def(Node::new(value, span), allow_type)
                 }
                 None => {
                     debug_assert!(!self.eat(Token::OpenParen));
@@ -897,8 +899,8 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         }
     }
 
-    fn type_or_def(&mut self, symbol: Node<String>) -> ParseResult<Node<LetDecl<RawSymbol>>> {
-        if self.eat(Token::Colon) {
+    fn type_or_def(&mut self, symbol: Node<String>, allow_type: bool) -> ParseResult<Node<LetDecl<RawSymbol>>> {
+        if allow_type && self.eat(Token::Colon) {
             match self.scheme() {
                 Ok(scheme) => {
                     let node_span = symbol.span.merge(&scheme.span);
@@ -1295,10 +1297,12 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         let symbol = if self.eat(Token::OpenParen) {
             let span = self.previous_span();
             let name = match self.eat_operator() {
-                Some(Spanned { value, span }) => value,
+                Some(Spanned { value, .. }) => value,
                 None => return Some(Err(())),
             };
-            try!(self.expect(Token::CloseParen));
+            if !self.eat(Token::CloseParen) {
+                return Some(Err(()));
+            }
             let span = span.merge(&self.previous_span());
             Node::new(name, span)
         } else {
@@ -1314,9 +1318,14 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
             }
         };
 
-        try!(self.expect(Token::Comma));
+        if !self.eat(Token::Comma) {
+            return Some(Err(()));
+        }
 
-        let type_ = try!(self.scheme());
+        let type_ = match self.scheme() {
+            Ok(scheme) => scheme,
+            Err(()) => return Some(Err(())),
+        };
         let span = symbol.span.merge(&type_.span);
 
         Some(Ok(Node::new(TypeAnnot {
@@ -1340,18 +1349,17 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
                 break;
             }
 
-            let decl = match self.let_decl() {
-                Ok(decl) => {
-                    let Node { node, span, .. } = decl;
+            match self.let_decl(false) {
+                Ok(Node { node, span, .. }) => {
                     match node {
                         LetDecl::Def(def) => values.push(Node::new(def, span)),
-                        LetDecl::Type(_) => self.useless_type_annotation(span),
+                        LetDecl::Type(_) => unreachable!(),
                     }
                 }
                 Err(()) => {
                     break;
                 }
-            };
+            }
         }
 
         self.accept_aligned = true;
@@ -1374,8 +1382,223 @@ impl<I: Iterator<Item=Spanned<Token>>> Parser<I> {
         } else if self.eat(Token::Impl) {
             self.impl_().map(|n| n.map(Decl::Impl))
         } else {
-            self.let_decl().map(|n| n.map(Decl::Let))
+            self.let_decl(true).map(|n| n.map(Decl::Let))
         }
+    }
+
+    fn exposed_item_list<S, F>(&mut self, eat_symbol: F) -> ParseResult<Vec<Node<ListItem<ExposedItem<S>>>>>
+            where F: Fn(&mut Self) -> Option<Spanned<S>> {
+        let mut items = Vec::new();
+
+        loop {
+            if self.eat(Token::DotDot) {
+                let span = self.previous_span();
+                items.push(Node::new(ListItem::All, span))
+            } else {
+                let name = match eat_symbol(self) {
+                    Some(Spanned { value, span }) => Node::new(value, span),
+                    None => {
+                        self.emit_error();
+                        return Err(());
+                    }
+                };
+
+                let subitems = if self.eat(Token::OpenParen) {
+                    try!(self.exposed_subitem_list())
+                } else {
+                    Vec::new()
+                };
+
+                let alias = if self.eat(Token::As) {
+                    match self.eat_unqualified_name() {
+                        Some(Spanned { value, span }) => Some(Node::new(value, span)),
+                        None => {
+                            self.emit_error();
+                            return Err(());
+                        }
+                    }
+                } else {
+                    None
+                };
+
+                let span = name.span.merge(&self.previous_span());
+
+                let item = ExposedItem {
+                    name: name,
+                    subitems: subitems,
+                    alias: alias,
+                };
+
+                items.push(Node::new(ListItem::Concrete(item), span));
+            }
+
+            if !self.eat(Token::Comma) {
+                if self.eat(Token::CloseParen) {
+                    break;
+                } else {
+                    self.emit_error();
+                    return Err(());
+                }
+            }
+            if self.eat(Token::CloseParen) {
+                break;
+            }
+        }
+
+        Ok(items)
+    }
+
+    fn exposed_subitem_list(&mut self) -> ParseResult<Vec<Node<ListItem<ExposedSubitem>>>> {
+        let mut subitems = Vec::new();
+        
+        loop {
+            if self.eat(Token::DotDot) {
+                let span = self.previous_span();
+                subitems.push(Node::new(ListItem::All, span));
+            } else {
+                let name = match self.eat_unqualified_name() {
+                    Some(Spanned { value, span }) => Node::new(value, span),
+                    None => {
+                        self.emit_error();
+                        return Err(());
+                    }
+                };
+
+                let item_span;
+                let alias = if self.eat(Token::As) {
+                    match self.eat_unqualified_name() {
+                        Some(Spanned { value, span }) => {
+                            item_span = name.span.merge(&span);
+                            Some(Node::new(value, span))
+                        }
+                        None => {
+                            self.emit_error();
+                            return Err(());
+                        }
+                    }
+                } else {
+                    item_span = name.span.clone();
+                    None
+                };
+
+                subitems.push(Node::new(ListItem::Concrete(ExposedSubitem {
+                    name: name,
+                    alias: alias,
+                }), item_span));
+            }
+
+            if !self.eat(Token::Comma) {
+                if self.eat(Token::CloseParen) {
+                    break;
+                } else {
+                    self.emit_error();
+                    return Err(());
+                }
+            }
+            if self.eat(Token::CloseParen) {
+                break;
+            }
+        }
+
+        Ok(subitems)
+    }
+
+    fn module_def(&mut self) -> ParseResult<Node<ModuleDef>> {
+        try!(self.expect(Token::Module));
+        let span_start = self.previous_span();
+
+        let name = match self.eat_symbol() {
+            Some(Spanned { value, span }) => Node::new(value.full_name(), span),
+            None => {
+                self.emit_error();
+                return Err(());
+            }
+        };
+
+        try!(self.expect(Token::Exposing));
+        try!(self.expect(Token::OpenParen));
+
+        let items = try!(self.exposed_item_list(Parser::eat_symbol));
+        let span = span_start.merge(&self.previous_span());
+
+        Ok(Node::new(ModuleDef {
+            name: name,
+            exposing: items,
+        }, span))
+    }
+
+    fn import(&mut self) -> ParseResult<Node<Import>> {
+        let span_start = self.previous_span();
+
+        let name = match self.eat_symbol() {
+            Some(Spanned { value, span }) => Node::new(value.full_name(), span),
+            None => {
+                self.emit_error();
+                return Err(());
+            }
+        };
+
+        let alias = if self.eat(Token::As) {
+            match self.eat_unqualified_name() {
+                Some(Spanned { value, span }) => Some(Node::new(value, span)),
+                None => {
+                    self.emit_error();
+                    return Err(());
+                }
+            }
+        } else {
+            None
+        };
+
+        let exposing = if self.eat(Token::Exposing) {
+            try!(self.exposed_item_list(Parser::eat_unqualified_name))
+        } else {
+            Vec::new()
+        };
+
+        let span = span_start.merge(&self.previous_span());
+
+        Ok(Node::new(Import {
+            name: name,
+            alias: alias,
+            exposing: exposing,
+        }, span))
+    }
+
+    fn module(&mut self) -> ParseResult<Module<RawSymbol>> {
+        self.accept_aligned = true;
+        self.current_indent = 1;
+
+        let def = match self.module_def() {
+            Ok(def) => def,
+            Err(()) => return Err(()),
+        };
+
+        let mut imports = Vec::new();
+        let mut items = Vec::new();
+
+        while !self.is_at_end() {
+            self.accept_aligned = true;
+            if self.eat(Token::Import) {
+                match self.import() {
+                    Ok(import) => { imports.push(import); }
+                    Err(()) => { self.skip_to_aligned(); }
+                }
+            } else {
+                match self.decl() {
+                    Ok(decl) => { items.push(decl); }
+                    Err(()) => { self.skip_to_aligned(); }
+                }
+            }
+        }
+
+        let module = Module {
+            def: def,
+            imports: imports,
+            items: items,
+        };
+
+        Ok(module)
     }
 }
 

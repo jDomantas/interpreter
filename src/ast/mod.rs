@@ -259,7 +259,7 @@ pub enum RawSymbol {
 }
 
 impl RawSymbol {
-    fn full_name(self) -> String {
+    pub fn full_name(self) -> String {
         match self {
             RawSymbol::Qualified(mut path, name) => {
                 path.push('.');

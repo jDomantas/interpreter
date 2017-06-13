@@ -264,8 +264,6 @@ impl<'a> Lexer<'a> {
                 '-' => {
                     if self.peek2() == Some('-') {
                         self.skip_line_comment();
-                    } else if self.peek2() == Some('}') {
-                        panic!("end of comment");
                     } else {
                         return Some(self.lex_operator());
                     }

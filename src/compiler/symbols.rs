@@ -542,7 +542,7 @@ impl Resolver {
         result
     }
 
-    fn collect_imports<'a>(&mut self, module: &'a Module<RawSymbol>, exports: &HashMap<String, Exports<'a>>) -> Imports<'a> {
+    fn collect_imports<'a>(&mut self, module: &'a Module<RawSymbol>, ctx: &Context<'a>) -> Imports<'a> {
         let mut imports = Imports::empty();
         let mut import_span = HashMap::new();
         let mut first_import = HashMap::new();
@@ -568,7 +568,7 @@ impl Resolver {
 
             let name = &import.node.name.node;
 
-            let exports = if let Some(exports) = exports.get(name) {
+            let exports = if let Some(exports) = ctx.exports.get(name) {
                 exports
             } else {
                 panic!("all required modules should be available at symbol resolution");
@@ -755,13 +755,16 @@ impl Resolver {
         imports
     }
 
-    fn resolve(&mut self, module: &Module<RawSymbol>, exports: &HashMap<String, Exports>) -> Module<Symbol> {
+    fn resolve(&mut self, module: &Module<RawSymbol>, ctx: &Context) -> Module<Symbol> {
         self.emit_errors = false;
         let locals = self.collect_items(module);
         self.emit_errors = true;
-        let mut imports = self.collect_imports(module, exports);
+        let mut imports = self.collect_imports(module, &ctx);
         imports.add_locals(module.name(), &locals);
-        let imports = imports;
+        let ctx = Context {
+            imports: &imports,
+            .. *ctx
+        };
         let name = module.name();
 
         let mut decls = Vec::new();
@@ -769,7 +772,7 @@ impl Resolver {
         for decl in &module.items {
             let resolved = match decl.node {
                 Decl::Impl(ref impl_) => {
-                    Decl::Impl(self.resolve_impl(impl_, name, &imports, exports))
+                    Decl::Impl(self.resolve_impl(impl_, &ctx))
                 }
                 Decl::Infix(assoc, ref sym, ref precedence) => {
                     let sym_ = match sym.node {
@@ -787,7 +790,7 @@ impl Resolver {
                     }
                 }
                 Decl::Let(LetDecl::Def(ref def)) => {
-                    Decl::Let(LetDecl::Def(self.resolve_def(def, name, &imports, exports)))
+                    Decl::Let(LetDecl::Def(self.resolve_def(def, &ctx)))
                 }
                 Decl::Let(LetDecl::Type(ref type_)) => {
                     let sym = match type_.value.node {
@@ -801,23 +804,23 @@ impl Resolver {
                         Symbol::Unknown
                     };
                     let sym = Node::new(sym, type_.value.span);
-                    let typ = self.resolve_scheme(&type_.type_, name, &imports, exports);
+                    let typ = self.resolve_scheme(&type_.type_, &ctx);
                     Decl::Let(LetDecl::Type(TypeAnnot {
                         value: sym,
                         type_: typ,
                     }))
                 }
                 Decl::Record(ref record) => {
-                    Decl::Record(self.resolve_record(record, name, &imports, exports))
+                    Decl::Record(self.resolve_record(record, &ctx))
                 }
                 Decl::Trait(ref trait_) => {
-                    Decl::Trait(self.resolve_trait(trait_, name, &imports, exports))
+                    Decl::Trait(self.resolve_trait(trait_, &ctx))
                 }
                 Decl::TypeAlias(ref alias) => {
-                    Decl::TypeAlias(self.resolve_type_alias(alias, name, &imports, exports))
+                    Decl::TypeAlias(self.resolve_type_alias(alias, &ctx))
                 }
                 Decl::Union(ref union) => {
-                    Decl::Union(self.resolve_union(union, name, &imports, exports))
+                    Decl::Union(self.resolve_union(union, &ctx))
                 }
             };
 
@@ -834,30 +837,41 @@ impl Resolver {
     fn resolve_impl(
                     &mut self,
                     impl_: &Impl<RawSymbol>,
-                    module: &str,
-                    imports: &Imports,
-                    exports: &HashMap<String, Exports>) -> Impl<Symbol> {
-        unimplemented!()
+                    ctx: &Context) -> Impl<Symbol> {
+        let scheme = self.resolve_scheme(&impl_.scheme, ctx);
+        let trait_ = self.resolve_trait_bound(&impl_.trait_, ctx);
+        let mut values = Vec::new();
+        for value in &impl_.values {
+            let resolved = self.resolve_def(&value.node, ctx);
+            values.push(Node::new(resolved, value.span));
+        }
+
+        Impl {
+            scheme: scheme,
+            trait_: trait_,
+            values: values,
+        }
     }
 
     fn resolve_def(
                     &mut self,
                     def: &Def<RawSymbol>,
-                    module: &str,
-                    imports: &Imports,
-                    exports: &HashMap<String, Exports>) -> Def<Symbol> {
-        unimplemented!()
+                    ctx: &Context) -> Def<Symbol> {
+        let pattern = self.resolve_pattern(&def.pattern, ctx);
+        let value = def.value.as_ref().map(|v| self.resolve_expr(v, ctx));
+        Def {
+            pattern: pattern,
+            value: value,
+        }
     }
 
     fn resolve_record(
                         &mut self,
                         record: &RecordType<RawSymbol>,
-                        module: &str,
-                        imports: &Imports,
-                        exports: &HashMap<String, Exports>) -> RecordType<Symbol> {
+                        ctx: &Context) -> RecordType<Symbol> {
         let mut resolved_fields = Vec::new();
         for &(ref name, ref type_) in &record.fields {
-            let resolved_type = self.resolve_type(type_, module, imports, exports);
+            let resolved_type = self.resolve_type(type_, ctx);
             resolved_fields.push((name.clone(), resolved_type));
         }
         
@@ -871,26 +885,24 @@ impl Resolver {
     fn resolve_trait(
                         &mut self,
                         trait_: &Trait<RawSymbol>,
-                        module: &str,
-                        imports: &Imports,
-                        exports: &HashMap<String, Exports>) -> Trait<Symbol> {
+                        ctx: &Context) -> Trait<Symbol> {
         let mut base_traits = Vec::new();
         for base in &trait_.base_traits {
-            base_traits.push(self.resolve_trait_bound(base, module, imports, exports));
+            base_traits.push(self.resolve_trait_bound(base, ctx));
         }
 
         let mut values = Vec::new();
         for value in &trait_.values {
             let sym = match value.node.value.node {
                 RawSymbol::Unqualified(ref s) => {
-                    let s = Symbol::Global(module.to_string(), s.clone());
+                    let s = Symbol::Global(ctx.module.to_string(), s.clone());
                     Node::new(s, value.node.value.span)
                 }
                 _ => {
                     panic!("type annotation should contain unqualified symbol");
                 }
             };
-            let typ = self.resolve_scheme(&value.node.type_, module, imports, exports);
+            let typ = self.resolve_scheme(&value.node.type_, ctx);
             let annot = TypeAnnot {
                 value: sym,
                 type_: typ,
@@ -909,11 +921,9 @@ impl Resolver {
     fn resolve_type_alias(
                             &mut self,
                             alias: &TypeAlias<RawSymbol>,
-                            module: &str,
-                            imports: &Imports,
-                            exports: &HashMap<String, Exports>) -> TypeAlias<Symbol> {
+                            ctx: &Context) -> TypeAlias<Symbol> {
         let resolved_type = alias.type_.as_ref().map(|t| {
-            self.resolve_type(t, module, imports, exports)
+            self.resolve_type(t, ctx)
         });
         TypeAlias {
             name: alias.name.clone(),
@@ -925,14 +935,12 @@ impl Resolver {
     fn resolve_union(
                         &mut self,
                         union: &UnionType<RawSymbol>,
-                        module: &str,
-                        imports: &Imports,
-                        exports: &HashMap<String, Exports>) -> UnionType<Symbol> {
+                        ctx: &Context) -> UnionType<Symbol> {
         let mut resolved_cases = Vec::new();
         for case in &union.cases {
             let mut args = Vec::new();
             for arg in &case.node.args {
-                args.push(self.resolve_type(arg, module, imports, exports));
+                args.push(self.resolve_type(arg, ctx));
             }
             let resolved_case = UnionCase {
                 tag: case.node.tag.clone(),
@@ -951,29 +959,25 @@ impl Resolver {
     fn resolve_type(
                     &mut self,
                     type_: &Node<Type<RawSymbol>>,
-                    module: &str,
-                    imports: &Imports,
-                    exports: &HashMap<String, Exports>) -> Node<Type<Symbol>> {
+                    ctx: &Context) -> Node<Type<Symbol>> {
         let resolved = match type_.node {
             Type::Var(ref v) => Type::Var(v.clone()),
             Type::Concrete(ref symbol) => {
                 let resolved = self.resolve_symbol(
                     &Node::new(symbol.clone(), type_.span),
                     "type",
-                    module,
-                    imports,
-                    exports);
+                    ctx);
                 Type::Concrete(resolved.node)
             }
             Type::Function(ref from, ref to) => {
-                let from = self.resolve_type(from, module, imports, exports);
-                let to = self.resolve_type(to, module, imports, exports);
+                let from = self.resolve_type(from, ctx);
+                let to = self.resolve_type(to, ctx);
                 Type::Function(Box::new(from), Box::new(to))
             }
             Type::SelfType => Type::SelfType,
             Type::Apply(ref a, ref b) => {
-                let a = self.resolve_type(a, module, imports, exports);
-                let b = self.resolve_type(b, module, imports, exports);
+                let a = self.resolve_type(a, ctx);
+                let b = self.resolve_type(b, ctx);
                 Type::Apply(Box::new(a), Box::new(b))
             }
         };
@@ -984,16 +988,14 @@ impl Resolver {
     fn resolve_scheme(
                     &mut self,
                     type_: &Node<Scheme<RawSymbol>>,
-                    module: &str,
-                    imports: &Imports,
-                    exports: &HashMap<String, Exports>) -> Node<Scheme<Symbol>> {
+                    ctx: &Context) -> Node<Scheme<Symbol>> {
         let mut bounds = Vec::new();
         for &(ref var, ref bound) in &type_.node.bounds {
-            let bound = self.resolve_trait_bound(bound, module, imports, exports);
+            let bound = self.resolve_trait_bound(bound, ctx);
             bounds.push((var.clone(), bound));
         }
 
-        let typ = self.resolve_type(&type_.node.type_, module, imports, exports);
+        let typ = self.resolve_type(&type_.node.type_, ctx);
 
         Node::new(Scheme {
             bounds: bounds,
@@ -1004,19 +1006,12 @@ impl Resolver {
     fn resolve_trait_bound(
                             &mut self,
                             bound: &Node<TraitBound<RawSymbol>>,
-                            module: &str,
-                            imports: &Imports,
-                            exports: &HashMap<String, Exports>) -> Node<TraitBound<Symbol>> {
-        let trait_ = self.resolve_symbol(
-            &bound.node.trait_,
-            "trait",
-            module,
-            imports,
-            exports);
+                            ctx: &Context) -> Node<TraitBound<Symbol>> {
+        let trait_ = self.resolve_symbol(&bound.node.trait_, "trait", ctx);
         
         let mut params = Vec::new();
         for param in &bound.node.params {
-            let typ = self.resolve_type(&param, module, imports, exports);
+            let typ = self.resolve_type(&param, ctx);
             params.push(typ);
         }
         
@@ -1029,18 +1024,14 @@ impl Resolver {
     fn resolve_pattern(
                         &mut self,
                         pattern: &Node<Pattern<RawSymbol>>,
-                        module: &str,
-                        imports: &Imports,
-                        exports: &HashMap<String, Exports>) -> Node<Pattern<Symbol>> {
+                        ctx: &Context) -> Node<Pattern<Symbol>> {
         unimplemented!()
     }
 
     fn resolve_expr(
                         &mut self,
                         pattern: &Node<Expr<RawSymbol>>,
-                        module: &str,
-                        imports: &Imports,
-                        exports: &HashMap<String, Exports>) -> Node<Expr<Symbol>> {
+                        ctx: &Context) -> Node<Expr<Symbol>> {
         unimplemented!()
     }
 
@@ -1048,31 +1039,29 @@ impl Resolver {
                         &mut self,
                         symbol: &Node<RawSymbol>,
                         kind: &str,
-                        module: &str,
-                        imports: &Imports,
-                        exports: &HashMap<String, Exports>) -> Node<Symbol> {
+                        ctx: &Context) -> Node<Symbol> {
         let sym = match symbol.node {
             RawSymbol::Trusted(ref m, ref n) => {
                 Symbol::Global(m.clone(), n.clone())
             }
             RawSymbol::Qualified(ref m, ref n) => {
-                if let Some(m) = imports.modules.get(m.as_str()) {
-                    if exports.get(*m).unwrap().has_type(n) {
+                if let Some(m) = ctx.imports.modules.get(m.as_str()) {
+                    if ctx.exports.get(*m).unwrap().has_type(n) {
                         Symbol::Global(m.to_string(), n.clone())
                     } else {
-                        self.not_exported(n, m, symbol.span, module);
+                        self.not_exported(n, m, symbol.span, ctx.module);
                         Symbol::Unknown
                     }
                 } else {
-                    self.unknown_module(m, symbol.span, module);
+                    self.unknown_module(m, symbol.span, ctx.module);
                     Symbol::Unknown
                 }
             }
             RawSymbol::Unqualified(ref s) => {
-                if let Some(m) = imports.types.get(s.as_str()) {
+                if let Some(m) = ctx.imports.types.get(s.as_str()) {
                     Symbol::Global(m.to_string(), s.clone())
                 } else {
-                    self.unknown_symbol(kind, symbol, module);
+                    self.unknown_symbol(kind, symbol, ctx.module);
                     Symbol::Unknown
                 }
             }

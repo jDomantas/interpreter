@@ -1,13 +1,13 @@
 use std::str::{Chars, FromStr};
 use std::iter::Peekable;
 use ast::RawSymbol;
-use errors::ParseError;
+use errors::{Error, parse_error};
 use parsing::tokens::Token;
 use position::{Position, Span, Spanned};
 
 
-pub fn lex(source: &str) -> (Vec<Spanned<Token>>, Vec<ParseError>) {
-    let mut lexer = Lexer::new(source);
+pub fn lex(source: &str, module: &str) -> (Vec<Spanned<Token>>, Vec<Error>) {
+    let mut lexer = Lexer::new(source, module);
     let mut tokens = Vec::new();
     while let Some(token) = lexer.next_token() {
         tokens.push(token);
@@ -15,17 +15,18 @@ pub fn lex(source: &str) -> (Vec<Spanned<Token>>, Vec<ParseError>) {
     (tokens, lexer.errors)
 }
 
-struct Lexer<'a> {
+struct Lexer<'a, 'b> {
     source: Peekable<Chars<'a>>,
     current: Option<char>,
     line: usize,
     column: usize,
     panicking: bool,
-    errors: Vec<ParseError>,
+    errors: Vec<Error>,
+    module: &'b str,
 }
 
-impl<'a> Lexer<'a> {
-    fn new(source: &str) -> Lexer {
+impl<'a, 'b> Lexer<'a, 'b> {
+    fn new(source: &'a str, module: &'b str) -> Lexer<'a, 'b> {
         let mut chars = source.chars();
         let current = chars.next();
         Lexer {
@@ -35,14 +36,12 @@ impl<'a> Lexer<'a> {
             column: 1,
             panicking: false,
             errors: Vec::new(),
+            module: module,
         }
     }
 
     fn emit_error(&mut self, message: &str, span: Span) {
-        self.errors.push(ParseError {
-            message: message.to_string(),
-            span: span,
-        });
+        self.errors.push(parse_error(message, span, self.module));
     }
 
     fn peek(&self) -> Option<char> {
@@ -394,7 +393,7 @@ mod tests {
     use parsing::lexer::lex;
 
     fn lex_no_positions(source: &str) -> Vec<Token> {
-        let (tokens, errors) = lex(source);
+        let (tokens, errors) = lex(source, "<test>");
         assert!(errors.is_empty());
         tokens.into_iter().map(|tok| tok.value).collect()
     }
@@ -447,7 +446,7 @@ mod tests {
 
     #[test]
     fn positions() {
-        let (tokens, errors) = lex("a =\n1");
+        let (tokens, errors) = lex("a =\n1", "<test>");
         assert!(errors.is_empty());
         assert_eq!(tokens, vec![
             Spanned {

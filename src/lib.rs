@@ -5,6 +5,7 @@ pub mod position;
 pub mod errors;
 pub mod parsing;
 mod ast;
+mod compiler;
 
 #[cfg(test)]
 mod tests { }

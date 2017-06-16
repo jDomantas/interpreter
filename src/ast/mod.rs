@@ -91,6 +91,38 @@ impl Pattern<RawSymbol> {
             }
         }
     }
+
+    pub fn bound_vars(&self, my_span: &Span) -> Vec<Node<&str>> {
+        let mut result = Vec::new();
+        self.collect_vars(&mut result, my_span);
+        result
+    }
+
+    fn collect_vars<'a>(&'a self, result: &mut Vec<Node<&'a str>>, my_span: &Span) {
+        match *self {
+            Pattern::As(ref pattern, ref name) => {
+                result.push(Node::new(&name.node, name.span.clone()));
+                pattern.node.collect_vars(result, &pattern.span);
+            }
+            Pattern::Deconstruct(_, ref args) => {
+                for arg in args {
+                    arg.node.collect_vars(result, &arg.span);
+                }
+            }
+            Pattern::Infix(ref left, _, ref right) => {
+                left.node.collect_vars(result, &left.span);
+                right.node.collect_vars(result, &right.span);
+            }
+            Pattern::Parenthesised(ref pattern) => {
+                pattern.node.collect_vars(result, &pattern.span);
+            }
+            Pattern::Var(ref name) => {
+                result.push(Node::new(name, my_span.clone()));
+            }
+            Pattern::Wildcard => { }
+            Pattern::Literal(_) => { }
+        }
+    }
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -108,7 +140,7 @@ pub struct Def<Sym> {
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct TypeAnnot<Sym> {
-    pub value: Node<String>,
+    pub value: Node<Sym>,
     pub type_: Node<Scheme<Sym>>,
 }
 
@@ -142,13 +174,19 @@ impl Type<RawSymbol> {
 #[derive(PartialEq, Debug, Clone)]
 pub struct Scheme<Sym> {
     pub type_: Node<Type<Sym>>,
-    pub vars: Vec<(Node<String>, Node<Type<Sym>>)>,
+    pub bounds: Vec<(Node<String>, Node<TraitBound<Sym>>)>,
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct TraitBound<Sym> {
+    pub trait_: Node<Sym>,
+    pub params: Vec<Node<Type<Sym>>>,
 }
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum Decl<Sym> {
     Let(LetDecl<Sym>),
-    Infix(Associativity, Node<String>, Node<u64>),
+    Infix(Associativity, Node<Sym>, Node<u64>),
     TypeAlias(TypeAlias<Sym>),
     Union(UnionType<Sym>),
     Record(RecordType<Sym>),
@@ -195,46 +233,39 @@ pub struct RecordType<Sym> {
 pub struct Trait<Sym> {
     pub name: Node<String>,
     pub vars: Vec<Node<String>>,
-    pub base_traits: Vec<Node<Type<Sym>>>,
+    pub base_traits: Vec<Node<TraitBound<Sym>>>,
     pub values: Vec<Node<TypeAnnot<Sym>>>,
 }
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct Impl<Sym> {
     pub scheme: Node<Scheme<Sym>>,
-    pub trait_: Node<Type<Sym>>,
+    pub trait_: Node<TraitBound<Sym>>,
     pub values: Vec<Node<Def<Sym>>>,
 }
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct ModuleDef {
     pub name: Node<String>,
-    pub exposing: Vec<Node<ListItem<ExposedItem<RawSymbol>>>>,
+    pub exposing: Node<ItemList<Node<ExposedItem>>>,
 }
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct Import {
     pub name: Node<String>,
     pub alias: Option<Node<String>>,
-    pub exposing: Vec<Node<ListItem<ExposedItem<String>>>>,
+    pub exposing: Option<Node<ItemList<Node<ExposedItem>>>>,
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub struct ExposedItem<Sym> {
-    pub name: Node<Sym>,
-    pub alias: Option<Node<String>>,
-    pub subitems: Vec<Node<ListItem<ExposedSubitem>>>,
-}
-
-#[derive(PartialEq, Debug, Clone)]
-pub struct ExposedSubitem {
+pub struct ExposedItem {
     pub name: Node<String>,
-    pub alias: Option<Node<String>>,
+    pub subitems: Option<Node<ItemList<Node<String>>>>,
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub enum ListItem<T> {
-    Concrete(T),
+pub enum ItemList<T> {
+    Some(Vec<T>),
     All,
 }
 
@@ -243,6 +274,12 @@ pub struct Module<Sym> {
     pub def: Node<ModuleDef>,
     pub imports: Vec<Node<Import>>,
     pub items: Vec<Node<Decl<Sym>>>,
+}
+
+impl<Sym> Module<Sym> {
+    pub fn name(&self) -> &str {
+        &self.def.node.name.node
+    }
 }
 
 #[derive(PartialEq, Eq, Debug, Hash, Clone)]
@@ -282,4 +319,5 @@ impl RawSymbol {
 pub enum Symbol {
     Global(String, String),
     Local(String),
+    Unknown,
 }

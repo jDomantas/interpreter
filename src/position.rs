@@ -1,7 +1,7 @@
 use std::cmp;
 
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Hash)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy, Hash)]
 pub struct Position {
     pub line: usize,
     pub column: usize,
@@ -20,7 +20,7 @@ impl Position {
     }
 }
 
-#[derive(PartialEq, Eq, Debug, Clone, Hash)]
+#[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
 pub struct Span {
     pub start: Position,
     pub end: Position,

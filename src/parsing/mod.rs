@@ -4,15 +4,15 @@ mod parser;
 
 use std::collections::{HashSet, HashMap};
 use ast::{Module, RawSymbol};
-use errors::ParseError;
+use errors::Error;
 
 pub trait SourceProvider {
     fn get_module_source(&self, name: &str) -> Result<String, String>;
 }
 
-pub fn parse_module(source: &str, require_def: bool) -> (Option<Module<RawSymbol>>, Vec<ParseError>) {
-    let (tokens, lex_errors) = lexer::lex(source);
-    let (module, mut parse_errors) = parser::parse_module(tokens.into_iter(), require_def);
+pub fn parse_module(source: &str, module: &str, require_def: bool) -> (Option<Module<RawSymbol>>, Vec<Error>) {
+    let (tokens, lex_errors) = lexer::lex(source, module);
+    let (module, mut parse_errors) = parser::parse_module(tokens.into_iter(), module, require_def);
     parse_errors.extend(lex_errors);
     parse_errors.sort_by(|a, b| a.span.start.cmp(&b.span.start));
     (module, parse_errors)
@@ -23,7 +23,7 @@ pub fn parse_modules<T: SourceProvider>(main: &str, provider: T) -> HashMap<Stri
     let mut to_walk = Vec::new();
     let mut checked = HashSet::new();
 
-    let (main_module, mut errors) = parse_module(main, false);
+    let (main_module, mut errors) = parse_module(main, "<main>", false);
 
     if let Some(module) = main_module {
         to_walk.push(module);
@@ -37,7 +37,7 @@ pub fn parse_modules<T: SourceProvider>(main: &str, provider: T) -> HashMap<Stri
             }
             match provider.get_module_source(name) {
                 Ok(source) => {
-                    let (module, parse_errors) = parse_module(&source, true);
+                    let (module, parse_errors) = parse_module(&source, &name, true);
                     // TODO: mark from which file each error was
                     errors.extend(parse_errors);
                     if let Some(module) = module {

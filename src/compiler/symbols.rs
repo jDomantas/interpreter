@@ -1,10 +1,12 @@
 use std::collections::{HashMap, HashSet};
 use std::collections::hash_map::Entry;
-use ast::{
-    Module, RawSymbol, Symbol, Decl, LetDecl, Node, ItemList, Impl, Def,
-    TypeAnnot, RecordType, Trait, TypeAlias, UnionType, Type, Expr, Pattern,
-    UnionCase, Scheme, TraitBound,
+use ast::Node;
+use ast::parsed as p;
+use ast::parsed::{
+    Module, Symbol, Decl, LetDecl, ItemList, Impl, Def, RecordType, Trait,
+    TypeAlias, UnionType, Type, Expr, Pattern, Scheme, TraitBound, DoExpr,
 };
+use ast::resolved as r;
 use errors::{self, Error};
 use position::Span;
 
@@ -110,15 +112,32 @@ impl<'a> Imports<'a> {
     }
 }
 
-type ModuleTable<Sym> = HashMap<String, Module<Sym>>;
-
-pub fn resolve_symbols(modules: ModuleTable<RawSymbol>) -> Result<ModuleTable<Symbol>, Vec<Error>> {
-    unimplemented!()
+pub fn resolve_symbols(modules: HashMap<String, Module>) -> Result<r::Items, Vec<Error>> {
+    let mut resolver = Resolver::new();
+    let mut exports = HashMap::new();
+    for (name, module) in &modules {
+        let module_exports = resolver.collect_exports(module);
+        exports.insert(name.clone(), module_exports);
+    }
+    for (name, module) in &modules {
+        let ctx = Context {
+            module: name,
+            imports: &Imports::empty(),
+            exports: &exports,
+        };
+        resolver.resolve(module, &ctx);
+    }
+    if resolver.errors.is_empty() {
+        Ok(resolver.result)
+    } else {
+        Err(resolver.errors)
+    }
 }
 
 struct Resolver {
     errors: Vec<Error>,
     emit_errors: bool,
+    result: r::Items,
 }
 
 impl Resolver {
@@ -126,6 +145,7 @@ impl Resolver {
         Resolver {
             errors: Vec::new(),
             emit_errors: true,
+            result: r::Items::empty(),
         }
     }
 
@@ -133,6 +153,19 @@ impl Resolver {
         if self.emit_errors {
             let message = format!("Item `{}` is defined multiple times.", name);
             let previous_message = "Note: previously defined here.";
+            self.errors.push(errors::double_symbol_error(
+                message,
+                span,
+                previous_message,
+                previous,
+                module));
+        }
+    }
+
+    fn duplicate_binding(&mut self, name: &str, span: Span, previous: Span, module: &str) {
+        if self.emit_errors {
+            let message = format!("Name `{}` is bound multiple times.", name);
+            let previous_message = "Note: previously bound here.";
             self.errors.push(errors::double_symbol_error(
                 message,
                 span,
@@ -174,6 +207,32 @@ impl Resolver {
         }
     }
 
+    fn double_fixity_decl(&mut self, name: &str, span: Span, previous: Span, module: &str) {
+        if self.emit_errors {
+            let message = format!("Fixity of `{}` is declared twice.", name);
+            let previous_message = "Note: previously declared here.";
+            self.errors.push(errors::double_symbol_error(
+                message,
+                span,
+                previous_message,
+                previous,
+                module));
+        }
+    }
+
+    fn double_type_annotation(&mut self, name: &str, span: Span, previous: Span, module: &str) {
+        if self.emit_errors {
+            let message = format!("Type of `{}` is declared twice.", name);
+            let previous_message = "Note: previously declared here.";
+            self.errors.push(errors::double_symbol_error(
+                message,
+                span,
+                previous_message,
+                previous,
+                module));
+        }
+    }
+
     fn not_exported(&mut self, item: &str, by: &str, span: Span, module: &str) {
         if self.emit_errors {
             let message = format!("Item `{}` is not exported by `{}`.", item, by);
@@ -204,9 +263,16 @@ impl Resolver {
         }
     }
 
-    fn unknown_symbol(&mut self, kind: &str, symbol: &Node<RawSymbol>, module: &str) {
+    fn unknown_symbol(&mut self, kind: &str, symbol: &Node<p::Symbol>, module: &str) {
         if self.emit_errors {
-            let message = format!("Unknown {}: `{}`.", kind, symbol.node.clone().full_name());
+            let message = format!("Unknown {}: `{}`.", kind, symbol.value.clone().full_name());
+            self.errors.push(errors::symbol_error(message, symbol.span, module));
+        }
+    }
+
+    fn unknown_local_symbol(&mut self, kind: &str, symbol: &Node<String>, module: &str) {
+        if self.emit_errors {
+            let message = format!("Unknown local {}: `{}`.", kind, symbol.value);
             self.errors.push(errors::symbol_error(message, symbol.span, module));
         }
     }
@@ -218,17 +284,17 @@ impl Resolver {
         }
     }
 
-    fn collect_items<'a>(&mut self, module: &'a Module<RawSymbol>) -> Exports<'a> {
+    fn collect_items<'a>(&mut self, module: &'a Module) -> Exports<'a> {
         let mut values: HashMap<&'a str, (Option<&'a str>, Span)> = HashMap::new();
         let mut patterns: HashMap<&'a str, (Option<&'a str>, Span)> = HashMap::new();
         let mut traits: HashMap<&'a str, Span> = HashMap::new();
         let mut types: HashMap<&'a str, Span> = HashMap::new();
 
         for item in &module.items {
-            match item.node {
+            match item.value {
                 Decl::Let(LetDecl::Def(ref def)) => {
-                    let vars = def.pattern.node.bound_vars(&def.pattern.span);
-                    for Node { node: var, span, .. } in vars {
+                    let vars = def.pattern.value.bound_vars(def.pattern.span);
+                    for Node { value: var, span, .. } in vars {
                         match values.entry(var) {
                             Entry::Vacant(entry) => {
                                 entry.insert((None, span));
@@ -246,15 +312,15 @@ impl Resolver {
                     }
                 }
                 Decl::Record(ref record) => {
-                    if let Some(span) = traits.get(record.name.node.as_str()) {
+                    if let Some(span) = traits.get(record.name.value.as_str()) {
                         // duplicate type, defined at `record.name.span` and `span`
                         self.double_definition(
-                            &record.name.node,
+                            &record.name.value,
                             record.name.span,
                             *span,
                             module.name());
                     } else {
-                        match types.entry(&record.name.node) {
+                        match types.entry(&record.name.value) {
                             Entry::Vacant(entry) => {
                                 entry.insert(record.name.span);
                             }
@@ -262,14 +328,14 @@ impl Resolver {
                                 let span = entry.get();
                                 // duplicate type, defined at `record.name.span` and `span`
                                 self.double_definition(
-                                    &record.name.node,
+                                    &record.name.value,
                                     record.name.span,
                                     *span,
                                     module.name());
                             }
                         }
                     }
-                    match values.entry(&record.name.node) {
+                    match values.entry(&record.name.value) {
                         Entry::Vacant(entry) => {
                             entry.insert((None, record.name.span));
                         }
@@ -277,13 +343,13 @@ impl Resolver {
                             let span = entry.get().1;
                             // duplicate value, defined at `record.name.span` and `span`
                             self.double_definition(
-                                &record.name.node,
+                                &record.name.value,
                                 record.name.span,
                                 span,
                                 module.name());
                         }
                     }
-                    match patterns.entry(&record.name.node) {
+                    match patterns.entry(&record.name.value) {
                         Entry::Vacant(entry) => {
                             entry.insert((None, record.name.span));
                         }
@@ -291,22 +357,22 @@ impl Resolver {
                             let span = entry.get().1;
                             // duplicate pattern, defined at `record.name.span` and `span`
                             self.double_definition(
-                                &record.name.node,
+                                &record.name.value,
                                 record.name.span,
                                 span,
                                 module.name());
                         }
                     }
                     for field in &record.fields {
-                        match values.entry(&field.0.node) {
+                        match values.entry(&field.0.value) {
                             Entry::Vacant(entry) => {
-                                entry.insert((Some(&record.name.node), field.0.span));
+                                entry.insert((Some(&record.name.value), field.0.span));
                             }
                             Entry::Occupied(entry) => {
                                 let span = entry.get().1;
                                 // duplicate value, defined at `field.0.span` and `span`
                                 self.double_definition(
-                                    &field.0.node,
+                                    &field.0.value,
                                     field.0.span,
                                     span,
                                     module.name());
@@ -315,15 +381,15 @@ impl Resolver {
                     }
                 }
                 Decl::Trait(ref trait_) => {
-                    if let Some(span) = types.get(trait_.name.node.as_str()) {
+                    if let Some(span) = types.get(trait_.name.value.as_str()) {
                         // duplicate type, defined at `trait_.name.span` and `span`
                         self.double_definition(
-                            &trait_.name.node,
+                            &trait_.name.value,
                             trait_.name.span,
                             *span,
                             module.name());
                     } else {
-                        match traits.entry(&trait_.name.node) {
+                        match traits.entry(&trait_.name.value) {
                             Entry::Vacant(entry) => {
                                 entry.insert(trait_.name.span);
                             }
@@ -331,7 +397,7 @@ impl Resolver {
                                 let span = entry.get();
                                 // duplicate trait, defined at `trait_.name.span` and `span`
                                 self.double_definition(
-                                    &trait_.name.node,
+                                    &trait_.name.value,
                                     trait_.name.span,
                                     *span,
                                     module.name());
@@ -340,25 +406,17 @@ impl Resolver {
                     }
 
                     for value in &trait_.values {
-                        let name = &value.node.value;
-                        let item = match name.node {
-                            RawSymbol::Unqualified(ref s) => {
-                                s
-                            }
-                            _ => {
-                                panic!("type annotation should contain unqualified symbol");
-                            }
-                        };
+                        let item = &value.value.value.value;
                         match values.entry(item) {
                             Entry::Vacant(entry) => {
-                                entry.insert((None, value.node.value.span));
+                                entry.insert((None, value.value.value.span));
                             }
                             Entry::Occupied(entry) => {
                                 let another = entry.get().1;
                                 // duplicate value, defined at `span` and `another`
                                 self.double_definition(
                                     item,
-                                    value.node.value.span,
+                                    value.value.value.span,
                                     another,
                                     module.name());
                             }
@@ -366,15 +424,15 @@ impl Resolver {
                     }
                 }
                 Decl::TypeAlias(ref type_) => {
-                    if let Some(span) = traits.get(type_.name.node.as_str()) {
+                    if let Some(span) = traits.get(type_.name.value.as_str()) {
                         // duplicate type, defined at `type_.name.span` and `span`
                         self.double_definition(
-                            &type_.name.node,
+                            &type_.name.value,
                             type_.name.span,
                             *span,
                             module.name());
                     } else {
-                        match types.entry(&type_.name.node) {
+                        match types.entry(&type_.name.value) {
                             Entry::Vacant(entry) => {
                                 entry.insert(type_.name.span);
                             }
@@ -382,7 +440,7 @@ impl Resolver {
                                 let span = entry.get();
                                 // duplicate type, defined at `type_.name.span` and `span`
                                 self.double_definition(
-                                    &type_.name.node,
+                                    &type_.name.value,
                                     type_.name.span,
                                     *span,
                                     module.name());
@@ -391,7 +449,7 @@ impl Resolver {
                     }
                 }
                 Decl::Union(ref union) => {
-                    match types.entry(&union.name.node) {
+                    match types.entry(&union.name.value) {
                         Entry::Vacant(entry) => {
                             entry.insert(union.name.span);
                         }
@@ -399,37 +457,37 @@ impl Resolver {
                             let span = entry.get();
                             // duplicate type, defined at `span` and `union.name.span`
                             self.double_definition(
-                                &union.name.node,
+                                &union.name.value,
                                 union.name.span,
                                 *span,
                                 module.name());
                         }
                     }
                     for case in &union.cases {
-                        match values.entry(&case.node.tag.node) {
+                        match values.entry(&case.value.tag.value) {
                             Entry::Vacant(entry) => {
-                                entry.insert((Some(&union.name.node), case.node.tag.span));
+                                entry.insert((Some(&union.name.value), case.value.tag.span));
                             }
                             Entry::Occupied(entry) => {
                                 let span = entry.get().1;
                                 // duplicate value, defined at `span` and `case.node.tag.span`
                                 self.double_definition(
-                                    &case.node.tag.node,
-                                    case.node.tag.span,
+                                    &case.value.tag.value,
+                                    case.value.tag.span,
                                     span,
                                     module.name());
                             }
                         }
-                        match patterns.entry(&case.node.tag.node) {
+                        match patterns.entry(&case.value.tag.value) {
                             Entry::Vacant(entry) => {
-                                entry.insert((Some(&union.name.node), case.node.tag.span));
+                                entry.insert((Some(&union.name.value), case.value.tag.span));
                             }
                             Entry::Occupied(entry) => {
                                 let span = entry.get().1;
                                 // duplicate pattern, defined at `span` and `case.node.tag.span`
                                 self.double_definition(
-                                    &case.node.tag.node,
-                                    case.node.tag.span,
+                                    &case.value.tag.value,
+                                    case.value.tag.span,
                                     span,
                                     module.name());
                             }
@@ -455,19 +513,19 @@ impl Resolver {
         }
     }
 
-    fn collect_exports<'a>(&mut self, module: &'a Module<RawSymbol>) -> Exports<'a> {
+    fn collect_exports<'a>(&mut self, module: &'a Module) -> Exports<'a> {
         let items = self.collect_items(module);
 
-        let exposed = match module.def.node.exposing.node {
+        let exposed = match module.def.value.exposing.value {
             ItemList::All => return items,
             ItemList::Some(ref items) => items,
         };
 
         let mut result = Exports::empty();
         for item in exposed {
-            let subitems = &item.node.subitems;
-            let name = &item.node.name.node;
-            let span = item.node.name.span;
+            let subitems = &item.value.subitems;
+            let name = &item.value.name.value;
+            let span = item.value.name.span;
             let item = Item::new(name, None);
             let mut found = false;
             if items.values.contains(&item) {
@@ -494,7 +552,7 @@ impl Resolver {
                 continue;
             }
             match *subitems {
-                Some(Node { node: ItemList::All, .. }) => {
+                Some(Node { value: ItemList::All, .. }) => {
                     let mut found_any = false;
                     for value in &items.values {
                         if value.parent == Some(name) {
@@ -515,9 +573,9 @@ impl Resolver {
                             module.name());
                     }
                 }
-                Some(Node { node: ItemList::Some(ref subitems), .. }) => {
+                Some(Node { value: ItemList::Some(ref subitems), .. }) => {
                     for item in subitems {
-                        let item = Item::new(&item.node, Some(name));
+                        let item = Item::new(&item.value, Some(name));
                         let mut is_ok = false;
                         if items.values.contains(&item) {
                             result.values.insert(item.clone());
@@ -542,31 +600,31 @@ impl Resolver {
         result
     }
 
-    fn collect_imports<'a>(&mut self, module: &'a Module<RawSymbol>, ctx: &Context<'a>) -> Imports<'a> {
+    fn collect_imports<'a>(&mut self, module: &'a Module, ctx: &Context<'a>) -> Imports<'a> {
         let mut imports = Imports::empty();
         let mut import_span = HashMap::new();
         let mut first_import = HashMap::new();
 
         for import in &module.imports {
-            let alias: &str = if let Some(ref alias) = import.node.alias {
-                &alias.node
+            let alias: &str = if let Some(ref alias) = import.value.alias {
+                &alias.value
             } else {
-                &import.node.name.node
+                &import.value.name.value
             };
 
             match imports.modules.entry(alias) {
                 Entry::Vacant(entry) => {
-                    entry.insert(&import.node.name.node);
+                    entry.insert(&import.value.name.value);
                     import_span.insert(alias, import.span);
                 }
                 Entry::Occupied(_) => {
                     let previous = *import_span.get(alias).unwrap();
-                    self.module_double_import(alias, import.node.name.span, previous, module.name());
+                    self.module_double_import(alias, import.value.name.span, previous, module.name());
                     continue;
                 }
             }
 
-            let name = &import.node.name.node;
+            let name = &import.value.name.value;
 
             let exports = if let Some(exports) = ctx.exports.get(name) {
                 exports
@@ -574,8 +632,8 @@ impl Resolver {
                 panic!("all required modules should be available at symbol resolution");
             };
 
-            match import.node.exposing {
-                Some(Node { node: ItemList::All, span: list_span, .. }) => {
+            match import.value.exposing {
+                Some(Node { value: ItemList::All, span: list_span, .. }) => {
                     for type_ in &exports.types {
                         match first_import.entry(*type_) {
                             Entry::Vacant(entry) => {
@@ -621,10 +679,10 @@ impl Resolver {
                         }
                     }
                 }
-                Some(Node { node: ItemList::Some(ref items), .. }) => {
+                Some(Node { value: ItemList::Some(ref items), .. }) => {
                     for item in items {
-                        let item_name = &item.node.name.node;
-                        let item_span = item.node.name.span;
+                        let item_name = &item.value.name.value;
+                        let item_span = item.value.name.span;
                         match first_import.entry(item_name) {
                             Entry::Vacant(entry) => {
                                 entry.insert((name, item_span));
@@ -660,8 +718,8 @@ impl Resolver {
                                 module.name());
                             continue;
                         }
-                        match item.node.subitems {
-                            Some(Node { node: ItemList::All, span: list_span, .. }) => {
+                        match item.value.subitems {
+                            Some(Node { value: ItemList::All, span: list_span, .. }) => {
                                 let mut found_any = false;
                                 for pattern in &exports.patterns {
                                     if pattern.parent != Some(item_name) {
@@ -703,21 +761,21 @@ impl Resolver {
                                 }
                                 if !found_any {
                                     self.no_subitems(
-                                        &item.node.name.node,
+                                        &item.value.name.value,
                                         name,
                                         list_span,
                                         module.name());
                                 }
                             }
-                            Some(Node { node: ItemList::Some(ref items), .. }) => {
+                            Some(Node { value: ItemList::Some(ref items), .. }) => {
                                 for subitem in items {
-                                    match first_import.entry(&subitem.node) {
+                                    match first_import.entry(&subitem.value) {
                                         Entry::Vacant(entry) => {
                                             entry.insert((name, item.span));
                                         }
                                         Entry::Occupied(entry) => {
                                             self.double_import(
-                                                &subitem.node,
+                                                &subitem.value,
                                                 item.span,
                                                 entry.get().1,
                                                 module.name());
@@ -725,19 +783,19 @@ impl Resolver {
                                         }
                                     }
                                     let mut is_ok = false;
-                                    let as_item = Item::new(&subitem.node, Some(item_name));
+                                    let as_item = Item::new(&subitem.value, Some(item_name));
                                     if exports.values.contains(&as_item) {
-                                        imports.values.insert(&subitem.node, name);
+                                        imports.values.insert(&subitem.value, name);
                                         is_ok = true;
                                     }
                                     if exports.patterns.contains(&as_item) {
-                                        imports.patterns.insert(&subitem.node, name);
+                                        imports.patterns.insert(&subitem.value, name);
                                         is_ok = true;
                                     }
                                     if !is_ok {
                                         self.subitem_not_exported(
-                                            &subitem.node,
-                                            &item.node.name.node,
+                                            &subitem.value,
+                                            &item.value.name.value,
                                             name,
                                             subitem.span,
                                             module.name());
@@ -755,7 +813,7 @@ impl Resolver {
         imports
     }
 
-    fn resolve(&mut self, module: &Module<RawSymbol>, ctx: &Context) -> Module<Symbol> {
+    fn resolve(&mut self, module: &Module, ctx: &Context) {
         self.emit_errors = false;
         let locals = self.collect_items(module);
         self.emit_errors = true;
@@ -767,86 +825,102 @@ impl Resolver {
         };
         let name = module.name();
 
-        let mut decls = Vec::new();
+        let mut fixity_decl = HashMap::new();
+        let mut type_annotation = HashMap::new();
 
         for decl in &module.items {
-            let resolved = match decl.node {
+            match decl.value {
                 Decl::Impl(ref impl_) => {
-                    Decl::Impl(self.resolve_impl(impl_, &ctx))
+                    let impl_ = self.resolve_impl(impl_, &ctx);
+                    self.result.impls.push(impl_);
                 }
-                Decl::Infix(assoc, ref sym, ref precedence) => {
-                    let sym_ = match sym.node {
-                        RawSymbol::Unqualified(ref s) => s,
-                        _ => panic!("infix should contain unqualified symbol"),
-                    };
+                Decl::Infix(assoc, ref sym, ref prec) => {
+                    let sym_ = &sym.value;
                     if imports.values.get(sym_.as_str()) == Some(&name) {
-                        let new_sym = Symbol::Global(name.to_string(), sym_.to_string());
-                        let sym_node = Node::new(new_sym, sym.span);
-                        Decl::Infix(assoc, sym_node, precedence.clone())
+                        match fixity_decl.entry(sym_.as_str()) {
+                            Entry::Vacant(entry) => {
+                                entry.insert(decl.span);
+                                self.result.fixities.insert(sym.value.clone(), (assoc, prec.value));
+                            }
+                            Entry::Occupied(entry) => {
+                                let previous = *entry.get();
+                                self.double_fixity_decl(
+                                    sym_,
+                                    sym.span,
+                                    previous,
+                                    name);
+                            }
+                        }
                     } else {
-                        self.unknown_symbol("local value", sym, name);
-                        let sym_node = Node::new(Symbol::Unknown, sym.span);
-                        Decl::Infix(assoc, sym_node, precedence.clone())
+                        let sym = sym.clone().map(|s| Symbol::Qualified(name.into(), s));
+                        self.unknown_symbol("local value", &sym, name);
                     }
                 }
                 Decl::Let(LetDecl::Def(ref def)) => {
-                    Decl::Let(LetDecl::Def(self.resolve_def(def, &ctx)))
+                    let def = self.resolve_def(def, &ctx);
+                    self.result.items.push(def);
                 }
                 Decl::Let(LetDecl::Type(ref type_)) => {
-                    let sym = match type_.value.node {
-                        RawSymbol::Unqualified(ref s) => s,
-                        _ => panic!("annotation should contain unqualified symbol"),
-                    };
-                    let sym = if imports.values.get(sym.as_str()) == Some(&name) {
-                        Symbol::Global(name.to_string(), sym.to_string())
+                    let sym = type_.value.value.as_str();
+                    if imports.values.get(sym) == Some(&name) {
+                        let full_sym = format!("{}.{}", name, sym);
+                        let sym_node = Node::new(full_sym.clone(), type_.value.span);
+                        let rtype = self.resolve_scheme(&type_.type_, &ctx);
+                        let annotation = r::TypeAnnot {
+                            value: sym_node,
+                            type_: rtype,
+                        };
+                        match type_annotation.entry(sym) {
+                            Entry::Vacant(entry) => {
+                                entry.insert(type_.value.span);
+                                self.result.annotations.insert(full_sym, annotation);
+                            }
+                            Entry::Occupied(entry) => {
+                                let previous = *entry.get();
+                                self.double_type_annotation(
+                                    sym,
+                                    type_.value.span,
+                                    previous,
+                                    name);
+                            }
+                        }
                     } else {
-                        self.unknown_symbol("local value", &type_.value, name);
-                        Symbol::Unknown
-                    };
-                    let sym = Node::new(sym, type_.value.span);
-                    let typ = self.resolve_scheme(&type_.type_, &ctx);
-                    Decl::Let(LetDecl::Type(TypeAnnot {
-                        value: sym,
-                        type_: typ,
-                    }))
+                        self.unknown_local_symbol("value", &type_.value, name);
+                    }
                 }
                 Decl::Record(ref record) => {
-                    Decl::Record(self.resolve_record(record, &ctx))
+                    let type_ = self.resolve_record(record, &ctx);
+                    self.result.types.push(r::TypeDecl::Record(type_));
                 }
                 Decl::Trait(ref trait_) => {
-                    Decl::Trait(self.resolve_trait(trait_, &ctx))
+                    let trait_ = self.resolve_trait(trait_, &ctx);
+                    self.result.traits.push(trait_);
                 }
                 Decl::TypeAlias(ref alias) => {
-                    Decl::TypeAlias(self.resolve_type_alias(alias, &ctx))
+                    let type_ = self.resolve_type_alias(alias, &ctx);
+                    self.result.types.push(r::TypeDecl::TypeAlias(type_));
                 }
                 Decl::Union(ref union) => {
-                    Decl::Union(self.resolve_union(union, &ctx))
+                    let type_ = self.resolve_union(union, &ctx);
+                    self.result.types.push(r::TypeDecl::Union(type_));
                 }
             };
-
-            decls.push(Node::new(resolved, decl.span));
-        }
-
-        Module {
-            items: decls,
-            imports: Vec::new(),
-            def: module.def.clone(),
         }
     }
 
     fn resolve_impl(
                     &mut self,
-                    impl_: &Impl<RawSymbol>,
-                    ctx: &Context) -> Impl<Symbol> {
+                    impl_: &Impl,
+                    ctx: &Context) -> r::Impl {
         let scheme = self.resolve_scheme(&impl_.scheme, ctx);
         let trait_ = self.resolve_trait_bound(&impl_.trait_, ctx);
         let mut values = Vec::new();
         for value in &impl_.values {
-            let resolved = self.resolve_def(&value.node, ctx);
+            let resolved = self.resolve_def(&value.value, ctx);
             values.push(Node::new(resolved, value.span));
         }
 
-        Impl {
+        r::Impl {
             scheme: scheme,
             trait_: trait_,
             values: values,
@@ -855,27 +929,28 @@ impl Resolver {
 
     fn resolve_def(
                     &mut self,
-                    def: &Def<RawSymbol>,
-                    ctx: &Context) -> Def<Symbol> {
+                    def: &Def,
+                    ctx: &Context) -> r::Def {
         let pattern = self.resolve_pattern(&def.pattern, ctx);
         let value = def.value.as_ref().map(|v| self.resolve_expr(v, ctx));
-        Def {
+        r::Def {
             pattern: pattern,
             value: value,
+            module: ctx.module.to_string(),
         }
     }
 
     fn resolve_record(
                         &mut self,
-                        record: &RecordType<RawSymbol>,
-                        ctx: &Context) -> RecordType<Symbol> {
+                        record: &RecordType,
+                        ctx: &Context) -> r::RecordType {
         let mut resolved_fields = Vec::new();
         for &(ref name, ref type_) in &record.fields {
             let resolved_type = self.resolve_type(type_, ctx);
             resolved_fields.push((name.clone(), resolved_type));
         }
         
-        RecordType {
+        r::RecordType {
             name: record.name.clone(),
             vars: record.vars.clone(),
             fields: resolved_fields,
@@ -884,8 +959,8 @@ impl Resolver {
 
     fn resolve_trait(
                         &mut self,
-                        trait_: &Trait<RawSymbol>,
-                        ctx: &Context) -> Trait<Symbol> {
+                        trait_: &Trait,
+                        ctx: &Context) -> r::Trait {
         let mut base_traits = Vec::new();
         for base in &trait_.base_traits {
             base_traits.push(self.resolve_trait_bound(base, ctx));
@@ -893,24 +968,17 @@ impl Resolver {
 
         let mut values = Vec::new();
         for value in &trait_.values {
-            let sym = match value.node.value.node {
-                RawSymbol::Unqualified(ref s) => {
-                    let s = Symbol::Global(ctx.module.to_string(), s.clone());
-                    Node::new(s, value.node.value.span)
-                }
-                _ => {
-                    panic!("type annotation should contain unqualified symbol");
-                }
-            };
-            let typ = self.resolve_scheme(&value.node.type_, ctx);
-            let annot = TypeAnnot {
-                value: sym,
+            let sym = r::Symbol::Global(ctx.module.to_string(), value.value.value.value.clone());
+            let sym = Node::new(sym, value.value.value.span);
+            let typ = self.resolve_scheme(&value.value.type_, ctx);
+            let annot = r::TypeAnnot {
+                value: sym.map(r::Symbol::full_name),
                 type_: typ,
             };
             values.push(Node::new(annot, value.span));
         }
 
-        Trait {
+        r::Trait {
             name: trait_.name.clone(),
             vars: trait_.vars.clone(),
             base_traits: base_traits,
@@ -920,12 +988,12 @@ impl Resolver {
 
     fn resolve_type_alias(
                             &mut self,
-                            alias: &TypeAlias<RawSymbol>,
-                            ctx: &Context) -> TypeAlias<Symbol> {
+                            alias: &TypeAlias,
+                            ctx: &Context) -> r::TypeAlias {
         let resolved_type = alias.type_.as_ref().map(|t| {
             self.resolve_type(t, ctx)
         });
-        TypeAlias {
+        r::TypeAlias {
             name: alias.name.clone(),
             vars: alias.vars.clone(),
             type_: resolved_type,
@@ -934,22 +1002,22 @@ impl Resolver {
 
     fn resolve_union(
                         &mut self,
-                        union: &UnionType<RawSymbol>,
-                        ctx: &Context) -> UnionType<Symbol> {
+                        union: &UnionType,
+                        ctx: &Context) -> r::UnionType {
         let mut resolved_cases = Vec::new();
         for case in &union.cases {
             let mut args = Vec::new();
-            for arg in &case.node.args {
+            for arg in &case.value.args {
                 args.push(self.resolve_type(arg, ctx));
             }
-            let resolved_case = UnionCase {
-                tag: case.node.tag.clone(),
+            let resolved_case = r::UnionCase {
+                tag: case.value.tag.clone(),
                 args: args,
             };
             resolved_cases.push(Node::new(resolved_case, case.span));
         }
         
-        UnionType {
+        r::UnionType {
             name: union.name.clone(),
             vars: union.vars.clone(),
             cases: resolved_cases,
@@ -958,27 +1026,30 @@ impl Resolver {
 
     fn resolve_type(
                     &mut self,
-                    type_: &Node<Type<RawSymbol>>,
-                    ctx: &Context) -> Node<Type<Symbol>> {
-        let resolved = match type_.node {
-            Type::Var(ref v) => Type::Var(v.clone()),
+                    type_: &Node<Type>,
+                    ctx: &Context) -> Node<r::Type> {
+        let resolved = match type_.value {
+            Type::Var(ref v) => r::Type::Var(v.clone()),
             Type::Concrete(ref symbol) => {
                 let resolved = self.resolve_symbol(
                     &Node::new(symbol.clone(), type_.span),
                     "type",
                     ctx);
-                Type::Concrete(resolved.node)
+                r::Type::Concrete(resolved.value.full_name())
             }
             Type::Function(ref from, ref to) => {
                 let from = self.resolve_type(from, ctx);
                 let to = self.resolve_type(to, ctx);
-                Type::Function(Box::new(from), Box::new(to))
+                r::Type::Function(Box::new(from), Box::new(to))
             }
-            Type::SelfType => Type::SelfType,
+            Type::SelfType => r::Type::SelfType,
             Type::Apply(ref a, ref b) => {
                 let a = self.resolve_type(a, ctx);
                 let b = self.resolve_type(b, ctx);
-                Type::Apply(Box::new(a), Box::new(b))
+                r::Type::Apply(Box::new(a), Box::new(b))
+            }
+            Type::Tuple(ref items) => {
+                r::Type::Tuple(items.iter().map(|t| self.resolve_type(t, &ctx)).collect())
             }
         };
 
@@ -987,17 +1058,17 @@ impl Resolver {
     
     fn resolve_scheme(
                     &mut self,
-                    type_: &Node<Scheme<RawSymbol>>,
-                    ctx: &Context) -> Node<Scheme<Symbol>> {
+                    type_: &Node<Scheme>,
+                    ctx: &Context) -> Node<r::Scheme> {
         let mut bounds = Vec::new();
-        for &(ref var, ref bound) in &type_.node.bounds {
+        for &(ref var, ref bound) in &type_.value.bounds {
             let bound = self.resolve_trait_bound(bound, ctx);
             bounds.push((var.clone(), bound));
         }
 
-        let typ = self.resolve_type(&type_.node.type_, ctx);
+        let typ = self.resolve_type(&type_.value.type_, ctx);
 
-        Node::new(Scheme {
+        Node::new(r::Scheme {
             bounds: bounds,
             type_: typ,
         }, type_.span)
@@ -1005,67 +1076,343 @@ impl Resolver {
 
     fn resolve_trait_bound(
                             &mut self,
-                            bound: &Node<TraitBound<RawSymbol>>,
-                            ctx: &Context) -> Node<TraitBound<Symbol>> {
-        let trait_ = self.resolve_symbol(&bound.node.trait_, "trait", ctx);
+                            bound: &Node<TraitBound>,
+                            ctx: &Context) -> Node<r::TraitBound> {
+        let trait_ = self.resolve_symbol(&bound.value.trait_, "trait", ctx);
         
         let mut params = Vec::new();
-        for param in &bound.node.params {
+        for param in &bound.value.params {
             let typ = self.resolve_type(&param, ctx);
             params.push(typ);
         }
         
-        Node::new(TraitBound {
-            trait_: trait_,
+        Node::new(r::TraitBound {
+            trait_: trait_.map(r::Symbol::full_name),
             params: params,
         }, bound.span)
     }
 
     fn resolve_pattern(
                         &mut self,
-                        pattern: &Node<Pattern<RawSymbol>>,
-                        ctx: &Context) -> Node<Pattern<Symbol>> {
-        unimplemented!()
+                        pattern: &Node<Pattern>,
+                        ctx: &Context) -> Node<r::Pattern> {
+        let resolved = match pattern.value {
+            Pattern::Wildcard => r::Pattern::Wildcard,
+            Pattern::Var(ref s) => r::Pattern::Var(s.clone()),
+            Pattern::Literal(ref lit) => r::Pattern::Literal(lit.clone()),
+            Pattern::Deconstruct(ref sym, ref items) => {
+                let s = self.resolve_symbol(sym, "pattern", ctx).map(r::Symbol::full_name);
+                let items = items.iter().map(|p| self.resolve_pattern(p, ctx)).collect();
+                r::Pattern::Deconstruct(s, items)
+            }
+            Pattern::Infix(ref lhs, ref sym, ref rhs) => {
+                let lhs = self.resolve_pattern(lhs, ctx);
+                let rhs = self.resolve_pattern(rhs, ctx);
+                let s = self.resolve_symbol(sym, "pattern", ctx).map(r::Symbol::full_name);
+                r::Pattern::Infix(Box::new(lhs), s, Box::new(rhs))
+            }
+            Pattern::As(ref pat, ref alias) => {
+                let pat = self.resolve_pattern(pat, ctx);
+                r::Pattern::As(Box::new(pat), alias.clone())
+            }
+            Pattern::Parenthesised(ref pat) => {
+                let pat = self.resolve_pattern(pat, ctx);
+                r::Pattern::Parenthesised(Box::new(pat))
+            }
+            Pattern::Tuple(ref items) => {
+                let items = items.iter().map(|p| self.resolve_pattern(p, ctx)).collect();
+                r::Pattern::Tuple(items)
+            }
+            Pattern::List(ref items) => {
+                let items = items.iter().map(|p| self.resolve_pattern(p, ctx)).collect();
+                r::Pattern::List(items)
+            }
+        };
+        Node::new(resolved, pattern.span)
     }
 
     fn resolve_expr(
                         &mut self,
-                        pattern: &Node<Expr<RawSymbol>>,
-                        ctx: &Context) -> Node<Expr<Symbol>> {
-        unimplemented!()
+                        expr: &Node<Expr>,
+                        ctx: &Context) -> Node<r::Expr> {
+        let mut locals = Vec::new();
+        self.resolve_expr_with_locals(expr, ctx, &mut locals)
+    }
+
+    fn resolve_expr_with_locals<'a>(
+                                    &mut self,
+                                    expr: &'a Node<Expr>,
+                                    ctx: &Context,
+                                    locals: &mut Vec<Node<&'a str>>) -> Node<r::Expr> {
+        let resolved = match expr.value {
+            Expr::Apply(ref f, ref args) => {
+                let f = self.resolve_expr_with_locals(f, ctx, locals);
+                let args = args
+                    .iter()
+                    .map(|e| self.resolve_expr_with_locals(e, ctx, locals))
+                    .collect();
+                r::Expr::Apply(Box::new(f), args)
+            }
+            Expr::Case(ref value, ref arms) => {
+                let value = self.resolve_expr_with_locals(value, ctx, locals);
+                let mut resolved_arms = Vec::new();
+                let locals_before = locals.len();
+                for arm in arms {
+                    let pat = self.resolve_pattern(&arm.value.pattern, ctx);
+                    arm.value.pattern.value.collect_vars(locals, arm.value.pattern.span);
+                    self.check_dupe_bindings(locals, locals_before, ctx);
+                    let guard = arm.value.guard.as_ref().map(|e| {
+                        self.resolve_expr_with_locals(e, ctx, locals)
+                    });
+                    let value = self.resolve_expr_with_locals(&arm.value.value, ctx, locals);
+                    let res = r::CaseBranch {
+                        pattern: pat,
+                        guard: guard,
+                        value: value,
+                    };
+                    resolved_arms.push(Node::new(res, arm.span));
+                }
+                r::Expr::Case(Box::new(value), resolved_arms)
+            }
+            Expr::Do(ref do_) => {
+                r::Expr::Do(Box::new(self.resolve_do(do_, ctx, locals)))
+            }
+            Expr::Ident(ref ident) => {
+                let node = Node::new(ident.clone(), expr.span);
+                let resolved = self.resolve_symbol_in_expr(&node, ctx, locals);
+                r::Expr::Ident(resolved.value)
+            }
+            Expr::If(ref cond, ref then, ref else_) => {
+                let cond = self.resolve_expr_with_locals(cond, ctx, locals);
+                let then = self.resolve_expr_with_locals(then, ctx, locals);
+                let else_ = self.resolve_expr_with_locals(else_, ctx, locals);
+                r::Expr::If(Box::new(cond), Box::new(then), Box::new(else_))
+            }
+            Expr::Infix(ref lhs, ref sym, ref rhs) => {
+                let lhs = self.resolve_expr_with_locals(lhs, ctx, locals);
+                let rhs = self.resolve_expr_with_locals(rhs, ctx, locals);
+                let sym = self.resolve_symbol_in_expr(sym, ctx, locals);
+                r::Expr::Infix(Box::new(lhs), sym, Box::new(rhs))
+            }
+            Expr::Lambda(ref params, ref value) => {
+                let locals_before = locals.len();
+                let mut resolved_params = Vec::new();
+                for param in params {
+                    resolved_params.push(self.resolve_pattern(param, ctx));
+                    param.value.collect_vars(locals, param.span);
+                }
+                self.check_dupe_bindings(locals, locals_before, ctx);
+                let value = self.resolve_expr_with_locals(value, ctx, locals);
+                while locals.len() > locals_before {
+                    locals.pop();
+                }
+                r::Expr::Lambda(resolved_params, Box::new(value))
+            }
+            Expr::Let(ref defs, ref value) => {
+                self.resolve_let(defs, value, ctx, locals)
+            }
+            Expr::List(ref items) => {
+                let items = items
+                    .iter()
+                    .map(|e| self.resolve_expr_with_locals(e, ctx, locals))
+                    .collect();
+                r::Expr::List(items)
+            }
+            Expr::Literal(ref literal) => {
+                r::Expr::Literal(literal.clone())
+            }
+            Expr::Parenthesised(ref expr) => {
+                let expr = self.resolve_expr_with_locals(expr, ctx, locals);
+                r::Expr::Parenthesised(Box::new(expr))
+            }
+            Expr::Tuple(ref items) => {
+                let items = items
+                    .iter()
+                    .map(|e| self.resolve_expr_with_locals(e, ctx, locals))
+                    .collect();
+                r::Expr::Tuple(items)
+            }
+        };
+        Node::new(resolved, expr.span)
+    }
+
+    fn resolve_do<'a>(
+                        &mut self,
+                        expr: &'a Node<DoExpr>,
+                        ctx: &Context,
+                        locals: &mut Vec<Node<&'a str>>) -> Node<r::DoExpr> {
+        let resolved = match expr.value {
+            DoExpr::Done(ref expr) => {
+                let expr = self.resolve_expr_with_locals(expr, ctx, locals);
+                r::DoExpr::Done(expr)
+            }
+            DoExpr::Bind(ref pat, ref expr, ref rest) => {
+                let expr = self.resolve_expr_with_locals(expr, ctx, locals);
+                let locals_before = locals.len();
+                pat.value.collect_vars(locals, pat.span);
+                self.check_dupe_bindings(locals, locals_before, ctx);
+                let pat = self.resolve_pattern(pat, ctx);
+                let rest = self.resolve_do(rest, ctx, locals);
+                while locals.len() > locals_before {
+                    locals.pop();
+                }
+                r::DoExpr::Bind(pat, expr, Box::new(rest))
+            }
+            DoExpr::If(ref cond, ref rest) => {
+                let cond = self.resolve_expr_with_locals(cond, ctx, locals);
+                let rest = self.resolve_do(rest, ctx, locals);
+                r::DoExpr::If(cond, Box::new(rest))
+            }
+            DoExpr::Let(ref pat, ref val, ref rest) => {
+                let locals_before = locals.len();
+                pat.value.collect_vars(locals, pat.span);
+                self.check_dupe_bindings(locals, locals_before, ctx);
+                let pat = self.resolve_pattern(pat, ctx);
+                let val = self.resolve_expr_with_locals(val, ctx, locals);
+                let rest = self.resolve_do(rest, ctx, locals);
+                while locals.len() > locals_before {
+                    locals.pop();
+                }
+                r::DoExpr::Let(pat, val, Box::new(rest))
+            }
+            DoExpr::Sequence(ref expr, ref rest) => {
+                let expr = self.resolve_expr_with_locals(expr, ctx, locals);
+                let rest = self.resolve_do(rest, ctx, locals);
+                r::DoExpr::If(expr, Box::new(rest))
+            }
+        };
+
+        Node::new(resolved, expr.span)
+    }
+
+    fn resolve_let<'a>(
+                        &mut self,
+                        decls: &'a Vec<Node<LetDecl>>,
+                        value: &'a Node<Expr>,
+                        ctx: &Context,
+                        locals: &mut Vec<Node<&'a str>>) -> r::Expr {
+        let mut defined_symbols = Vec::new();
+        let mut resolved_defs = Vec::new();
+        let mut resolved_types = Vec::new();
+        let mut annotation_pos = HashMap::new();
+        for decl in decls {
+            if let LetDecl::Def(ref def) = decl.value {
+                def.pattern.value.collect_vars(&mut defined_symbols, def.pattern.span);
+            }
+        }
+        self.check_dupe_bindings(&defined_symbols, 0, ctx);
+        for decl in decls {
+            if let LetDecl::Type(ref type_annot) = decl.value {
+                match annotation_pos.entry(type_annot.value.value.clone()) {
+                    Entry::Vacant(entry) => {
+                        entry.insert(type_annot.value.span);
+                    }
+                    Entry::Occupied(entry) => {
+                        self.double_type_annotation(
+                            &type_annot.value.value,
+                            type_annot.value.span,
+                            *entry.get(),
+                            ctx.module);
+                    }
+                }
+                if defined_symbols.iter().any(|s| s.value == type_annot.value.value) {
+                    let type_ = self.resolve_scheme(&type_annot.type_, ctx);
+                    let annot = r::TypeAnnot {
+                        value: type_annot.value.clone(),
+                        type_: type_,
+                    };
+                    resolved_types.push(Node::new(annot, decl.span));
+                } else {
+                    self.unknown_local_symbol("value", &type_annot.value, ctx.module);
+                }
+            }
+        }
+        let locals_before = locals.len();
+        locals.extend(defined_symbols);
+        for decl in decls {
+            if let LetDecl::Def(ref def) = decl.value {
+                let pat = self.resolve_pattern(&def.pattern, ctx);
+                let value = def.value.as_ref().map(|v| {
+                    self.resolve_expr_with_locals(v, ctx, locals)
+                });
+                let def = r::Def {
+                    pattern: pat,
+                    value: value,
+                    module: ctx.module.to_string(),
+                };
+                resolved_defs.push(Node::new(def, decl.span));
+            }
+        }
+        let value = self.resolve_expr_with_locals(value, ctx, locals);
+        while locals.len() > locals_before {
+            locals.pop();
+        }
+        r::Expr::Let(resolved_defs, resolved_types, Box::new(value))
+    }
+    
+    fn check_dupe_bindings(
+                            &mut self, 
+                            locals: &Vec<Node<&str>>,
+                            check_from: usize,
+                            ctx: &Context) {
+        for first in check_from..(locals.len()) {
+            for second in (first + 1)..(locals.len()) {
+                if locals[first].value == locals[second].value {
+                    self.duplicate_binding(
+                        locals[second].value,
+                        locals[second].span,
+                        locals[first].span,
+                        ctx.module);
+                }
+            }
+        }
     }
 
     fn resolve_symbol(
                         &mut self,
-                        symbol: &Node<RawSymbol>,
+                        symbol: &Node<Symbol>,
                         kind: &str,
-                        ctx: &Context) -> Node<Symbol> {
-        let sym = match symbol.node {
-            RawSymbol::Trusted(ref m, ref n) => {
-                Symbol::Global(m.clone(), n.clone())
-            }
-            RawSymbol::Qualified(ref m, ref n) => {
+                        ctx: &Context) -> Node<r::Symbol> {
+        let sym = match symbol.value {
+            Symbol::Qualified(ref m, ref n) => {
                 if let Some(m) = ctx.imports.modules.get(m.as_str()) {
                     if ctx.exports.get(*m).unwrap().has_type(n) {
-                        Symbol::Global(m.to_string(), n.clone())
+                        r::Symbol::Global(m.to_string(), n.clone())
                     } else {
                         self.not_exported(n, m, symbol.span, ctx.module);
-                        Symbol::Unknown
+                        r::Symbol::Unknown
                     }
                 } else {
                     self.unknown_module(m, symbol.span, ctx.module);
-                    Symbol::Unknown
+                    r::Symbol::Unknown
                 }
             }
-            RawSymbol::Unqualified(ref s) => {
+            Symbol::Unqualified(ref s) => {
                 if let Some(m) = ctx.imports.types.get(s.as_str()) {
-                    Symbol::Global(m.to_string(), s.clone())
+                    r::Symbol::Global(m.to_string(), s.clone())
                 } else {
                     self.unknown_symbol(kind, symbol, ctx.module);
-                    Symbol::Unknown
+                    r::Symbol::Unknown
                 }
             }
         };
         Node::new(sym, symbol.span)
+    }
+
+    fn resolve_symbol_in_expr(
+                                &mut self,
+                                symbol: &Node<Symbol>,
+                                ctx: &Context,
+                                locals: &Vec<Node<&str>>) -> Node<r::Symbol> {
+        match symbol.value {
+            Symbol::Unqualified(ref name) => {
+                if locals.iter().any(|n| n.value == name) {
+                    let s = r::Symbol::Local(name.clone());
+                    return Node::new(s, symbol.span);
+                }
+            }
+            _ => { }
+        }
+        self.resolve_symbol(symbol, "value", ctx)
     }
 }

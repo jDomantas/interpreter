@@ -15,8 +15,8 @@ impl Position {
         }
     }
 
-    pub fn span_to(&self, end: &Position) -> Span {
-        Span::new(self, end)
+    pub fn span_to(&self, end: Position) -> Span {
+        Span::new(*self, end)
     }
 }
 
@@ -27,32 +27,17 @@ pub struct Span {
 }
 
 impl Span {
-    pub fn new(start: &Position, end: &Position) -> Span {
+    pub fn new(start: Position, end: Position) -> Span {
         Span {
-            start: start.clone(),
-            end: end.clone(),
+            start: start,
+            end: end,
         }
     }
 
-    pub fn merge(&self, other: &Span) -> Span {
-        let start = cmp::min(&self.start, &other.start);
-        let end = cmp::max(&self.end, &other.end);
+    pub fn merge(&self, other: Span) -> Span {
+        let start = cmp::min(self.start, other.start);
+        let end = cmp::max(self.end, other.end);
         Span::new(start, end)
-    }
-}
-
-#[derive(PartialEq, Eq, Debug, Clone)]
-pub struct Spanned<T> {
-    pub value: T,
-    pub span: Span,
-}
-
-impl<T> Spanned<T> {
-    pub fn new(value: T, span: Span) -> Spanned<T> {
-        Spanned {
-            value: value,
-            span: span,
-        }
     }
 }
 

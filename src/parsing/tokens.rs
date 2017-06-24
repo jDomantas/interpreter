@@ -1,12 +1,12 @@
-use ast::RawSymbol;
+use ast::parsed::Symbol;
 
 
 #[derive(PartialEq, PartialOrd, Clone, Debug)]
 pub enum Token {
-    Ident(RawSymbol),
+    Ident(Symbol),
     Float(f64),
     Int(u64),
-    Operator(String),
+    Operator(Symbol),
     Bool(bool),
     Module,
     Exposing,
@@ -66,6 +66,7 @@ pub enum TokenKind {
     VarName,
     Literal,
     Operator,
+    UnqualifiedOperator,
     Int,
 }
 
@@ -77,6 +78,7 @@ impl TokenKind {
             TokenKind::VarName => "var name",
             TokenKind::Literal => "literal",
             TokenKind::Operator => "operator",
+            TokenKind::UnqualifiedOperator => "unqualified operator",
             TokenKind::Int => "integer value",
             TokenKind::Token(Token::Alias) => "'alias'",
             TokenKind::Token(Token::Arrow) => "'->'",
@@ -134,16 +136,14 @@ impl TokenKind {
                     TokenKind::Ident => true,
                     TokenKind::UnqualifiedName => {
                         match *ident {
-                            RawSymbol::Qualified(_, _) => false,
-                            RawSymbol::Trusted(_, _) => false,
-                            RawSymbol::Unqualified(_) => true,
+                            Symbol::Qualified(_, _) => false,
+                            Symbol::Unqualified(_) => true,
                         }
                     }
                     TokenKind::VarName => {
                         match *ident {
-                            RawSymbol::Qualified(_, _) => false,
-                            RawSymbol::Trusted(_, _) => false,
-                            RawSymbol::Unqualified(ref name) =>
+                            Symbol::Qualified(_, _) => false,
+                            Symbol::Unqualified(ref name) =>
                                 !name.chars().nth(0).unwrap().is_uppercase(),
                         }
                     }
@@ -153,7 +153,10 @@ impl TokenKind {
             Token::Float(_) | Token::Bool(_) => {
                 self == &TokenKind::Literal
             }
-            Token::Operator(_) => {
+            Token::Operator(Symbol::Unqualified(_)) => {
+                self == &TokenKind::Operator || self == &TokenKind::UnqualifiedOperator
+            }
+            Token::Operator(Symbol::Qualified(_, _)) => {
                 self == &TokenKind::Operator
             }
             Token::Int(_) => {

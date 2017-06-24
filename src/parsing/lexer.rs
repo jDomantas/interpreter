@@ -1,12 +1,13 @@
 use std::str::{Chars, FromStr};
 use std::iter::Peekable;
-use ast::RawSymbol;
+use ast::Node;
+use ast::parsed::Symbol;
 use errors::{Error, parse_error};
 use parsing::tokens::Token;
-use position::{Position, Span, Spanned};
+use position::{Position, Span};
 
 
-pub fn lex(source: &str, module: &str) -> (Vec<Spanned<Token>>, Vec<Error>) {
+pub fn lex(source: &str, module: &str) -> (Vec<Node<Token>>, Vec<Error>) {
     let mut lexer = Lexer::new(source, module);
     let mut tokens = Vec::new();
     while let Some(token) = lexer.next_token() {
@@ -85,11 +86,11 @@ impl<'a, 'b> Lexer<'a, 'b> {
         Position::new(self.line, self.column)
     }
 
-    fn single_char_token(&mut self, tok: Token) -> Spanned<Token> {
+    fn single_char_token(&mut self, tok: Token) -> Node<Token> {
         let start = self.current_position();
         self.advance();
         let end = self.current_position();
-        Spanned::new(tok, start.span_to(&end))
+        Node::new(tok, start.span_to(end))
     }
 
     fn skip_line_comment(&mut self) {
@@ -107,7 +108,7 @@ impl<'a, 'b> Lexer<'a, 'b> {
         let start = self.current_position();
         debug_assert!(self.consume() == Some('{'));
         debug_assert!(self.consume() == Some('-'));
-        let opened_at = start.span_to(&self.current_position());
+        let opened_at = start.span_to(self.current_position());
         let mut nesting = 1_usize;
         loop {
             match self.consume() {
@@ -148,33 +149,33 @@ impl<'a, 'b> Lexer<'a, 'b> {
         }
 
         assert!(!ident.is_empty());
-        return (ident, start.span_to(&end));
+        return (ident, start.span_to(end));
     }
 
-    fn lex_number(&mut self) -> Spanned<Token> {
+    fn lex_number(&mut self) -> Node<Token> {
         let (number, span) = self.collect_chars(|ch| {
            ch.is_alphanumeric() || ch == '_' || ch == '.'
         });
         debug_assert!(!number.is_empty());
 
         if let Ok(number) = u64::from_str(&number) {
-            return Spanned::new(Token::Int(number), span);
+            return Node::new(Token::Int(number), span);
         }
 
         if let Ok(number) = f64::from_str(&number) {
-            return Spanned::new(Token::Float(number), span);
+            return Node::new(Token::Float(number), span);
         }
         
         self.emit_error("invalid number literal", span.clone());
-        Spanned::new(Token::Error, span)
+        Node::new(Token::Error, span)
     }
 
-    fn lex_ident(&mut self) -> Spanned<Token> {
+    fn lex_ident(&mut self) -> Node<Token> {
         let (mut name, mut span) = self.collect_chars(is_symbol_char);
         debug_assert!(!name.is_empty());
 
         if let Some(token) = ident_keyword(&name) {
-            return Spanned::new(token, span);
+            return Node::new(token, span);
         }
 
         let mut path = String::new();
@@ -186,33 +187,33 @@ impl<'a, 'b> Lexer<'a, 'b> {
                     debug_assert!(!segment.is_empty());
                     if ident_keyword(&segment).is_some() {
                         self.emit_error("path contains keyword", segment_span);
-                        return Spanned::new(Token::Error, span);
+                        return Node::new(Token::Error, span);
                     }
                     if !path.is_empty() {
                         path.push('.');
                     }
                     path.push_str(&name);
                     name = segment;
-                    span = span.merge(&segment_span);
+                    span = span.merge(segment_span);
                 }
                 _ => {
-                    let error_span = self.current_position().span_to(&self.current_position());
+                    let error_span = self.current_position().span_to(self.current_position());
                     self.emit_error("missing path segment", error_span);
-                    return Spanned::new(Token::Error, span);
+                    return Node::new(Token::Error, span);
                 }
             }
         }
 
         let symbol = if path.is_empty() {
-            RawSymbol::Unqualified(name)
+            Symbol::Unqualified(name)
         } else {
-            RawSymbol::Qualified(path, name)
+            Symbol::Qualified(path, name)
         };
 
-        Spanned::new(Token::Ident(symbol), span)
+        Node::new(Token::Ident(symbol), span)
     }
 
-    fn lex_operator(&mut self) -> Spanned<Token> {
+    fn lex_operator(&mut self) -> Node<Token> {
         let (op, span) = self.collect_chars(is_operator_char);
         debug_assert!(!op.is_empty());
 
@@ -222,16 +223,16 @@ impl<'a, 'b> Lexer<'a, 'b> {
                 line: end_position.line,
                 column: end_position.column - 1,
             };
-            let error_span = start_position.span_to(&end_position);
+            let error_span = start_position.span_to(end_position);
             self.emit_error("unexpected end of block comment", error_span);
             self.consume();
-            return Spanned::new(Token::Error, span);
+            return Node::new(Token::Error, span);
         }
 
-        Spanned::new(Token::Operator(op), span)
+        Node::new(Token::Operator(Symbol::Unqualified(op)), span)
     }
 
-    fn next_raw_token(&mut self) -> Option<Spanned<Token>> {
+    fn next_raw_token(&mut self) -> Option<Node<Token>> {
         loop {
             let next_char = match self.peek() {
                 Some(ch) => ch,
@@ -283,7 +284,7 @@ impl<'a, 'b> Lexer<'a, 'b> {
                     return Some(self.lex_operator());
                 }
                 '\t' => {
-                    let span = self.current_position().span_to(&self.current_position());
+                    let span = self.current_position().span_to(self.current_position());
                     self.emit_error("tab character", span);
                     self.advance();
                 }
@@ -291,7 +292,7 @@ impl<'a, 'b> Lexer<'a, 'b> {
                     self.advance();
                 }
                 _ => {
-                    let span = self.current_position().span_to(&self.current_position());
+                    let span = self.current_position().span_to(self.current_position());
                     self.emit_error("unknown character", span);
                     self.advance();
                 }
@@ -299,9 +300,9 @@ impl<'a, 'b> Lexer<'a, 'b> {
         }
     }
 
-    fn next_token(&mut self) -> Option<Spanned<Token>> {
+    fn next_token(&mut self) -> Option<Node<Token>> {
         while let Some(tok) = self.next_raw_token() {
-            let tok = Spanned::new(change_special(tok.value), tok.span);
+            let tok = Node::new(change_special(tok.value), tok.span);
             if !tok.value.is_error() {
                 self.panicking = false;
                 return Some(tok);
@@ -369,16 +370,16 @@ fn special_operator(op: &str) -> Option<Token> {
 
 fn change_special(token: Token) -> Token {
     match token {
-        Token::Ident(RawSymbol::Unqualified(name)) => {
+        Token::Ident(Symbol::Unqualified(name)) => {
             match ident_keyword(&name) {
                 Some(token) => token,
-                None => Token::Ident(RawSymbol::Unqualified(name)),
+                None => Token::Ident(Symbol::Unqualified(name)),
             }
         }
-        Token::Operator(op) => {
+        Token::Operator(Symbol::Unqualified(op)) => {
             match special_operator(&op) {
                 Some(token) => token,
-                None => Token::Operator(op),
+                None => Token::Operator(Symbol::Unqualified(op)),
             }
         }
         token => token,
@@ -387,8 +388,9 @@ fn change_special(token: Token) -> Token {
 
 #[cfg(test)]
 mod tests {
-    use ast::RawSymbol;
-    use position::{Position, Span, Spanned};
+    use ast::Node;
+    use ast::parsed::Symbol;
+    use position::{Position, Span};
     use parsing::tokens::Token;
     use parsing::lexer::lex;
 
@@ -402,11 +404,11 @@ mod tests {
     fn basic_lexing() {
         let tokens = lex_no_positions("a b 1 1.0 +");
         assert_eq!(tokens, vec![
-            Token::Ident(RawSymbol::Unqualified("a".to_string())),
-            Token::Ident(RawSymbol::Unqualified("b".to_string())),
+            Token::Ident(Symbol::Unqualified("a".to_string())),
+            Token::Ident(Symbol::Unqualified("b".to_string())),
             Token::Int(1),
             Token::Float(1.0),
-            Token::Operator("+".to_string()),
+            Token::Operator(Symbol::Unqualified("+".to_string())),
         ]);
     }
 
@@ -414,9 +416,9 @@ mod tests {
     fn qualified_symbol_lexing() {
         let tokens = lex_no_positions("foo bar.foo foo.baz.bar");
         assert_eq!(tokens, vec![
-            Token::Ident(RawSymbol::Unqualified("foo".to_string())),
-            Token::Ident(RawSymbol::Qualified("bar".to_string(), "foo".to_string())),
-            Token::Ident(RawSymbol::Qualified("foo.baz".to_string(), "bar".to_string())),
+            Token::Ident(Symbol::Unqualified("foo".to_string())),
+            Token::Ident(Symbol::Qualified("bar".to_string(), "foo".to_string())),
+            Token::Ident(Symbol::Qualified("foo.baz".to_string(), "bar".to_string())),
         ]);
     }
 
@@ -449,21 +451,21 @@ mod tests {
         let (tokens, errors) = lex("a =\n1", "<test>");
         assert!(errors.is_empty());
         assert_eq!(tokens, vec![
-            Spanned {
-                value: Token::Ident(RawSymbol::Unqualified("a".to_string())),
+            Node {
+                value: Token::Ident(Symbol::Unqualified("a".to_string())),
                 span: Span {
                     start: Position { line: 1, column: 1 },
                     end: Position { line: 1, column: 1 }
                 },
             },
-            Spanned {
+            Node {
                 value: Token::Equals,
                 span: Span {
                     start: Position { line: 1, column: 3 },
                     end: Position { line: 1, column: 3 }
                 },
             },
-            Spanned {
+            Node {
                 value: Token::Int(1),
                 span: Span {
                     start: Position { line: 2, column: 1 },
@@ -487,7 +489,7 @@ mod tests {
     fn ambiguous() {
         let tokens = lex_no_positions("- -- - \n { {- } -}");
         assert_eq!(tokens, vec![
-            Token::Operator("-".to_string()),
+            Token::Operator(Symbol::Unqualified("-".to_string())),
             Token::OpenBrace,
         ]);
     }

@@ -805,7 +805,7 @@ impl Resolver {
                                     self.no_subitems(
                                         &item.value.name.value,
                                         name,
-                                        list_span,
+                                        item.value.name.span,
                                         module.name());
                                 }
                             }

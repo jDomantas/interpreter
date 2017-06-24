@@ -1,0 +1,7 @@
+-- expect symbol errors: 2:33
+import Other exposing (Add(Inl, Blah))
+
+-- module: Other
+module Other exposing (..)
+
+type Add a b = Inl a | Inr b

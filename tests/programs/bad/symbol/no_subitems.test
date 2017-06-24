@@ -1,0 +1,8 @@
+-- expect symbol errors: 2:24 1:29
+import Other exposing (Foo(..))
+
+-- module: Other
+module Other exposing (Foo, Bar(..))
+
+type alias Foo = Foo
+type alias Bar = Bar

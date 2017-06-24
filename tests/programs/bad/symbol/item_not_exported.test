@@ -1,0 +1,8 @@
+-- expect symbol errors: 2:24
+import Other exposing (foo, bar)
+
+-- module: Other
+module Other exposing (bar, baz)
+
+bar = 1
+baz = 2

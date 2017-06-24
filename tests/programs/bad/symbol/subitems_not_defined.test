@@ -1,0 +1,16 @@
+-- first line because it is first line in that module
+-- columns 24 and 43 because error is on parent name
+-- expect symbol errors: 1:24 1:43
+import Other
+
+-- module: Other
+module Other exposing (Record(foo, blah), Union(Boo, Bar))
+
+type Record = {
+        foo: Record,
+        bar: Record,
+    }
+
+type Union =
+    | Foo
+    | Bar

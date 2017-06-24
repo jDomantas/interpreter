@@ -1,0 +1,4 @@
+-- expect parse error: line 4 column 7
+type Union =
+    | Case1
+    | case2

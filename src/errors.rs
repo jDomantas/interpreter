@@ -28,9 +28,10 @@ impl Error {
     }
 
     pub fn ordering(&self, other: &Error) -> Ordering {
+        let by_phase = self.phase.cmp(&other.phase);
         let by_module = self.module.cmp(&other.module);
         let by_position = self.span().start.cmp(&other.span().start);
-        by_module.then(by_position)
+        by_phase.then(by_module).then(by_position)
     }
 }
 

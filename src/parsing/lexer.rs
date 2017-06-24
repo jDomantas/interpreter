@@ -13,6 +13,7 @@ pub fn lex(source: &str, module: &str) -> (Vec<Node<Token>>, Vec<Error>) {
     while let Some(token) = lexer.next_token() {
         tokens.push(token);
     }
+    tokens.push(lexer.make_eof_token());
     (tokens, lexer.errors)
 }
 
@@ -312,6 +313,12 @@ impl<'a, 'b> Lexer<'a, 'b> {
             }
         }
         None
+    }
+
+    fn make_eof_token(&self) -> Node<Token> {
+        let token = Token::EndOfInput;
+        let span = self.current_position().span_to(self.current_position());
+        Node::new(token, span)
     }
 }
 

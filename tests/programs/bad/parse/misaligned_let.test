@@ -1,0 +1,8 @@
+-- expect parse error: line 6 column 8
+value =
+    let
+        x = 1
+        y = 2
+       z = 3
+    in
+        x + y + z

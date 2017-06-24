@@ -1,0 +1,5 @@
+-- expect parse error: line 5 column 8
+value =
+    case x of
+        thing -> a
+       alsoThing -> b

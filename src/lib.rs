@@ -4,5 +4,5 @@
 pub mod position;
 pub mod errors;
 pub mod parsing;
+pub mod compiler;
 mod ast;
-mod compiler;

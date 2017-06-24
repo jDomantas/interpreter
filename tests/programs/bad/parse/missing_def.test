@@ -1,2 +1,2 @@
--- expect parse error: line 2 column 8
+-- expect parse error: line 3 column 1
 value =

@@ -1,0 +1,4 @@
+-- expect parse error: line 2 column 8
+import OtherModule
+
+value = 1

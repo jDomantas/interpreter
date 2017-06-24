@@ -1,0 +1,2 @@
+-- expect parse error: line 2 column 14
+value = (+ 1 + 2)

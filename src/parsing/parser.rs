@@ -264,11 +264,10 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
         }
     }
 
-    fn eat_var_name(&mut self) -> Option<Node<String>> {
-        self.expected_tokens.push(TokenKind::VarName);
+    fn eat_cased_name(&mut self, uppercase: bool) -> Option<Node<String>> {
         match self.peek() {
             Some(&Node { value: Token::Ident(Symbol::Unqualified(ref name)), .. }) => {
-                if name.chars().nth(0).unwrap().is_uppercase() {
+                if name.chars().nth(0).unwrap().is_uppercase() != uppercase {
                     return None;
                 }
             }
@@ -279,13 +278,23 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
 
         match self.consume() {
             Some(Node { value: Token::Ident(Symbol::Unqualified(name)), span }) => {
-                debug_assert!(!name.chars().nth(0).unwrap().is_uppercase());
+                debug_assert!(name.chars().nth(0).unwrap().is_uppercase() == uppercase);
                 Some(Node::new(name, span))
             }
             _ => {
                 panic!("Parser::peek and Parser::consume returned different results");
             }
         }
+    }
+    
+    fn eat_var_name(&mut self) -> Option<Node<String>> {
+        self.expected_tokens.push(TokenKind::VarName);
+        self.eat_cased_name(false)
+    }
+    
+    fn eat_tag_name(&mut self) -> Option<Node<String>> {
+        self.expected_tokens.push(TokenKind::TagName);
+        self.eat_cased_name(true)
     }
     
     fn eat_literal(&mut self) -> Option<Node<Literal>> {
@@ -1400,7 +1409,7 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
     }
 
     fn union_case(&mut self) -> ParseResult<Node<UnionCase>> {
-        let name = match self.eat_unqualified_name() {
+        let name = match self.eat_tag_name() {
             Some(name) => name,
             None => {
                 self.emit_error();

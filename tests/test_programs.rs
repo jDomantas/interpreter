@@ -46,7 +46,6 @@ fn run_test_programs() {
 fn run_test(source: &str) -> bool {
     let expected = parse_expected_outcome(source);
     let outcome = run_program(source);
-    println!("outcome: {:?}", outcome);
     outcome == expected
 }
 

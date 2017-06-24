@@ -64,6 +64,7 @@ pub enum TokenKind {
     Ident,
     UnqualifiedName,
     VarName,
+    TagName,
     Literal,
     Operator,
     UnqualifiedOperator,
@@ -75,7 +76,8 @@ impl TokenKind {
         match *self {
             TokenKind::Ident => "identifier",
             TokenKind::UnqualifiedName => "unqualified name",
-            TokenKind::VarName => "var name",
+            TokenKind::VarName => "lowercase name",
+            TokenKind::TagName => "uppercase name",
             TokenKind::Literal => "literal",
             TokenKind::Operator => "operator",
             TokenKind::UnqualifiedOperator => "unqualified operator",

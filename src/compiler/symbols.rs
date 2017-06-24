@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::collections::hash_map::Entry;
+use std::fmt;
 use ast::Node;
 use ast::parsed as p;
 use ast::parsed::{
@@ -47,6 +48,15 @@ impl<'a> Exports<'a> {
             traits: HashSet::new(),
             patterns: HashSet::new(),
             values: HashSet::new(),
+        }
+    }
+
+    fn has_symbol(&self, kind: Kind, sym: &str) -> bool {
+        match kind {
+            Kind::Value | Kind::LocalValue => self.has_value(sym),
+            Kind::Pattern => self.has_pattern(sym),
+            Kind::Trait => self.has_trait(sym),
+            Kind::Type => self.has_type(sym),
         }
     }
 
@@ -109,6 +119,38 @@ impl<'a> Imports<'a> {
         for value in &locals.values {
             self.values.insert(value.name, my_name);
         }
+    }
+
+    fn get_origin(&self, kind: Kind, symbol: &str) -> Option<&str> {
+        let map = match kind {
+            Kind::Value | Kind::LocalValue => &self.values,
+            Kind::Pattern => &self.patterns,
+            Kind::Trait => &self.traits,
+            Kind::Type => &self.types,
+        };
+        map.get(symbol).map(|&x| x)
+    }
+}
+
+#[derive(PartialEq, Eq, Debug, Copy, Clone)]
+enum Kind {
+    LocalValue,
+    Value,
+    Pattern,
+    Type,
+    Trait,
+}
+
+impl fmt::Display for Kind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let as_str = match *self {
+            Kind::LocalValue => "local value",
+            Kind::Value => "value",
+            Kind::Pattern => "pattern",
+            Kind::Type => "type",
+            Kind::Trait => "trait",
+        };
+        write!(f, "{}", as_str)
     }
 }
 
@@ -263,14 +305,14 @@ impl Resolver {
         }
     }
 
-    fn unknown_symbol(&mut self, kind: &str, symbol: &Node<p::Symbol>, module: &str) {
+    fn unknown_symbol(&mut self, kind: Kind, symbol: &Node<p::Symbol>, module: &str) {
         if self.emit_errors {
             let message = format!("Unknown {}: `{}`.", kind, symbol.value.clone().full_name());
             self.errors.push(errors::symbol_error(message, symbol.span, module));
         }
     }
 
-    fn unknown_local_symbol(&mut self, kind: &str, symbol: &Node<String>, module: &str) {
+    fn unknown_local_symbol(&mut self, kind: Kind, symbol: &Node<String>, module: &str) {
         if self.emit_errors {
             let message = format!("Unknown local {}: `{}`.", kind, symbol.value);
             self.errors.push(errors::symbol_error(message, symbol.span, module));
@@ -827,7 +869,6 @@ impl Resolver {
 
         let mut fixity_decl = HashMap::new();
         let mut type_annotation = HashMap::new();
-
         for decl in &module.items {
             match decl.value {
                 Decl::Impl(ref impl_) => {
@@ -853,7 +894,7 @@ impl Resolver {
                         }
                     } else {
                         let sym = sym.clone().map(|s| Symbol::Qualified(name.into(), s));
-                        self.unknown_symbol("local value", &sym, name);
+                        self.unknown_symbol(Kind::LocalValue, &sym, name);
                     }
                 }
                 Decl::Let(LetDecl::Def(ref def)) => {
@@ -885,7 +926,7 @@ impl Resolver {
                             }
                         }
                     } else {
-                        self.unknown_local_symbol("value", &type_.value, name);
+                        self.unknown_local_symbol(Kind::Value, &type_.value, name);
                     }
                 }
                 Decl::Record(ref record) => {
@@ -1033,7 +1074,7 @@ impl Resolver {
             Type::Concrete(ref symbol) => {
                 let resolved = self.resolve_symbol(
                     &Node::new(symbol.clone(), type_.span),
-                    "type",
+                    Kind::Type,
                     ctx);
                 r::Type::Concrete(resolved.value.full_name())
             }
@@ -1078,7 +1119,7 @@ impl Resolver {
                             &mut self,
                             bound: &Node<TraitBound>,
                             ctx: &Context) -> Node<r::TraitBound> {
-        let trait_ = self.resolve_symbol(&bound.value.trait_, "trait", ctx);
+        let trait_ = self.resolve_symbol(&bound.value.trait_, Kind::Trait, ctx);
         
         let mut params = Vec::new();
         for param in &bound.value.params {
@@ -1101,14 +1142,14 @@ impl Resolver {
             Pattern::Var(ref s) => r::Pattern::Var(s.clone()),
             Pattern::Literal(ref lit) => r::Pattern::Literal(lit.clone()),
             Pattern::Deconstruct(ref sym, ref items) => {
-                let s = self.resolve_symbol(sym, "pattern", ctx).map(r::Symbol::full_name);
+                let s = self.resolve_symbol(sym, Kind::Pattern, ctx).map(r::Symbol::full_name);
                 let items = items.iter().map(|p| self.resolve_pattern(p, ctx)).collect();
                 r::Pattern::Deconstruct(s, items)
             }
             Pattern::Infix(ref lhs, ref sym, ref rhs) => {
                 let lhs = self.resolve_pattern(lhs, ctx);
                 let rhs = self.resolve_pattern(rhs, ctx);
-                let s = self.resolve_symbol(sym, "pattern", ctx).map(r::Symbol::full_name);
+                let s = self.resolve_symbol(sym, Kind::Pattern, ctx).map(r::Symbol::full_name);
                 r::Pattern::Infix(Box::new(lhs), s, Box::new(rhs))
             }
             Pattern::As(ref pat, ref alias) => {
@@ -1323,7 +1364,7 @@ impl Resolver {
                     };
                     resolved_types.push(Node::new(annot, decl.span));
                 } else {
-                    self.unknown_local_symbol("value", &type_annot.value, ctx.module);
+                    self.unknown_local_symbol(Kind::Value, &type_annot.value, ctx.module);
                 }
             }
         }
@@ -1371,12 +1412,12 @@ impl Resolver {
     fn resolve_symbol(
                         &mut self,
                         symbol: &Node<Symbol>,
-                        kind: &str,
+                        kind: Kind,
                         ctx: &Context) -> Node<r::Symbol> {
         let sym = match symbol.value {
             Symbol::Qualified(ref m, ref n) => {
                 if let Some(m) = ctx.imports.modules.get(m.as_str()) {
-                    if ctx.exports.get(*m).unwrap().has_type(n) {
+                    if ctx.exports.get(*m).unwrap().has_symbol(kind, n) {
                         r::Symbol::Global(m.to_string(), n.clone())
                     } else {
                         self.not_exported(n, m, symbol.span, ctx.module);
@@ -1388,7 +1429,7 @@ impl Resolver {
                 }
             }
             Symbol::Unqualified(ref s) => {
-                if let Some(m) = ctx.imports.types.get(s.as_str()) {
+                if let Some(m) = ctx.imports.get_origin(kind, s) {
                     r::Symbol::Global(m.to_string(), s.clone())
                 } else {
                     self.unknown_symbol(kind, symbol, ctx.module);
@@ -1413,6 +1454,6 @@ impl Resolver {
             }
             _ => { }
         }
-        self.resolve_symbol(symbol, "value", ctx)
+        self.resolve_symbol(symbol, Kind::Value, ctx)
     }
 }

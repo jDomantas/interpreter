@@ -1,0 +1,4 @@
+-- expect symbol errors: 3:5 4:5
+a = b
+b = c
+d = e

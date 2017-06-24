@@ -1,0 +1,2 @@
+-- expect symbol errors: 2:1
+a : Int

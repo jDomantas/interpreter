@@ -9,7 +9,8 @@ use interpreter::position::Position;
 #[test]
 fn run_test_programs() {
     let dirs = [
-        "./tests/programs/bad/parse"
+        "./tests/programs/bad/parse",
+        "./tests/programs/bad/symbol",
     ];
     let mut failed_tests = Vec::new();
     let mut passed = 0;
@@ -29,6 +30,7 @@ fn run_test_programs() {
                     passed += 1;
                 }
                 TestResult::Err(expectation, outcome) => {
+                    println!("program: \"{}\" ... FAIL", name);
                     failed_tests.push((name, expectation, outcome));
                     failed += 1;
                 }

@@ -87,3 +87,9 @@ pub fn recursive_type_alias<T, U>(message: T, span: Span, module: U) -> Error
         phase: Phase::TypeAliasChecking,
     }
 }
+
+pub fn symbol_module<T: Into<String>>(symbol: T) -> String {
+    let mut symbol = symbol.into();
+    while symbol.pop().unwrap() != '.' { }
+    symbol
+}

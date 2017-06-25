@@ -85,6 +85,18 @@ impl<'a> Graph<'a> {
     fn remove_node(&mut self, name: &str) {
         self.nodes.remove(name);
     }
+
+    fn find_all_cycles(mut self) -> Vec<Vec<&'a str>> {
+        let mut cycles = Vec::new();
+        while let Some(cycle) = self.find_cycle() {
+            debug_assert!(cycle.len() >= 2);
+            for &node in &cycle {
+                self.remove_node(node);
+            }
+            cycles.push(cycle);
+        }
+        cycles
+    }
 }
 
 fn collect_concrete_types<'a>(type_: &'a Node<Type>, result: &mut Vec<&'a str>) {
@@ -113,7 +125,7 @@ fn collect_concrete_types<'a>(type_: &'a Node<Type>, result: &mut Vec<&'a str>) 
 pub fn find_alias_cycles(items: &Items) -> Vec<Error> {
     let mut positions = HashMap::<&str, Span>::new();
     let mut err = Vec::new();
-    let mut graph = {
+    let graph = {
         let aliases = items.types.iter().filter_map(|item| {
             match *item {
                 TypeDecl::TypeAlias(ref alias) => {
@@ -127,8 +139,7 @@ pub fn find_alias_cycles(items: &Items) -> Vec<Error> {
         Graph::from_aliases(aliases)
     };
     
-    while let Some(cycle) = graph.find_cycle() {
-        debug_assert!(cycle.len() >= 2);
+    for cycle in graph.find_all_cycles() {
         let message = if cycle.len() == 2 {
             format!("Type alias '{}' depends on itself.", cycle[0])
         } else {
@@ -145,11 +156,8 @@ pub fn find_alias_cycles(items: &Items) -> Vec<Error> {
             msg
         };
         let span = *positions.get(cycle[0]).unwrap();
-        // TODO: somehow get the module
-        err.push(errors::recursive_type_alias(message, span, "<???>"));
-        for element in cycle {
-            graph.remove_node(element);
-        }
+        let module = errors::symbol_module(cycle[0]);
+        err.push(errors::recursive_type_alias(message, span, module));
     }
 
     err

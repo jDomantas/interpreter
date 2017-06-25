@@ -1580,6 +1580,12 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
             self.trait_().map(|n| n.map(Decl::Trait))
         } else if self.eat(Token::Impl) {
             self.impl_().map(|n| n.map(Decl::Impl))
+        } else if self.eat(Token::Infixl) {
+            self.fixity(Associativity::Left)
+        } else if self.eat(Token::Infixr) {
+            self.fixity(Associativity::Right)
+        } else if self.eat(Token::Infix) {
+            self.fixity(Associativity::None)
         } else {
             self.let_decl(true).map(|n| n.map(Decl::Let))
         }

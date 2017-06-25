@@ -1,0 +1,4 @@
+-- expect symbol errors: 2:8 3:8 4:7
+infixl + 5
+infixr - 5
+infix * 6

@@ -1,0 +1,9 @@
+-- expect symbol errors: 4:7
+import Other exposing (..)
+
+infix + 5
+
+-- module: Other
+module Other exposing (..)
+
+a + b = 1

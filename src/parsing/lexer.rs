@@ -416,6 +416,7 @@ mod tests {
             Token::Int(1),
             Token::Float(1.0),
             Token::Operator(Symbol::Unqualified("+".to_string())),
+            Token::EndOfInput,
         ]);
     }
 
@@ -426,6 +427,7 @@ mod tests {
             Token::Ident(Symbol::Unqualified("foo".to_string())),
             Token::Ident(Symbol::Qualified("bar".to_string(), "foo".to_string())),
             Token::Ident(Symbol::Qualified("foo.baz".to_string(), "bar".to_string())),
+            Token::EndOfInput,
         ]);
     }
 
@@ -438,6 +440,7 @@ mod tests {
             Token::If,
             Token::Bool(true),
             Token::Impl,
+            Token::EndOfInput,
         ]);
     }
 
@@ -450,6 +453,7 @@ mod tests {
             Token::Pipe,
             Token::Comma,
             Token::DotDot,
+            Token::EndOfInput,
         ]);
     }
 
@@ -479,6 +483,13 @@ mod tests {
                     end: Position { line: 2, column: 1 }
                 },
             },
+            Node {
+                value: Token::EndOfInput,
+                span: Span {
+                    start: Position { line: 2, column: 2 },
+                    end: Position { line: 2, column: 2 }
+                },
+            }
         ]);
     }
 
@@ -489,6 +500,7 @@ mod tests {
             Token::Int(0),
             Token::Int(2),
             Token::Int(4),
+            Token::EndOfInput,
         ]);
     }
 
@@ -498,6 +510,7 @@ mod tests {
         assert_eq!(tokens, vec![
             Token::Operator(Symbol::Unqualified("-".to_string())),
             Token::OpenBrace,
+            Token::EndOfInput,
         ]);
     }
 }

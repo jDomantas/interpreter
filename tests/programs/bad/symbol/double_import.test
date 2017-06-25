@@ -1,0 +1,6 @@
+-- expect symbol errors: 3:8
+import Other
+import Other
+
+-- module: Other
+module Other exposing (..)

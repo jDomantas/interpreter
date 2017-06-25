@@ -1,0 +1,5 @@
+-- expect symbol errors: 3:2 5:1
+a = 1
+(a, b) = (1, 2)
+c = 3
+c = 3

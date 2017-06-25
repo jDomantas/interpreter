@@ -906,7 +906,9 @@ impl Resolver {
                     if imports.values.get(sym) == Some(&name) {
                         let full_sym = format!("{}.{}", name, sym);
                         let sym_node = Node::new(full_sym.clone(), type_.value.span);
-                        let rtype = self.resolve_scheme(&type_.type_, &ctx);
+                        let rtype = type_.type_.as_ref().map(|t| {
+                            self.resolve_scheme(t, &ctx)
+                        });
                         let annotation = r::TypeAnnot {
                             value: sym_node,
                             type_: rtype,
@@ -1012,7 +1014,9 @@ impl Resolver {
         for value in &trait_.values {
             let sym = r::Symbol::Global(ctx.module.to_string(), value.value.value.value.clone());
             let sym = Node::new(sym, value.value.value.span);
-            let typ = self.resolve_scheme(&value.value.type_, ctx);
+            let typ = value.value.type_.as_ref().map(|t| {
+                self.resolve_scheme(t, ctx)
+            });
             let annot = r::TypeAnnot {
                 value: sym.map(r::Symbol::full_name),
                 type_: typ,
@@ -1362,7 +1366,9 @@ impl Resolver {
                     }
                 }
                 if defined_symbols.iter().any(|s| s.value == type_annot.value.value) {
-                    let type_ = self.resolve_scheme(&type_annot.type_, ctx);
+                    let type_ = type_annot.type_.as_ref().map(|t| {
+                        self.resolve_scheme(t, ctx)
+                    });
                     let annot = r::TypeAnnot {
                         value: type_annot.value.clone(),
                         type_: type_,

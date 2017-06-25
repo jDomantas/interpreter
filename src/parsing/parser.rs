@@ -1095,18 +1095,19 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
 
     fn type_or_def(&mut self, symbol: Node<String>, allow_type: bool) -> ParseResult<Node<LetDecl>> {
         if allow_type && self.eat(Token::Colon) {
-            match self.scheme() {
+            let (scheme, span) = match self.scheme() {
                 Ok(scheme) => {
-                    let node_span = symbol.span.merge(scheme.span);
-                    Ok(Node::new(LetDecl::Type(TypeAnnot {
-                        value: symbol,
-                        type_: scheme,
-                    }), node_span))
+                    let span = symbol.span.merge(scheme.span);
+                    (Some(scheme), span)
                 }
                 Err(_) => {
-                    Err(())
+                    (None, symbol.span)
                 }
-            }
+            };
+            Ok(Node::new(LetDecl::Type(TypeAnnot {
+                value: symbol,
+                type_: scheme,
+            }), span))
         } else {
             let mut params = Vec::new();
             let pattern = symbol.map(Pattern::Var);
@@ -1518,11 +1519,13 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
             return Some(Err(()));
         }
 
-        let type_ = match self.scheme() {
-            Ok(scheme) => scheme,
-            Err(()) => return Some(Err(())),
+        let (type_, span) = match self.scheme() {
+            Ok(scheme) => {
+                let span = symbol.span.merge(scheme.span);
+                (Some(scheme), span)
+            }
+            Err(()) => (None, symbol.span),
         };
-        let span = symbol.span.merge(type_.span);
 
         Some(Ok(Node::new(TypeAnnot {
             value: symbol,
@@ -2018,7 +2021,7 @@ mod tests {
                 output.push_str("(typeannot ");
                 output.push_str(&value.value);
                 output.push(' ');
-                write_scheme(&type_.value, output);
+                write_scheme(&type_.as_ref().unwrap().value, output);
                 output.push(')');
             }
         }

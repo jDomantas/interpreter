@@ -57,7 +57,7 @@ pub struct Def {
 #[derive(PartialEq, Debug, Clone)]
 pub struct TypeAnnot {
     pub value: Node<String>,
-    pub type_: Node<Scheme>,
+    pub type_: Option<Node<Scheme>>,
 }
 
 #[derive(PartialEq, Debug, Clone)]

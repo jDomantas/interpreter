@@ -991,8 +991,9 @@ impl Resolver {
             resolved_fields.push((name.clone(), resolved_type));
         }
         
+        let name = format!("{}.{}", ctx.module, record.name.value);
         r::RecordType {
-            name: record.name.clone(),
+            name: Node::new(name, record.name.span),
             vars: record.vars.clone(),
             fields: resolved_fields,
         }
@@ -1019,8 +1020,9 @@ impl Resolver {
             values.push(Node::new(annot, value.span));
         }
 
+        let name = format!("{}.{}", ctx.module, trait_.name.value);
         r::Trait {
-            name: trait_.name.clone(),
+            name: Node::new(name, trait_.name.span),
             vars: trait_.vars.clone(),
             base_traits: base_traits,
             values: values,
@@ -1034,8 +1036,10 @@ impl Resolver {
         let resolved_type = alias.type_.as_ref().map(|t| {
             self.resolve_type(t, ctx)
         });
+
+        let name = format!("{}.{}", ctx.module, alias.name.value);
         r::TypeAlias {
-            name: alias.name.clone(),
+            name: Node::new(name, alias.name.span),
             vars: alias.vars.clone(),
             type_: resolved_type,
         }
@@ -1058,8 +1062,9 @@ impl Resolver {
             resolved_cases.push(Node::new(resolved_case, case.span));
         }
         
+        let name = format!("{}.{}", ctx.module, union.name.value);
         r::UnionType {
-            name: union.name.clone(),
+            name: Node::new(name, union.name.span),
             vars: union.vars.clone(),
             cases: resolved_cases,
         }

@@ -40,6 +40,7 @@ pub enum Phase {
     Parsing,
     SymbolResolution,
     TypeChecking,
+    TypeAliasChecking,
 }
 
 pub fn parse_error<T, U>(message: T, span: Span, module: U) -> Error
@@ -75,5 +76,14 @@ pub fn module_not_loaded<T, U>(message: T, span: Span, module: U) -> Error
         module: module.into(),
         notes: vec![Note::new(message, span)],
         phase: Phase::Parsing,
+    }
+}
+
+pub fn recursive_type_alias<T, U>(message: T, span: Span, module: U) -> Error
+        where T: Into<String>, U: Into<String> {
+    Error {
+        module: module.into(),
+        notes: vec![Note::new(message, span)],
+        phase: Phase::TypeAliasChecking,
     }
 }

@@ -61,6 +61,7 @@ fn run_test(source: &str) -> TestResult {
 fn run_program(source: &str) -> Outcome {
     use interpreter::parsing::{parse_modules, SourceProvider};
     use interpreter::compiler::symbols::resolve_symbols;
+    use interpreter::compiler::recursive_check::find_alias_cycles;
 
     let modules = Modules::from_source(source);
     let main = modules.get_module_source("Main").unwrap();
@@ -73,7 +74,7 @@ fn run_program(source: &str) -> Outcome {
         return Outcome::ParseError(pos, message);
     }
 
-    match resolve_symbols(modules) {
+    let items = match resolve_symbols(modules) {
         Err(mut errors) => {
             assert!(!errors.is_empty());
             errors.sort_by(interpreter::errors::Error::ordering);
@@ -85,7 +86,19 @@ fn run_program(source: &str) -> Outcome {
             }
             return Outcome::SymbolError(simple_errors);
         }
-        Ok(_) => { }
+        Ok(items) => items,
+    };
+
+    let alias_errors = find_alias_cycles(&items);
+    if !alias_errors.is_empty() {
+        errors.sort_by(interpreter::errors::Error::ordering);
+        let mut simple_errors = Vec::new();
+        for err in alias_errors {
+            let pos = err.notes[0].span.start;
+            let message = err.notes[0].message.clone();
+            simple_errors.push((pos, message));
+        }
+        return Outcome::AliasError(simple_errors);
     }
 
     Outcome::Ok
@@ -141,6 +154,7 @@ impl Expectation {
 enum Outcome {
     ParseError(Position, String),
     SymbolError(Vec<(Position, String)>),
+    AliasError(Vec<(Position, String)>),
     Ok,
 }
 
@@ -153,6 +167,15 @@ impl Outcome {
             }
             Outcome::SymbolError(ref pos) => {
                 println!("symbol errors:");
+                for &(pos, ref msg) in pos {
+                    println!("line {}, column {}, reason: {}",
+                        pos.line,
+                        pos.column,
+                        msg);
+                }
+            }
+            Outcome::AliasError(ref pos) => {
+                println!("type alias errors:");
                 for &(pos, ref msg) in pos {
                     println!("line {}, column {}, reason: {}",
                         pos.line,

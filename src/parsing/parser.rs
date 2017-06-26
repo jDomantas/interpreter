@@ -1294,18 +1294,11 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
     fn fixity(&mut self, associativity: Associativity) -> ParseResult<Node<Decl>> {
         let span = self.previous_span();
 
-        let op = match self.eat_unqualified_operator() {
-            Some(op) => op,
-            None => {
-                self.emit_error();
-                return Err(());
-            }
-        };
-
         match self.peek() {
             Some(&Node { value: Token::Int(_), .. }) => { }
             _ => {
                 self.expected_tokens.push(TokenKind::Int);
+                self.emit_error();
                 return Err(());
             }
         }
@@ -1316,6 +1309,14 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
             }
             _ => {
                 panic!("Parser::peek and Parser::consume returned different reults");
+            }
+        };
+
+        let op = match self.eat_unqualified_operator() {
+            Some(op) => op,
+            None => {
+                self.emit_error();
+                return Err(());
             }
         };
 

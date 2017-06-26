@@ -1,4 +1,4 @@
 -- expect fixity error: line 4 column 7
 _ + _ = 1
-infix + 5
+infix 5 +
 a = 1 + 1 + 1

@@ -1,7 +1,7 @@
--- expect symbol errors: 4:7
+-- expect symbol errors: 4:9
 import Other exposing (..)
 
-infix + 5
+infix 5 +
 
 -- module: Other
 module Other exposing (..)

@@ -1407,13 +1407,13 @@ impl Resolver {
                             &mut self, 
                             locals: &[Node<&str>],
                             ctx: &Context) {
-        for first in 0..locals.len() {
-            for second in (first + 1)..(locals.len()) {
-                if locals[first].value == locals[second].value {
+        for (index, first) in locals.iter().enumerate() {
+            for second in locals.iter().skip(index + 1) {
+                if first.value == second.value {
                     self.duplicate_binding(
-                        locals[second].value,
-                        locals[second].span,
-                        locals[first].span,
+                        second.value,
+                        second.span,
+                        first.span,
                         ctx.module);
                 }
             }

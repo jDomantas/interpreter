@@ -104,10 +104,7 @@ fn collect_concrete_types<'a>(type_: &'a Node<Type>, result: &mut Vec<&'a str>) 
         Type::Concrete(ref name) => {
             result.push(name);
         }
-        Type::Apply(ref a, ref b) => {
-            collect_concrete_types(a, result);
-            collect_concrete_types(b, result);
-        }
+        Type::Apply(ref a, ref b) |
         Type::Function(ref a, ref b) => {
             collect_concrete_types(a, result);
             collect_concrete_types(b, result);

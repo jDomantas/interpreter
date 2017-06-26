@@ -90,17 +90,14 @@ impl Pattern {
             Pattern::Var(ref name) => {
                 result.push(Node::new(name, my_span));
             }
-            Pattern::Tuple(ref parts) => {
-                for part in parts {
-                    part.value.collect_vars(result, part.span);
-                }
-            }
+            Pattern::Tuple(ref parts) |
             Pattern::List(ref parts) => {
                 for part in parts {
                     part.value.collect_vars(result, part.span);
                 }
             }
-            Pattern::Wildcard | Pattern::Literal(_) => { }
+            Pattern::Wildcard |
+            Pattern::Literal(_) => { }
         }
     }
 }

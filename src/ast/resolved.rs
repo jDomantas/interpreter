@@ -40,7 +40,7 @@ pub enum Pattern {
     Var(String),
     Literal(Literal),
     Deconstruct(Node<String>, Vec<Node<Pattern>>),
-    Infix(Box<Node<Pattern>>, Node<String>, Box<Node<Pattern>>),
+    Infix(Box<Node<Pattern>>, Node<Symbol>, Box<Node<Pattern>>),
     As(Box<Node<Pattern>>, Node<String>),
     Parenthesised(Box<Node<Pattern>>),
     Tuple(Vec<Node<Pattern>>),
@@ -133,7 +133,7 @@ pub struct Impl {
 
 #[derive(PartialEq, Eq, Debug, Hash, Clone)]
 pub enum Symbol {
-    Global(String, String),
+    Global(String),
     Local(String),
     Unknown,
 }
@@ -141,17 +141,17 @@ pub enum Symbol {
 impl Symbol {
     pub fn full_name(self) -> String {
         match self {
-            Symbol::Global(mut module, name) => {
-                module.push('.');
-                module.push_str(&name);
-                module
-            }
-            Symbol::Local(name) => {
-                name
-            }
-            Symbol::Unknown => {
-                "?".to_string()
-            }
+            Symbol::Global(name) => name,
+            Symbol::Local(name) => name,
+            Symbol::Unknown => "?".to_string(),
+        }
+    }
+
+    pub fn full_name_ref(&self) -> &str {
+        match *self {
+            Symbol::Global(ref name) => name,
+            Symbol::Local(ref name) => name,
+            Symbol::Unknown => "?",
         }
     }
 }

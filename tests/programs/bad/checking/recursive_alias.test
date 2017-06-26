@@ -1,0 +1,6 @@
+-- expect recursive alias error
+-- I'm not sure if hashtables are completely deterministic
+-- if they are not, then error can be reported on any alias
+type alias A a = B (B a)
+type alias B a = C a
+type alias C a = A a

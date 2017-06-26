@@ -11,6 +11,7 @@ fn run_test_programs() {
     let dirs = [
         "./tests/programs/bad/parse",
         "./tests/programs/bad/symbol",
+        "./tests/programs/bad/checking",
     ];
     let mut failed_tests = Vec::new();
     let mut passed = 0;
@@ -62,6 +63,7 @@ fn run_program(source: &str) -> Outcome {
     use interpreter::parsing::{parse_modules, SourceProvider};
     use interpreter::compiler::symbols::resolve_symbols;
     use interpreter::compiler::recursive_check::find_alias_cycles;
+    use interpreter::compiler::precedence::fix_items;
 
     let modules = Modules::from_source(source);
     let main = modules.get_module_source("Main").unwrap();
@@ -101,6 +103,14 @@ fn run_program(source: &str) -> Outcome {
         return Outcome::AliasError(simple_errors);
     }
 
+    let (_items, fixity_errors) = fix_items(items);
+    if !fixity_errors.is_empty() {
+        errors.sort_by(interpreter::errors::Error::ordering);
+        let pos = fixity_errors[0].notes[0].span.start;
+        let message = fixity_errors[0].notes[0].message.clone();
+        return Outcome::FixityError(pos, message);
+    }
+
     Outcome::Ok
 }
 
@@ -111,7 +121,7 @@ fn parse_expectation(source: &str) -> Expectation {
             let line = str::parse::<usize>(parts[5]).unwrap();
             let column = str::parse::<usize>(parts[7]).unwrap();
             return Expectation::ParseError(Position::new(line, column));
-        } 
+        }
     }
 
     for line in source.lines() {
@@ -127,12 +137,29 @@ fn parse_expectation(source: &str) -> Expectation {
         } 
     }
 
+    for line in source.lines() {
+        if line.starts_with("-- expect recursive alias error") {
+            return Expectation::RecursiveAliasError;
+        } 
+    }
+
+    for line in source.lines() {
+        if line.starts_with("-- expect fixity error: line ") {
+            let parts = line.split(" ").collect::<Vec<_>>();
+            let line = str::parse::<usize>(parts[5]).unwrap();
+            let column = str::parse::<usize>(parts[7]).unwrap();
+            return Expectation::FixityError(Position::new(line, column));
+        }
+    }
+
     panic!("no expectations in program");
 }
 
 enum Expectation {
     ParseError(Position),
     SymbolError(Vec<Position>),
+    RecursiveAliasError,
+    FixityError(Position),
 }
 
 impl Expectation {
@@ -147,6 +174,12 @@ impl Expectation {
                     println!("line {}, column {}", pos.line, pos.column);
                 }
             }
+            Expectation::RecursiveAliasError => {
+                println!("recursive alias error");
+            }
+            Expectation::FixityError(pos) => {
+                println!("fixity error at line {}, column {}", pos.line, pos.column);
+            }
         }
     }
 }
@@ -155,6 +188,7 @@ enum Outcome {
     ParseError(Position, String),
     SymbolError(Vec<(Position, String)>),
     AliasError(Vec<(Position, String)>),
+    FixityError(Position, String),
     Ok,
 }
 
@@ -182,6 +216,10 @@ impl Outcome {
                         pos.column,
                         msg);
                 }
+            }
+            Outcome::FixityError(pos, ref msg) => {
+                println!("fixity errors at line {}, column {}", pos.line, pos.column);
+                println!("reason: {}", msg);
             }
             Outcome::Ok => {
                 println!("program passed");
@@ -214,6 +252,14 @@ impl TestResult {
                     if all_good {
                         return TestResult::Ok;
                     }
+                }
+            }
+            (&Expectation::RecursiveAliasError, &Outcome::AliasError(_)) => {
+                return TestResult::Ok;
+            }
+            (&Expectation::FixityError(pos), &Outcome::FixityError(pos2, _)) => {
+                if pos == pos2 {
+                    return TestResult::Ok;
                 }
             }
             _ => { }

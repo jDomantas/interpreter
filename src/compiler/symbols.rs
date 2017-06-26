@@ -881,7 +881,8 @@ impl Resolver {
                         match fixity_decl.entry(sym_.as_str()) {
                             Entry::Vacant(entry) => {
                                 entry.insert(decl.span);
-                                self.result.fixities.insert(sym.value.clone(), (assoc, prec.value));
+                                let name = format!("{}.{}", name, sym.value);
+                                self.result.fixities.insert(name, (assoc, prec.value));
                             }
                             Entry::Occupied(entry) => {
                                 let previous = *entry.get();
@@ -1012,7 +1013,7 @@ impl Resolver {
 
         let mut values = Vec::new();
         for value in &trait_.values {
-            let sym = r::Symbol::Global(ctx.module.to_string(), value.value.value.value.clone());
+            let sym = r::Symbol::Global(format!("{}.{}", ctx.module, value.value.value.value));
             let sym = Node::new(sym, value.value.value.span);
             let typ = value.value.type_.as_ref().map(|t| {
                 self.resolve_scheme(t, ctx)
@@ -1158,7 +1159,7 @@ impl Resolver {
             Pattern::Infix(ref lhs, ref sym, ref rhs) => {
                 let lhs = self.resolve_pattern(lhs, ctx);
                 let rhs = self.resolve_pattern(rhs, ctx);
-                let s = self.resolve_symbol(sym, Kind::Pattern, ctx).map(r::Symbol::full_name);
+                let s = self.resolve_symbol(sym, Kind::Pattern, ctx);
                 r::Pattern::Infix(Box::new(lhs), s, Box::new(rhs))
             }
             Pattern::As(ref pat, ref alias) => {
@@ -1429,7 +1430,7 @@ impl Resolver {
             Symbol::Qualified(ref m, ref n) => {
                 if let Some(m) = ctx.imports.modules.get(m.as_str()) {
                     if ctx.exports.get(*m).unwrap().has_symbol(kind, n) {
-                        r::Symbol::Global(m.to_string(), n.clone())
+                        r::Symbol::Global(format!("{}.{}", m, n))
                     } else {
                         self.not_exported(n, m, symbol.span, ctx.module);
                         r::Symbol::Unknown
@@ -1441,7 +1442,7 @@ impl Resolver {
             }
             Symbol::Unqualified(ref s) => {
                 if let Some(m) = ctx.imports.get_origin(kind, s) {
-                    r::Symbol::Global(m.to_string(), s.clone())
+                    r::Symbol::Global(format!("{}.{}", m, s))
                 } else {
                     self.unknown_symbol(kind, symbol, ctx.module);
                     r::Symbol::Unknown

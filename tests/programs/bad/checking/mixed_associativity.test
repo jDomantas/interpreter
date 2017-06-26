@@ -1,0 +1,11 @@
+-- expect fixity error: line 11 column 15
+_ + _ = 1
+infixl + 5
+
+_ - _ = 1
+infixr - 5
+
+_ * _ = 1
+infixl * 4
+
+a = 1 - 1 * 1 + 1 - 1 * 1 + 1

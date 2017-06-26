@@ -41,6 +41,7 @@ pub enum Phase {
     SymbolResolution,
     TypeChecking,
     TypeAliasChecking,
+    FixityResolution,
 }
 
 pub fn parse_error<T, U>(message: T, span: Span, module: U) -> Error
@@ -85,6 +86,15 @@ pub fn recursive_type_alias<T, U>(message: T, span: Span, module: U) -> Error
         module: module.into(),
         notes: vec![Note::new(message, span)],
         phase: Phase::TypeAliasChecking,
+    }
+}
+
+pub fn precedence_error<T, U>(message: T, span: Span, module: U) -> Error
+        where T: Into<String>, U: Into<String> {
+    Error {
+        module: module.into(),
+        notes: vec![Note::new(message, span)],
+        phase: Phase::FixityResolution,
     }
 }
 

@@ -41,3 +41,13 @@ pub enum Associativity {
     Right,
     None,
 }
+
+impl Associativity {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Associativity::Left => "left-associative",
+            Associativity::Right => "right-associative",
+            Associativity::None => "non-associative",
+        }
+    }
+}

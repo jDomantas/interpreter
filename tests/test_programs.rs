@@ -68,7 +68,7 @@ fn run_program(source: &str) -> Outcome {
     let modules = Modules::from_source(source);
     let main = modules.get_module_source("Main").unwrap();
 
-    let (modules, mut errors) = parse_modules(&main, modules);
+    let (modules, mut errors) = parse_modules(&main, &modules);
     if !errors.is_empty() {
         errors.sort_by(interpreter::errors::Error::ordering);
         let pos = errors[0].notes[0].span.start;
@@ -76,7 +76,7 @@ fn run_program(source: &str) -> Outcome {
         return Outcome::ParseError(pos, message);
     }
 
-    let items = match resolve_symbols(modules) {
+    let items = match resolve_symbols(&modules) {
         Err(mut errors) => {
             assert!(!errors.is_empty());
             errors.sort_by(interpreter::errors::Error::ordering);
@@ -117,7 +117,7 @@ fn run_program(source: &str) -> Outcome {
 fn parse_expectation(source: &str) -> Expectation {
     for line in source.lines() {
         if line.starts_with("-- expect parse error: line ") {
-            let parts = line.split(" ").collect::<Vec<_>>();
+            let parts = line.split(' ').collect::<Vec<_>>();
             let line = str::parse::<usize>(parts[5]).unwrap();
             let column = str::parse::<usize>(parts[7]).unwrap();
             return Expectation::ParseError(Position::new(line, column));
@@ -127,8 +127,8 @@ fn parse_expectation(source: &str) -> Expectation {
     for line in source.lines() {
         if line.starts_with("-- expect symbol errors: ") {
             let mut positions = Vec::new();
-            for pos in line.split(" ").skip(4) {
-                let parts = pos.split(":").collect::<Vec<_>>();
+            for pos in line.split(' ').skip(4) {
+                let parts = pos.split(':').collect::<Vec<_>>();
                 let line = str::parse::<usize>(parts[0]).unwrap();
                 let column = str::parse::<usize>(parts[1]).unwrap();
                 positions.push(Position::new(line, column));
@@ -145,7 +145,7 @@ fn parse_expectation(source: &str) -> Expectation {
 
     for line in source.lines() {
         if line.starts_with("-- expect fixity error: line ") {
-            let parts = line.split(" ").collect::<Vec<_>>();
+            let parts = line.split(' ').collect::<Vec<_>>();
             let line = str::parse::<usize>(parts[5]).unwrap();
             let column = str::parse::<usize>(parts[7]).unwrap();
             return Expectation::FixityError(Position::new(line, column));
@@ -236,7 +236,8 @@ enum TestResult {
 impl TestResult {
     fn from_expectation_and_outcome(expected: Expectation, outcome: Outcome) -> TestResult {
         match (&expected, &outcome) {
-            (&Expectation::ParseError(pos), &Outcome::ParseError(pos2, _)) => {
+            (&Expectation::ParseError(pos), &Outcome::ParseError(pos2, _)) |
+            (&Expectation::FixityError(pos), &Outcome::FixityError(pos2, _)) => {
                 if pos == pos2 {
                     return TestResult::Ok;
                 }
@@ -256,11 +257,6 @@ impl TestResult {
             }
             (&Expectation::RecursiveAliasError, &Outcome::AliasError(_)) => {
                 return TestResult::Ok;
-            }
-            (&Expectation::FixityError(pos), &Outcome::FixityError(pos2, _)) => {
-                if pos == pos2 {
-                    return TestResult::Ok;
-                }
             }
             _ => { }
         }

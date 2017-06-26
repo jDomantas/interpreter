@@ -51,7 +51,7 @@ impl<'a, 'b> Lexer<'a, 'b> {
     }
 
     fn peek2(&mut self) -> Option<char> {
-        self.source.peek().map(|x| *x)
+        self.source.peek().cloned()
     }
 
     fn advance(&mut self) {
@@ -107,8 +107,8 @@ impl<'a, 'b> Lexer<'a, 'b> {
 
     fn skip_block_comment(&mut self) {
         let start = self.current_position();
-        debug_assert!(self.consume() == Some('{'));
-        debug_assert!(self.consume() == Some('-'));
+        assert_eq!(self.consume(), Some('{'));
+        assert_eq!(self.consume(), Some('-'));
         let opened_at = start.span_to(self.current_position());
         let mut nesting = 1_usize;
         loop {
@@ -150,7 +150,7 @@ impl<'a, 'b> Lexer<'a, 'b> {
         }
 
         assert!(!ident.is_empty());
-        return (ident, start.span_to(end));
+        (ident, start.span_to(end))
     }
 
     fn lex_number(&mut self) -> Node<Token> {
@@ -167,7 +167,7 @@ impl<'a, 'b> Lexer<'a, 'b> {
             return Node::new(Token::Float(number), span);
         }
         
-        self.emit_error("invalid number literal", span.clone());
+        self.emit_error("invalid number literal", span);
         Node::new(Token::Error, span)
     }
 

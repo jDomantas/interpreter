@@ -141,16 +141,14 @@ pub enum Symbol {
 impl Symbol {
     pub fn full_name(self) -> String {
         match self {
-            Symbol::Global(name) => name,
-            Symbol::Local(name) => name,
+            Symbol::Global(name) | Symbol::Local(name) => name,
             Symbol::Unknown => "?".to_string(),
         }
     }
 
     pub fn full_name_ref(&self) -> &str {
         match *self {
-            Symbol::Global(ref name) => name,
-            Symbol::Local(ref name) => name,
+            Symbol::Global(ref name) | Symbol::Local(ref name) => name,
             Symbol::Unknown => "?",
         }
     }

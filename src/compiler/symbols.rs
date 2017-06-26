@@ -154,14 +154,14 @@ impl fmt::Display for Kind {
     }
 }
 
-pub fn resolve_symbols(modules: HashMap<String, Module>) -> Result<r::Items, Vec<Error>> {
+pub fn resolve_symbols(modules: &HashMap<String, Module>) -> Result<r::Items, Vec<Error>> {
     let mut resolver = Resolver::new();
     let mut exports = HashMap::new();
-    for (name, module) in &modules {
+    for (name, module) in modules {
         let module_exports = resolver.collect_exports(module);
         exports.insert(name.clone(), module_exports);
     }
-    for (name, module) in &modules {
+    for (name, module) in modules {
         let ctx = Context {
             module: name,
             imports: &Imports::empty(),
@@ -536,8 +536,8 @@ impl Resolver {
                         }
                     }
                 }
-                Decl::Infix(_, _, _) => { }
-                Decl::Impl(_) => { }
+                Decl::Infix(_, _, _) |
+                Decl::Impl(_) |
                 Decl::Let(LetDecl::Type(_)) => { }
             }
         }
@@ -660,7 +660,7 @@ impl Resolver {
                     import_span.insert(alias, import.span);
                 }
                 Entry::Occupied(_) => {
-                    let previous = *import_span.get(alias).unwrap();
+                    let previous = import_span[alias];
                     self.module_double_import(alias, import.value.name.span, previous, module.name());
                     continue;
                 }
@@ -859,7 +859,7 @@ impl Resolver {
         self.emit_errors = false;
         let locals = self.collect_items(module);
         self.emit_errors = true;
-        let mut imports = self.collect_imports(module, &ctx);
+        let mut imports = self.collect_imports(module, ctx);
         imports.add_locals(module.name(), &locals);
         let ctx = Context {
             imports: &imports,
@@ -1100,7 +1100,7 @@ impl Resolver {
                 r::Type::Apply(Box::new(a), Box::new(b))
             }
             Type::Tuple(ref items) => {
-                r::Type::Tuple(items.iter().map(|t| self.resolve_type(t, &ctx)).collect())
+                r::Type::Tuple(items.iter().map(|t| self.resolve_type(t, ctx)).collect())
             }
         };
 
@@ -1133,7 +1133,7 @@ impl Resolver {
         
         let mut params = Vec::new();
         for param in &bound.value.params {
-            let typ = self.resolve_type(&param, ctx);
+            let typ = self.resolve_type(param, ctx);
             params.push(typ);
         }
         
@@ -1211,7 +1211,7 @@ impl Resolver {
                 for arm in arms {
                     let pat = self.resolve_pattern(&arm.value.pattern, ctx);
                     arm.value.pattern.value.collect_vars(locals, arm.value.pattern.span);
-                    self.check_dupe_bindings(locals, locals_before, ctx);
+                    self.check_dupe_bindings(&locals[locals_before..], ctx);
                     let guard = arm.value.guard.as_ref().map(|e| {
                         self.resolve_expr_with_locals(e, ctx, locals)
                     });
@@ -1252,7 +1252,7 @@ impl Resolver {
                     resolved_params.push(self.resolve_pattern(param, ctx));
                     param.value.collect_vars(locals, param.span);
                 }
-                self.check_dupe_bindings(locals, locals_before, ctx);
+                self.check_dupe_bindings(&locals[locals_before..], ctx);
                 let value = self.resolve_expr_with_locals(value, ctx, locals);
                 while locals.len() > locals_before {
                     locals.pop();
@@ -1301,7 +1301,7 @@ impl Resolver {
                 let expr = self.resolve_expr_with_locals(expr, ctx, locals);
                 let locals_before = locals.len();
                 pat.value.collect_vars(locals, pat.span);
-                self.check_dupe_bindings(locals, locals_before, ctx);
+                self.check_dupe_bindings(&locals[locals_before..], ctx);
                 let pat = self.resolve_pattern(pat, ctx);
                 let rest = self.resolve_do(rest, ctx, locals);
                 while locals.len() > locals_before {
@@ -1317,7 +1317,7 @@ impl Resolver {
             DoExpr::Let(ref pat, ref val, ref rest) => {
                 let locals_before = locals.len();
                 pat.value.collect_vars(locals, pat.span);
-                self.check_dupe_bindings(locals, locals_before, ctx);
+                self.check_dupe_bindings(&locals[locals_before..], ctx);
                 let pat = self.resolve_pattern(pat, ctx);
                 let val = self.resolve_expr_with_locals(val, ctx, locals);
                 let rest = self.resolve_do(rest, ctx, locals);
@@ -1338,7 +1338,7 @@ impl Resolver {
 
     fn resolve_let<'a>(
                         &mut self,
-                        decls: &'a Vec<Node<LetDecl>>,
+                        decls: &'a [Node<LetDecl>],
                         value: &'a Node<Expr>,
                         ctx: &Context,
                         locals: &mut Vec<Node<&'a str>>) -> r::Expr {
@@ -1351,7 +1351,7 @@ impl Resolver {
                 def.pattern.value.collect_vars(&mut defined_symbols, def.pattern.span);
             }
         }
-        self.check_dupe_bindings(&defined_symbols, 0, ctx);
+        self.check_dupe_bindings(&defined_symbols, ctx);
         for decl in decls {
             if let LetDecl::Type(ref type_annot) = decl.value {
                 match annotation_pos.entry(type_annot.value.value.clone()) {
@@ -1405,10 +1405,9 @@ impl Resolver {
     
     fn check_dupe_bindings(
                             &mut self, 
-                            locals: &Vec<Node<&str>>,
-                            check_from: usize,
+                            locals: &[Node<&str>],
                             ctx: &Context) {
-        for first in check_from..(locals.len()) {
+        for first in 0..locals.len() {
             for second in (first + 1)..(locals.len()) {
                 if locals[first].value == locals[second].value {
                     self.duplicate_binding(
@@ -1456,15 +1455,12 @@ impl Resolver {
                                 &mut self,
                                 symbol: &Node<Symbol>,
                                 ctx: &Context,
-                                locals: &Vec<Node<&str>>) -> Node<r::Symbol> {
-        match symbol.value {
-            Symbol::Unqualified(ref name) => {
-                if locals.iter().any(|n| n.value == name) {
-                    let s = r::Symbol::Local(name.clone());
-                    return Node::new(s, symbol.span);
-                }
+                                locals: &[Node<&str>]) -> Node<r::Symbol> {
+        if let Symbol::Unqualified(ref name) = symbol.value {
+            if locals.iter().any(|n| n.value == name) {
+                let s = r::Symbol::Local(name.clone());
+                return Node::new(s, symbol.span);
             }
-            _ => { }
         }
         self.resolve_symbol(symbol, Kind::Value, ctx)
     }

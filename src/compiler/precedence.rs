@@ -39,7 +39,7 @@ impl<'a> Context<'a> {
     fn precedence_error(&mut self, left: &Node<Symbol>, right: &Node<Symbol>) {
         let (a1, p1) = self.get_precedence(&left.value);
         let (a2, p2) = self.get_precedence(&right.value);
-        debug_assert!(p1 == p2);
+        debug_assert_eq!(p1, p2);
         debug_assert!(a1 != a2 || a1 == Associativity::None || a2 == Associativity::None);
         debug_assert!(left.value != right.value || a1 == Associativity::None);
         let message = if left.value == right.value {
@@ -58,15 +58,14 @@ impl<'a> Context<'a> {
         self.errors.push(errors::precedence_error(message, span, module));
     }
 
-    fn fix<T, F>(&mut self, mut args: Vec<Node<T>>, mut ops: Vec<Node<Symbol>>, builder: F) -> Node<T>
+    fn fix<T, F>(&mut self, mut args: Vec<Node<T>>, ops: Vec<Node<Symbol>>, builder: F) -> Node<T>
             where F: Fn(Node<T>, Node<Symbol>, Node<T>) -> Node<T> {
-        debug_assert!(ops.len() + 1 == args.len());
+        debug_assert_eq!(ops.len() + 1, args.len());
         let mut output = Vec::new();
         let mut op_stack = Vec::<Node<Symbol>>::new();
         let mut arg_drain = args.drain(..);
-        let mut op_drain = ops.drain(..);
         output.push(arg_drain.next().unwrap());
-        while let Some(op) = op_drain.next() {
+        for op in ops {
             let arg = arg_drain.next().unwrap();
             let (assoc, prec) = self.get_precedence(&op.value);
             loop {
@@ -95,14 +94,14 @@ impl<'a> Context<'a> {
             op_stack.push(op);
             output.push(arg);
         }
-        debug_assert!(op_stack.len() + 1 == output.len());
+        debug_assert_eq!(op_stack.len() + 1, output.len());
         while let Some(op) = op_stack.pop() {
             let rhs = output.pop().unwrap();
             let lhs = output.pop().unwrap();
             let expr = builder(lhs, op, rhs);
             output.push(expr);
         }
-        debug_assert!(output.len() == 1);
+        debug_assert_eq!(output.len(), 1);
         output.into_iter().next().unwrap()
     }
 

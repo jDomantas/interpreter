@@ -66,14 +66,13 @@ impl<'a> Graph<'a> {
         if visited.contains(current) {
             return None;
         }
-        if let Some(ref node) = self.nodes.get(current) {
+        if let Some(node) = self.nodes.get(current) {
             stack.push(current);
             in_stack.insert(current);
             visited.insert(current);
             for &ng in &node.parents {
-                match self.dfs_walk(ng, stack, in_stack, visited) {
-                    Some(cycle) => return Some(cycle),
-                    None => { }
+                if let Some(cycle) = self.dfs_walk(ng, stack, in_stack, visited) {
+                    return Some(cycle);
                 }
             }
             in_stack.remove(current);
@@ -101,8 +100,7 @@ impl<'a> Graph<'a> {
 
 fn collect_concrete_types<'a>(type_: &'a Node<Type>, result: &mut Vec<&'a str>) {
     match type_.value {
-        Type::SelfType => { }
-        Type::Var(_) => { }
+        Type::SelfType | Type::Var(_) => { }
         Type::Concrete(ref name) => {
             result.push(name);
         }
@@ -155,7 +153,7 @@ pub fn find_alias_cycles(items: &Items) -> Vec<Error> {
             msg.push_str(".");
             msg
         };
-        let span = *positions.get(cycle[0]).unwrap();
+        let span = positions[cycle[0]];
         let module = errors::symbol_module(cycle[0]);
         err.push(errors::recursive_type_alias(message, span, module));
     }

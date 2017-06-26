@@ -17,7 +17,7 @@ pub fn parse_module(source: &str, module: &str, require_def: bool) -> (Option<Mo
     (module, parse_errors)
 }
 
-pub fn parse_modules<T: SourceProvider>(main: &str, provider: T) -> (HashMap<String, Module>, Vec<Error>) {
+pub fn parse_modules<T: SourceProvider>(main: &str, provider: &T) -> (HashMap<String, Module>, Vec<Error>) {
     let mut modules = HashMap::<String, Module>::new();
     let mut to_walk = Vec::new();
     let mut checked = HashSet::new();
@@ -36,7 +36,7 @@ pub fn parse_modules<T: SourceProvider>(main: &str, provider: T) -> (HashMap<Str
             }
             match provider.get_module_source(name) {
                 Ok(source) => {
-                    let (module, parse_errors) = parse_module(&source, &name, true);
+                    let (module, parse_errors) = parse_module(&source, name, true);
                     errors.extend(parse_errors);
                     if let Some(module) = module {
                         to_walk.push(module);

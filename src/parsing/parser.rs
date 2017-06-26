@@ -66,7 +66,7 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
 
         let any_matches = self.expected_tokens.iter().any(|kind| kind.matches_token(token));
 
-        let mut message = if self.expected_tokens.len() == 0 {
+        let mut message = if self.expected_tokens.is_empty() {
             panic!("no tokens expected but got error");
         } else if self.expected_tokens.len() == 1 {
             format!("Expected {}", self.expected_tokens[0].to_string())
@@ -77,7 +77,7 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
                 if add_comma {
                     message.push_str(", ");
                 }
-                message.push_str(&token.to_string());
+                message.push_str(token.to_string());
                 add_comma = true;
             }
             message
@@ -181,7 +181,7 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
         }
 
         match self.tokens.peek() {
-            Some(ref token) => {
+            Some(token) => {
                 if token.span.start.column > self.current_indent {
                     Some(token)
                 } else {
@@ -196,7 +196,7 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
 
     fn consume(&mut self) -> Option<Node<Token>> {
         self.last_token_span = match self.peek() {
-            Some(ref tok) => tok.span,
+            Some(tok) => tok.span,
             None => DUMMY_SPAN,
         };
         self.accept_aligned = false;
@@ -278,7 +278,7 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
 
         match self.consume() {
             Some(Node { value: Token::Ident(Symbol::Unqualified(name)), span }) => {
-                debug_assert!(name.chars().nth(0).unwrap().is_uppercase() == uppercase);
+                debug_assert_eq!(name.chars().nth(0).unwrap().is_uppercase(), uppercase);
                 Some(Node::new(name, span))
             }
             _ => {
@@ -357,18 +357,12 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
     }
     
     fn expr_term(&mut self) -> Option<ParseResult<ExprNode>> {
-        match self.eat_symbol() {
-            Some(Node { value, span }) => {
-                return Some(Ok(Node::new(Expr::Ident(value), span)));
-            }
-            None => { }
+        if let Some(Node { value, span }) = self.eat_symbol() {
+            return Some(Ok(Node::new(Expr::Ident(value), span)));
         }
 
-        match self.eat_literal() {
-            Some(Node { value, span }) => {
-                return Some(Ok(Node::new(Expr::Literal(value), span)));
-            }
-            None => { }
+        if let Some(Node { value, span }) = self.eat_literal() {
+            return Some(Ok(Node::new(Expr::Literal(value), span)));
         }
 
         if self.eat(Token::OpenParen) {
@@ -540,18 +534,12 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
             return Some(Ok(Node::new(Pattern::Wildcard, span)));
         }
 
-        match self.eat_symbol() {
-            Some(Node { value, span }) => {
-                return Some(Ok(Node::new(Pattern::from_symbol(value, span), span)));
-            }
-            None => { }
+        if let Some(Node { value, span }) = self.eat_symbol() {
+            return Some(Ok(Node::new(Pattern::from_symbol(value, span), span)));
         }
 
-        match self.eat_literal() {
-            Some(Node { value, span }) => {
-                return Some(Ok(Node::new(Pattern::Literal(value), span)));
-            }
-            None => { }
+        if let Some(Node { value, span }) = self.eat_literal() {
+            return Some(Ok(Node::new(Pattern::Literal(value), span)));
         }
 
         if self.eat(Token::OpenParen) {
@@ -940,11 +928,8 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
     }
 
     fn type_term(&mut self) -> Option<ParseResult<TypeNode>> {
-        match self.eat_symbol() {
-            Some(sym) => {
-                return Some(Ok(sym.map(Type::from_symbol)));
-            }
-            _ => { }
+        if let Some(sym) = self.eat_symbol() {
+            return Some(Ok(sym.map(Type::from_symbol)));
         }
 
         if self.eat(Token::OpenParen) {
@@ -1804,8 +1789,7 @@ fn operator_right_section(operator: Node<Symbol>, expr: ExprNode, span: Span) ->
     let body = Expr::Infix(Box::new(value_node), operator, Box::new(expr));
     let body_node = Node::new(body, span);
     let lambda = Expr::Lambda(vec![pattern_node], Box::new(body_node));
-    let lambda_node = Node::new(lambda, span);
-    lambda_node
+    Node::new(lambda, span)
 }
 
 fn operator_left_section(operator: Node<Symbol>, expr: ExprNode, span: Span) -> ExprNode {
@@ -1816,8 +1800,7 @@ fn operator_left_section(operator: Node<Symbol>, expr: ExprNode, span: Span) -> 
     let body = Expr::Infix(Box::new(expr), operator, Box::new(value_node));
     let body_node = Node::new(body, span);
     let lambda = Expr::Lambda(vec![pattern_node], Box::new(body_node));
-    let lambda_node = Node::new(lambda, span);
-    lambda_node
+    Node::new(lambda, span)
 }
 
 #[cfg(test)]

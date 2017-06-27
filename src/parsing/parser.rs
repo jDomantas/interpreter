@@ -1807,7 +1807,7 @@ fn operator_left_section(operator: Node<Symbol>, expr: ExprNode, span: Span) -> 
 mod tests {
     use parsing::lexer::lex;
     use ast::Literal;
-    use ast::parsed::{Expr, Pattern, Type, Scheme, LetDecl, Def, TypeAnnot, Symbol};
+    use ast::parsed::{Expr, Pattern, Type, Scheme, LetDecl, Def, TypeAnnot, Symbol, DoExpr};
     use super::Parser;
 
     fn write_symbol(symbol: &Symbol, output: &mut String) {
@@ -1847,6 +1847,48 @@ mod tests {
                 output.push('"');
                 output.push_str(&s);
                 output.push('"');
+            }
+        }
+    }
+
+    fn write_do_expr(expr: &DoExpr, output: &mut String) {
+        match *expr {
+            DoExpr::Bind(ref pat, ref expr, ref rest) => {
+                output.push_str("(do-bind ");
+                write_expr(&expr.value, output);
+                output.push(' ');
+                write_pattern(&pat.value, output);
+                output.push(' ');
+                write_do_expr(&rest.value, output);
+                output.push(')');
+            }
+            DoExpr::Done(ref expr) => {
+                output.push_str("(do ");
+                write_expr(&expr.value, output);
+                output.push(')');
+            }
+            DoExpr::If(ref cond, ref rest) => {
+                output.push_str("(do-if ");
+                write_expr(&cond.value, output);
+                output.push(' ');
+                write_do_expr(&rest.value, output);
+                output.push(')');
+            }
+            DoExpr::Let(ref pat, ref expr, ref rest) => {
+                output.push_str("(do-let ");
+                write_expr(&expr.value, output);
+                output.push(' ');
+                write_pattern(&pat.value, output);
+                output.push(' ');
+                write_do_expr(&rest.value, output);
+                output.push(')');
+            }
+            DoExpr::Sequence(ref expr, ref rest) => {
+                output.push_str("(bind-ignore ");
+                write_expr(&expr.value, output);
+                output.push(' ');
+                write_do_expr(&rest.value, output);
+                output.push(')');
             }
         }
     }
@@ -1940,8 +1982,8 @@ mod tests {
             Expr::List(_) => {
                 unimplemented!()
             }
-            Expr::Do(_) => {
-                unimplemented!()
+            Expr::Do(ref do_) => {
+                write_do_expr(&do_.value, output);
             }
         }
     }
@@ -2219,7 +2261,7 @@ let
             "
 do  a <- value
     foo",
-            "(apply #Core.Monad.bind value (lambda ((var a)) foo))");
+            "(do-bind value (var a) (do foo))");
     }
     
     #[test]
@@ -2230,6 +2272,6 @@ do  a <- value
     let b = a
     if b
     c",
-            "(apply #Core.Monad.bind value (lambda ((var a)) (let (def (var b) a) (if b c #Core.Monad.empty))))");
+            "(do-bind value (var a) (do-let a (var b) (do-if b (do c))))");
     }
 }

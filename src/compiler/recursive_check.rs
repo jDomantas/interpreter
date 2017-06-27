@@ -1,102 +1,10 @@
-use std::collections::{HashSet, HashMap};
+use std::collections::HashMap;
 use ast::Node;
-use ast::resolved::{Items, TypeDecl, TypeAlias, Type};
+use ast::resolved::{Items, TypeDecl, Type};
+use compiler::util::Graph;
 use errors::{self, Error};
 use position::Span;
 
-struct GraphNode<'a> {
-    name: &'a str,
-    parents: Vec<&'a str>,
-}
-
-struct Graph<'a> {
-    nodes: HashMap<&'a str, GraphNode<'a>>,
-}
-
-impl<'a> Graph<'a> {
-    fn from_aliases<I: Iterator<Item=&'a TypeAlias>>(aliases: I) -> Graph<'a> {
-        let mut nodes = HashMap::new();
-        for alias in aliases {
-            let name = alias.name.value.as_ref();
-            let mut parents = Vec::new();
-            if let Some(ref type_) = alias.type_ {
-                collect_concrete_types(type_, &mut parents);
-            }
-            let node = GraphNode {
-                name: name,
-                parents: parents,
-            };
-            nodes.insert(name, node);
-        }
-        Graph {
-            nodes: nodes,
-        }
-    }
-
-    fn find_cycle(&self) -> Option<Vec<&'a str>> {
-        let mut stack = Vec::new();
-        let mut in_stack = HashSet::new();
-        let mut visited = HashSet::new();
-        for &node in self.nodes.keys() {
-            let cycle = self.dfs_walk(node, &mut stack, &mut in_stack, &mut visited);
-            if cycle.is_some() {
-                return cycle;
-            }
-        }
-        None
-    }
-
-    fn dfs_walk(
-                &self,
-                current: &'a str,
-                stack: &mut Vec<&'a str>,
-                in_stack: &mut HashSet<&'a str>,
-                visited: &mut HashSet<&'a str>) -> Option<Vec<&'a str>> {
-        if in_stack.contains(current) {
-            let mut cycle = vec![current];
-            loop {
-                let item = stack.pop().unwrap();
-                cycle.push(item);
-                if item == current {
-                    cycle.reverse();
-                    return Some(cycle);
-                }
-            }
-        }
-        if visited.contains(current) {
-            return None;
-        }
-        if let Some(node) = self.nodes.get(current) {
-            stack.push(current);
-            in_stack.insert(current);
-            visited.insert(current);
-            for &ng in &node.parents {
-                if let Some(cycle) = self.dfs_walk(ng, stack, in_stack, visited) {
-                    return Some(cycle);
-                }
-            }
-            in_stack.remove(current);
-            stack.pop();
-        }
-        None
-    }
-
-    fn remove_node(&mut self, name: &str) {
-        self.nodes.remove(name);
-    }
-
-    fn find_all_cycles(mut self) -> Vec<Vec<&'a str>> {
-        let mut cycles = Vec::new();
-        while let Some(cycle) = self.find_cycle() {
-            debug_assert!(cycle.len() >= 2);
-            for &node in &cycle {
-                self.remove_node(node);
-            }
-            cycles.push(cycle);
-        }
-        cycles
-    }
-}
 
 fn collect_concrete_types<'a>(type_: &'a Node<Type>, result: &mut Vec<&'a str>) {
     match type_.value {
@@ -117,29 +25,38 @@ fn collect_concrete_types<'a>(type_: &'a Node<Type>, result: &mut Vec<&'a str>) 
     }
 }
 
+fn make_graph<'a, I: Iterator<Item=&'a TypeDecl>>(decls: I) -> Graph<'a, str> {
+    let nodes = decls.filter_map(|decl| {
+        if let TypeDecl::TypeAlias(ref alias) = *decl {
+            let mut depends_on = Vec::new();
+            let name = alias.name.value.as_ref();
+            if let Some(ref type_) = alias.type_ {
+                collect_concrete_types(type_, &mut depends_on);
+            }
+            Some((name, depends_on))
+        } else {
+            None
+        }
+    });
+    Graph::new(nodes)
+}
+
 pub fn find_alias_cycles(items: &Items) -> Vec<Error> {
     let mut positions = HashMap::<&str, Span>::new();
     let mut err = Vec::new();
-    let graph = {
-        let aliases = items.types.iter().filter_map(|item| {
-            match *item {
-                TypeDecl::TypeAlias(ref alias) => {
-                    positions.insert(alias.name.value.as_ref(), alias.name.span);
-                    Some(alias)
-                }
-                _ => None,
-            }
-        });
-
-        Graph::from_aliases(aliases)
-    };
+    for decl in &items.types {
+        if let TypeDecl::TypeAlias(ref alias) = *decl {
+            positions.insert(alias.name.value.as_ref(), alias.name.span);
+        }
+    }
+    let graph = make_graph(items.types.iter());
     
     for cycle in graph.find_all_cycles() {
         let message = if cycle.len() == 2 {
             format!("Type alias '{}' depends on itself.", cycle[0])
         } else {
             let main = cycle[0];
-            let mut msg = format!("Type alias '{}' depends on itself. Dependency chain is '{}'",
+            let mut msg = format!("Type alias '{}' depends on itself indirectly. Dependency chain is '{}'",
                 main,
                 main);
             for typ in &cycle[1..] {

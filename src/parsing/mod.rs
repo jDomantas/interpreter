@@ -7,7 +7,24 @@ use ast::parsed::Module;
 use errors::{self, Error};
 
 pub trait SourceProvider {
-    fn get_module_source(&self, name: &str) -> Result<String, String>;
+    fn get_module_source(&self, name: &str) -> Result<&str, String>;
+}
+
+pub struct HashMapProvider(HashMap<String, String>);
+
+impl HashMapProvider {
+    pub fn new(modules: HashMap<String, String>) -> Self {
+        HashMapProvider(modules)
+    }
+}
+
+impl SourceProvider for HashMapProvider {
+    fn get_module_source(&self, name: &str) -> Result<&str, String> {
+        match self.0.get(name) {
+            Some(source) => Ok(source),
+            None => Err(format!("module unavailable: {}", name)),
+        }
+    }
 }
 
 pub fn parse_module(source: &str, module: &str, require_def: bool) -> (Option<Module>, Vec<Error>) {
@@ -36,7 +53,7 @@ pub fn parse_modules<T: SourceProvider>(main: &str, provider: &T) -> (HashMap<St
             }
             match provider.get_module_source(name) {
                 Ok(source) => {
-                    let (module, parse_errors) = parse_module(&source, name, true);
+                    let (module, parse_errors) = parse_module(source, name, true);
                     errors.extend(parse_errors);
                     if let Some(module) = module {
                         to_walk.push(module);

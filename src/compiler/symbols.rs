@@ -354,6 +354,7 @@ impl Resolver {
                     }
                 }
                 Decl::Record(ref record) => {
+                    let mut reported = false;
                     if let Some(span) = traits.get(record.name.value.as_str()) {
                         // duplicate type, defined at `record.name.span` and `span`
                         self.double_definition(
@@ -361,6 +362,7 @@ impl Resolver {
                             record.name.span,
                             *span,
                             module.name());
+                        reported = true;
                     } else {
                         match types.entry(&record.name.value) {
                             Entry::Vacant(entry) => {
@@ -374,6 +376,7 @@ impl Resolver {
                                     record.name.span,
                                     *span,
                                     module.name());
+                                reported = true;
                             }
                         }
                     }
@@ -382,13 +385,16 @@ impl Resolver {
                             entry.insert((None, record.name.span));
                         }
                         Entry::Occupied(entry) => {
-                            let span = entry.get().1;
-                            // duplicate value, defined at `record.name.span` and `span`
-                            self.double_definition(
-                                &record.name.value,
-                                record.name.span,
-                                span,
-                                module.name());
+                            if !reported {
+                                let span = entry.get().1;
+                                // duplicate value, defined at `record.name.span` and `span`
+                                self.double_definition(
+                                    &record.name.value,
+                                    record.name.span,
+                                    span,
+                                    module.name());
+                                reported = true;
+                            }
                         }
                     }
                     match patterns.entry(&record.name.value) {
@@ -396,13 +402,15 @@ impl Resolver {
                             entry.insert((None, record.name.span));
                         }
                         Entry::Occupied(entry) => {
-                            let span = entry.get().1;
-                            // duplicate pattern, defined at `record.name.span` and `span`
-                            self.double_definition(
-                                &record.name.value,
-                                record.name.span,
-                                span,
-                                module.name());
+                            if !reported {
+                                let span = entry.get().1;
+                                // duplicate pattern, defined at `record.name.span` and `span`
+                                self.double_definition(
+                                    &record.name.value,
+                                    record.name.span,
+                                    span,
+                                    module.name());
+                            }
                         }
                     }
                     for field in &record.fields {
@@ -506,9 +514,10 @@ impl Resolver {
                         }
                     }
                     for case in &union.cases {
-                        match values.entry(&case.value.tag.value) {
+                        let reported = match values.entry(&case.value.tag.value) {
                             Entry::Vacant(entry) => {
                                 entry.insert((Some(&union.name.value), case.value.tag.span));
+                                false
                             }
                             Entry::Occupied(entry) => {
                                 let span = entry.get().1;
@@ -518,20 +527,23 @@ impl Resolver {
                                     case.value.tag.span,
                                     span,
                                     module.name());
+                                true
                             }
-                        }
+                        };
                         match patterns.entry(&case.value.tag.value) {
                             Entry::Vacant(entry) => {
                                 entry.insert((Some(&union.name.value), case.value.tag.span));
                             }
                             Entry::Occupied(entry) => {
-                                let span = entry.get().1;
-                                // duplicate pattern, defined at `span` and `case.node.tag.span`
-                                self.double_definition(
-                                    &case.value.tag.value,
-                                    case.value.tag.span,
-                                    span,
-                                    module.name());
+                                if !reported {
+                                    let span = entry.get().1;
+                                    // duplicate pattern, defined at `span` and `case.node.tag.span`
+                                    self.double_definition(
+                                        &case.value.tag.value,
+                                        case.value.tag.span,
+                                        span,
+                                        module.name());
+                                }
                             }
                         }
                     }

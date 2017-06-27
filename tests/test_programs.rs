@@ -4,6 +4,7 @@ use std::fs;
 use std::io::Read;
 use std::str;
 use std::collections::HashMap;
+use interpreter::parsing::HashMapProvider;
 use interpreter::position::Position;
 
 #[test]
@@ -65,7 +66,7 @@ fn run_program(source: &str) -> Outcome {
     use interpreter::compiler::recursive_check::find_alias_cycles;
     use interpreter::compiler::precedence::fix_items;
 
-    let modules = Modules::from_source(source);
+    let modules = parse_modules_from_source(source);
     let main = modules.get_module_source("Main").unwrap();
 
     let (modules, mut errors) = parse_modules(&main, &modules);
@@ -91,9 +92,9 @@ fn run_program(source: &str) -> Outcome {
         Ok(items) => items,
     };
 
-    let alias_errors = find_alias_cycles(&items);
+    let mut alias_errors = find_alias_cycles(&items);
     if !alias_errors.is_empty() {
-        errors.sort_by(interpreter::errors::Error::ordering);
+        alias_errors.sort_by(interpreter::errors::Error::ordering);
         let mut simple_errors = Vec::new();
         for err in alias_errors {
             let pos = err.notes[0].span.start;
@@ -103,9 +104,9 @@ fn run_program(source: &str) -> Outcome {
         return Outcome::AliasError(simple_errors);
     }
 
-    let (_items, fixity_errors) = fix_items(items);
+    let (_items, mut fixity_errors) = fix_items(items);
     if !fixity_errors.is_empty() {
-        errors.sort_by(interpreter::errors::Error::ordering);
+        fixity_errors.sort_by(interpreter::errors::Error::ordering);
         let pos = fixity_errors[0].notes[0].span.start;
         let message = fixity_errors[0].notes[0].message.clone();
         return Outcome::FixityError(pos, message);
@@ -265,33 +266,20 @@ impl TestResult {
     }
 }
 
-struct Modules(HashMap<String, String>);
-
-impl Modules {
-    fn from_source(source: &str) -> Modules {
-        let mut modules = HashMap::new();
-        let mut current_module = String::new();
-        let mut module_name = "Main".to_string();
-        for line in source.lines() {
-            if line.starts_with("-- module: ") {
-                modules.insert(module_name, current_module);
-                module_name = line.chars().skip(11).collect();
-                current_module = String::new();
-            } else {
-                current_module.push_str(line);
-                current_module.push('\n');
-            }
-        }
-        modules.insert(module_name, current_module);
-        Modules(modules)
-    }
-}
-
-impl interpreter::parsing::SourceProvider for Modules {
-    fn get_module_source(&self, name: &str) -> Result<String, String> {
-        match self.0.get(name) {
-            Some(source) => Ok(source.clone()),
-            None => Err(format!("module unavailable: {}", name)),
+fn parse_modules_from_source(source: &str) -> HashMapProvider {
+    let mut modules = HashMap::new();
+    let mut current_module = String::new();
+    let mut module_name = "Main".to_string();
+    for line in source.lines() {
+        if line.starts_with("-- module: ") {
+            modules.insert(module_name, current_module);
+            module_name = line.chars().skip(11).collect();
+            current_module = String::new();
+        } else {
+            current_module.push_str(line);
+            current_module.push('\n');
         }
     }
+    modules.insert(module_name, current_module);
+    HashMapProvider::new(modules)
 }

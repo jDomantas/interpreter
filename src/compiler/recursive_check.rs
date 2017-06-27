@@ -1,29 +1,9 @@
 use std::collections::HashMap;
-use ast::Node;
-use ast::resolved::{Items, TypeDecl, Type};
-use compiler::util::Graph;
+use ast::resolved::{Items, TypeDecl};
+use compiler::util::{self, Graph};
 use errors::{self, Error};
 use position::Span;
 
-
-fn collect_concrete_types<'a>(type_: &'a Node<Type>, result: &mut Vec<&'a str>) {
-    match type_.value {
-        Type::SelfType | Type::Var(_) => { }
-        Type::Concrete(ref name) => {
-            result.push(name);
-        }
-        Type::Apply(ref a, ref b) |
-        Type::Function(ref a, ref b) => {
-            collect_concrete_types(a, result);
-            collect_concrete_types(b, result);
-        }
-        Type::Tuple(ref items) => {
-            for item in items {
-                collect_concrete_types(item, result);
-            }
-        }
-    }
-}
 
 fn make_graph<'a, I: Iterator<Item=&'a TypeDecl>>(decls: I) -> Graph<'a, str> {
     let nodes = decls.filter_map(|decl| {
@@ -31,7 +11,7 @@ fn make_graph<'a, I: Iterator<Item=&'a TypeDecl>>(decls: I) -> Graph<'a, str> {
             let mut depends_on = Vec::new();
             let name = alias.name.value.as_ref();
             if let Some(ref type_) = alias.type_ {
-                collect_concrete_types(type_, &mut depends_on);
+                util::collect_concrete_types(type_, &mut depends_on);
             }
             Some((name, depends_on))
         } else {

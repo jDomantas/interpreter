@@ -121,6 +121,12 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
 
     fn skip_to_aligned(&mut self) -> bool {
         let indent = self.current_indent;
+        match self.next_token {
+            Some(Node { value: Token::EndOfInput, .. }) => {
+                return false;
+            }
+            _ => { }
+        }
         // skip at least one to make sure we do not get stuck on aligned error
         self.consume();
         loop {

@@ -22,6 +22,7 @@ struct Lexer<'a, 'b> {
     current: Option<char>,
     line: usize,
     column: usize,
+    eof_position: Position,
     panicking: bool,
     errors: Vec<Error>,
     module: &'b str,
@@ -36,6 +37,7 @@ impl<'a, 'b> Lexer<'a, 'b> {
             current: current,
             line: 1,
             column: 1,
+            eof_position: Position::new(1, 1),
             panicking: false,
             errors: Vec::new(),
             module: module,
@@ -303,7 +305,8 @@ impl<'a, 'b> Lexer<'a, 'b> {
 
     fn next_token(&mut self) -> Option<Node<Token>> {
         while let Some(tok) = self.next_raw_token() {
-            let tok = Node::new(change_special(tok.value), tok.span);
+            let tok = tok.map(change_special);
+            self.set_eof_position(tok.span);
             if !tok.value.is_error() {
                 self.panicking = false;
                 return Some(tok);
@@ -315,9 +318,14 @@ impl<'a, 'b> Lexer<'a, 'b> {
         None
     }
 
+    fn set_eof_position(&mut self, after: Span) {
+        let pos = Position::new(after.end.line, after.end.column + 2);
+        self.eof_position = pos;
+    }
+
     fn make_eof_token(&self) -> Node<Token> {
         let token = Token::EndOfInput;
-        let span = self.current_position().span_to(self.current_position());
+        let span = self.eof_position.span_to(self.eof_position);
         Node::new(token, span)
     }
 }

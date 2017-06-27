@@ -42,6 +42,7 @@ pub enum Phase {
     TypeChecking,
     TypeAliasChecking,
     FixityResolution,
+    KindChecking,
 }
 
 pub fn parse_error<T, U>(message: T, span: Span, module: U) -> Error
@@ -95,6 +96,14 @@ pub fn precedence_error<T, U>(message: T, span: Span, module: U) -> Error
         module: module.into(),
         notes: vec![Note::new(message, span)],
         phase: Phase::FixityResolution,
+    }
+}
+
+pub fn kind_error<T: Into<String>, U: Into<String>>(message: T, span: Span, module: U) -> Error {
+    Error {
+        module: module.into(),
+        notes: vec![Note::new(message, span)],
+        phase: Phase::KindChecking,
     }
 }
 

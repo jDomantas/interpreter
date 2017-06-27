@@ -89,6 +89,24 @@ pub enum TypeDecl {
     Record(RecordType),
 }
 
+impl TypeDecl {
+    pub fn name(&self) -> &str {
+        match *self {
+            TypeDecl::Record(ref record) => &record.name.value,
+            TypeDecl::TypeAlias(ref alias) => &alias.name.value,
+            TypeDecl::Union(ref union) => &union.name.value,
+        }
+    }
+
+    pub fn var_list(&self) -> &[Node<String>] {
+        match *self {
+            TypeDecl::Record(ref record) => &record.vars,
+            TypeDecl::TypeAlias(ref alias) => &alias.vars,
+            TypeDecl::Union(ref union) => &union.vars,
+        }
+    }
+}
+
 #[derive(PartialEq, Debug, Clone)]
 pub struct TypeAlias {
     pub name: Node<String>,

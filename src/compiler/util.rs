@@ -1,5 +1,7 @@
 use std::collections::{HashSet, HashMap};
 use std::hash::Hash;
+use ast::Node;
+use ast::resolved::Type;
 
 
 pub struct Graph<'a, T: 'a + ?Sized> {
@@ -150,5 +152,24 @@ impl<'a, 'b, T: Hash + Eq + ?Sized> TarjanCtx<'a, 'b, T> {
         }
 
         self.lowlink[node]
+    }
+}
+
+pub fn collect_concrete_types<'a>(type_: &'a Node<Type>, result: &mut Vec<&'a str>) {
+    match type_.value {
+        Type::SelfType | Type::Var(_) => { }
+        Type::Concrete(ref name) => {
+            result.push(name);
+        }
+        Type::Apply(ref a, ref b) |
+        Type::Function(ref a, ref b) => {
+            collect_concrete_types(a, result);
+            collect_concrete_types(b, result);
+        }
+        Type::Tuple(ref items) => {
+            for item in items {
+                collect_concrete_types(item, result);
+            }
+        }
     }
 }

@@ -898,7 +898,10 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
             loop {
                 let var = match self.eat_var_name() {
                     Some(name) => name,
-                    None => return Err(()),
+                    None => {
+                        self.emit_error();
+                        return Err(());
+                    }
                 };
                 try!(self.expect(Token::Colon));
                 let bound = match self.eat_symbol() {
@@ -944,7 +947,10 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
             return Some(Ok(sym.map(Type::from_symbol)));
         }
 
-        if self.eat(Token::OpenParen) {
+        if self.eat(Token::Self_) {
+            let span = self.previous_span();
+            Some(Ok(Node::new(Type::SelfType, span)))
+        } else if self.eat(Token::OpenParen) {
             let start_span = self.previous_span();
             let type_ = match self.type_() {
                 Ok(type_) => type_,
@@ -985,7 +991,11 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
     fn type_application(&mut self) -> ParseResult<TypeNode> {
         let mut result = match self.type_term() {
             Some(Ok(type_)) => type_,
-            Some(Err(_)) | None => return Err(()),
+            Some(Err(_)) => return Err(()),
+            None => {
+                self.emit_error();
+                return Err(());
+            }
         };
 
         while let Some(res) = self.type_term() {
@@ -1484,13 +1494,15 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
                     return if self.peek().is_none() {
                         None
                     } else {
+                        self.emit_error();
                         Some(Err(()))
                     };
                 }
             }
         };
 
-        if !self.eat(Token::Comma) {
+        if !self.eat(Token::Colon) {
+            self.emit_error();
             return Some(Err(()));
         }
 

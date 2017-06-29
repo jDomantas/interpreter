@@ -2,9 +2,10 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::fmt;
 use ast::Node;
-use ast::resolved::{TypeDecl, Type, Items};
+use ast::resolved::{TypeDecl, Type, Items, Trait, TypeAnnot, Scheme};
 use compiler::util::{self, Graph};
 use errors::{self, Error};
+use position::Span;
 
 
 #[derive(PartialEq, Eq, Debug, Clone)]
@@ -91,6 +92,7 @@ struct Constraint<'a>(Kind, Kind, ConstraintSource<'a>);
 
 struct InferCtx<'a> {
     kinds: HashMap<&'a str, Kind>,
+    trait_kinds: HashMap<&'a str, Kind>,
     next_var: u64,
     errors: Vec<Error>,
     constraints: Vec<Constraint<'a>>,
@@ -103,6 +105,7 @@ impl<'a> InferCtx<'a> {
     fn new() -> Self {
         InferCtx {
             kinds: HashMap::new(),
+            trait_kinds: HashMap::new(),
             next_var: 0,
             errors: Vec::new(),
             constraints: Vec::new(),
@@ -155,6 +158,20 @@ impl<'a> InferCtx<'a> {
         self.errors.push(error);
     }
 
+    fn invalid_self(&mut self, span: Span, type_: &str) {
+        let message = format!("'self' type can only be used in trait definitions.");
+        let module = errors::symbol_module(type_);
+        let error = errors::kind_error(message, span, module);
+        self.errors.push(error);
+    }
+
+    fn missing_self(&mut self, span: Span, type_: &str) {
+        let message = format!("'self' must be mentioned at least once in trait members.");
+        let module = errors::symbol_module(type_);
+        let error = errors::kind_error(message, span, module);
+        self.errors.push(error);
+    }
+
     fn fresh_var(&mut self) -> Kind {
         let kind = Kind::Var(self.next_var);
         self.next_var += 1;
@@ -165,6 +182,7 @@ impl<'a> InferCtx<'a> {
         debug_assert!(self.constraints.is_empty());
         debug_assert!(self.new_kinds.is_empty());
         debug_assert!(self.var_kinds.is_empty());
+        debug_assert!(self.substitutions.is_empty());
         for decl in decls {
             let var = self.fresh_var();
             self.new_kinds.insert(decl.name(), var);
@@ -188,7 +206,7 @@ impl<'a> InferCtx<'a> {
             let source = ConstraintSource::ShouldNotFail;
             self.constraints.push(Constraint(current_kind, Kind::Star, source));
             for type_ in contained_types(decl) {
-                let kind = self.infer_for_type(type_, decl.name());
+                let kind = self.infer_for_type(type_, decl.name(), false);
                 let source = ConstraintSource::Value(&type_, decl.name());
                 self.constraints.push(Constraint(kind, Kind::Star, source));
             }
@@ -209,11 +227,19 @@ impl<'a> InferCtx<'a> {
         self.substitutions.clear();
     }
 
-    fn infer_for_type(&mut self, type_: &'a Node<Type>, owning_type: &'a str) -> Kind {
+    fn infer_for_type(
+                        &mut self,
+                        type_: &'a Node<Type>,
+                        owning_type: &'a str,
+                        allow_new_vars: bool) -> Kind {
         match type_.value {
             Type::Var(ref var) => {
                 if self.var_kinds.contains_key(var as &str) {
                     self.var_kinds[var as &str].clone()
+                } else if allow_new_vars {
+                    let kind = self.fresh_var();
+                    self.var_kinds.insert(var, kind.clone());
+                    kind
                 } else {
                     self.undefined_var(&Node::new(var.clone(), type_.span), owning_type);
                     Kind::Any
@@ -221,18 +247,23 @@ impl<'a> InferCtx<'a> {
             }
             Type::Tuple(ref items) => {
                 for item in items {
-                    let kind = self.infer_for_type(item, owning_type);
+                    let kind = self.infer_for_type(item, owning_type, allow_new_vars);
                     let source = ConstraintSource::Value(&item, owning_type);
                     self.constraints.push(Constraint(kind, Kind::Star, source));
                 }
                 Kind::Star
             }
             Type::SelfType => {
-                unimplemented!()
+                if self.var_kinds.contains_key("self") {
+                    self.var_kinds["self"].clone()
+                } else {
+                    self.invalid_self(type_.span, owning_type);
+                    Kind::Any
+                }
             }
             Type::Function(ref a, ref b) => {
-                let a_kind = self.infer_for_type(a, owning_type);
-                let b_kind = self.infer_for_type(b, owning_type);
+                let a_kind = self.infer_for_type(a, owning_type, allow_new_vars);
+                let b_kind = self.infer_for_type(b, owning_type, allow_new_vars);
                 let source = ConstraintSource::Value(&a, owning_type);
                 self.constraints.push(Constraint(a_kind, Kind::Star, source));
                 let source = ConstraintSource::Value(&b, owning_type);
@@ -247,8 +278,8 @@ impl<'a> InferCtx<'a> {
                 }
             }
             Type::Apply(ref a, ref b) => {
-                let a_kind = self.infer_for_type(a, owning_type);
-                let b_kind = self.infer_for_type(b, owning_type);
+                let a_kind = self.infer_for_type(a, owning_type, allow_new_vars);
+                let b_kind = self.infer_for_type(b, owning_type, allow_new_vars);
                 let var = self.fresh_var();
                 let arr = Kind::arr(&b_kind, &var);
                 let source = ConstraintSource::Function(&a, &b, owning_type);
@@ -317,6 +348,126 @@ impl<'a> InferCtx<'a> {
         let mut kind = kind.clone();
         kind.substitute_vars(&(|var| self.substitutions.get(&var).cloned()));
         kind
+    }
+
+    fn infer_trait_kind(&mut self, trait_: &'a Trait) -> Kind {
+        debug_assert!(self.constraints.is_empty());
+        debug_assert!(self.new_kinds.is_empty());
+        debug_assert!(self.var_kinds.is_empty());
+        debug_assert!(self.substitutions.is_empty());
+        let self_kind = self.fresh_var();
+        self.var_kinds.insert("self", self_kind);
+        for annot in &trait_.values {
+            if let Some(ref type_) = annot.value.type_ {
+                self.infer_for_type(&type_.value.type_, &trait_.name.value, true);
+                if !type_.value.type_.value.contains_self() {
+                    self.missing_self(type_.span, &trait_.name.value);
+                }
+            }
+        }
+        let self_kind = if self.solve_constraints() {
+            let kind = self.var_kinds.remove("self").unwrap();
+            let mut kind = self.do_substitutions(kind);
+            kind.default_vars();
+            kind
+        } else {
+            Kind::Any
+        };
+        self.constraints.clear();
+        self.var_kinds.clear();
+        self.substitutions.clear();
+        println!("inferred trait {} : {}", trait_.name.value, self_kind);
+        self_kind
+    }
+
+    fn infer_traits(&mut self, traits: &'a [Trait]) {
+        for trait_ in traits {
+            let kind = self.infer_trait_kind(trait_);
+            self.trait_kinds.insert(&trait_.name.value, kind);
+        }
+    }
+
+    fn validate_scheme(&mut self, scheme: &'a Scheme, owner: &'a str) {
+        for &(ref var, ref trait_) in &scheme.bounds {
+            let kind = match self.trait_kinds.get(&trait_.value as &str) {
+                Some(kind) => kind,
+                None => continue,
+            };
+            match self.var_kinds.entry(&var.value) {
+                Entry::Occupied(mut entry) => {
+                    if entry.get() != kind {
+                        if entry.get() != &Kind::Any {
+                            // Error function was inlined here to appease borrow checker.
+                            // I think it would be a good idea to make a sepparate struct
+                            // for error formatting, and have that as field, so that
+                            // reporting an error would only borrow one field, instead
+                            // of whole self.
+                            let message = format!(
+                                "Variable {} here has kind '{}', but in previous bound it was bound to '{}'.",
+                                var.value,
+                                kind,
+                                entry.get());
+                            let module = errors::symbol_module(owner);
+                            let error = errors::kind_error(message, var.span, module);
+                            self.errors.push(error);
+                        }
+                        entry.insert(Kind::Any);
+                    }
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(kind.clone());
+                }
+            }
+        }
+        let kind = self.infer_for_type(&scheme.type_, owner, true);
+        let source = ConstraintSource::Value(&scheme.type_, owner);
+        self.constraints.push(Constraint(kind, Kind::Star, source));
+        self.solve_constraints();
+        self.var_kinds.clear();
+        self.substitutions.clear();
+    }
+
+    fn validate_annotation(&mut self, annot: &'a TypeAnnot) {
+        debug_assert!(self.constraints.is_empty());
+        debug_assert!(self.new_kinds.is_empty());
+        debug_assert!(self.var_kinds.is_empty());
+        debug_assert!(self.substitutions.is_empty());
+        if let Some(ref type_) = annot.type_ {
+            self.validate_scheme(&type_.value, &annot.value.value);
+        }
+    }
+
+    fn validate_trait(&mut self, trait_: &'a Trait) {
+        debug_assert!(self.constraints.is_empty());
+        debug_assert!(self.new_kinds.is_empty());
+        debug_assert!(self.var_kinds.is_empty());
+        debug_assert!(self.substitutions.is_empty());
+        let self_kind = self.trait_kinds[&trait_.name.value as &str].clone();
+        for base_trait in &trait_.base_traits {
+            if let Some(kind) = self.trait_kinds.get(&base_trait.value as &str) {
+                if self_kind != *kind && self_kind != Kind::Any && *kind != Kind::Any {
+                    // Error function was inlined here to appease borrow checker.
+                    // I think it would be a good idea to make a sepparate struct
+                    // for error formatting, and have that as field, so that
+                    // reporting an error would only borrow one field, instead
+                    // of whole self.
+                    let message = format!(
+                        "Trait '{}' has kind '{}', but its parent trait has kind '{}'.",
+                        trait_.name.value,
+                        self_kind,
+                        kind);
+                    let module = errors::symbol_module(trait_.name.value.clone());
+                    let error = errors::kind_error(message, base_trait.span, module);
+                    self.errors.push(error);
+                }
+            }
+        }
+        for annot in &trait_.values {
+            if let Some(ref type_) = annot.value.type_ {
+                self.var_kinds.insert("self", self_kind.clone());
+                self.validate_scheme(&type_.value, &trait_.name.value);
+            }
+        }
     }
 }
 
@@ -405,6 +556,13 @@ pub fn find_kind_errors(items: &Items) -> Vec<Error> {
     for scc in components {
         let decls = scc.into_iter().map(|name| table[name]).collect::<Vec<_>>();
         inferer.add_types(&decls);
+    }
+    inferer.infer_traits(&items.traits);
+    for annot in items.annotations.values() {
+        inferer.validate_annotation(annot);
+    }
+    for trait_ in &items.traits {
+        inferer.validate_trait(trait_);
     }
     inferer.errors
 }

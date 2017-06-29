@@ -70,6 +70,22 @@ pub enum Type {
     Tuple(Vec<Node<Type>>),
 }
 
+impl Type {
+    pub fn contains_self(&self) -> bool {
+        match *self {
+            Type::SelfType => true,
+            Type::Var(_) | Type::Concrete(_) => false,
+            Type::Function(ref a, ref b) |
+            Type::Apply(ref a, ref b) => {
+                a.value.contains_self() || b.value.contains_self()
+            }
+            Type::Tuple(ref items) => {
+                items.iter().any(|t| t.value.contains_self())
+            }
+        }
+    }
+}
+
 #[derive(PartialEq, Debug, Clone)]
 pub struct Scheme {
     pub type_: Node<Type>,

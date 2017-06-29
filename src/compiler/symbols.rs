@@ -5,7 +5,7 @@ use ast::Node;
 use ast::parsed as p;
 use ast::parsed::{
     Module, Symbol, Decl, LetDecl, ItemList, Impl, Def, RecordType, Trait,
-    TypeAlias, UnionType, Type, Expr, Pattern, Scheme, TraitBound, DoExpr,
+    TypeAlias, UnionType, Type, Expr, Pattern, Scheme, DoExpr,
 };
 use ast::resolved as r;
 use errors::{self, Error};
@@ -1040,7 +1040,6 @@ impl Resolver {
         let name = format!("{}.{}", ctx.module, trait_.name.value);
         r::Trait {
             name: Node::new(name, trait_.name.span),
-            vars: trait_.vars.clone(),
             base_traits: base_traits,
             values: values,
         }
@@ -1139,20 +1138,9 @@ impl Resolver {
 
     fn resolve_trait_bound(
                             &mut self,
-                            bound: &Node<TraitBound>,
-                            ctx: &Context) -> Node<r::TraitBound> {
-        let trait_ = self.resolve_symbol(&bound.value.trait_, Kind::Trait, ctx);
-        
-        let mut params = Vec::new();
-        for param in &bound.value.params {
-            let typ = self.resolve_type(param, ctx);
-            params.push(typ);
-        }
-        
-        Node::new(r::TraitBound {
-            trait_: trait_.map(r::Symbol::full_name),
-            params: params,
-        }, bound.span)
+                            bound: &Node<Symbol>,
+                            ctx: &Context) -> Node<String> {
+        self.resolve_symbol(bound, Kind::Trait, ctx).map(r::Symbol::full_name)
     }
 
     fn resolve_pattern(

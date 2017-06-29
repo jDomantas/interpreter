@@ -151,13 +151,7 @@ impl Type {
 #[derive(PartialEq, Debug, Clone)]
 pub struct Scheme {
     pub type_: Node<Type>,
-    pub bounds: Vec<(Node<String>, Node<TraitBound>)>,
-}
-
-#[derive(PartialEq, Debug, Clone)]
-pub struct TraitBound {
-    pub trait_: Node<Symbol>,
-    pub params: Vec<Node<Type>>,
+    pub bounds: Vec<(Node<String>, Node<Symbol>)>,
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -202,15 +196,14 @@ pub struct RecordType {
 #[derive(PartialEq, Debug, Clone)]
 pub struct Trait {
     pub name: Node<String>,
-    pub vars: Vec<Node<String>>,
-    pub base_traits: Vec<Node<TraitBound>>,
+    pub base_traits: Vec<Node<Symbol>>,
     pub values: Vec<Node<TypeAnnot>>,
 }
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct Impl {
     pub scheme: Node<Scheme>,
-    pub trait_: Node<TraitBound>,
+    pub trait_: Node<Symbol>,
     pub values: Vec<Node<Def>>,
 }
 

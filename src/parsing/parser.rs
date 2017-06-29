@@ -7,7 +7,7 @@ use ast::{Node, Literal, Associativity};
 use ast::parsed::{
     Expr, Pattern, CaseBranch, LetDecl, Decl, Def, TypeAnnot, Scheme, Type,
     TypeAlias, UnionType, UnionCase, RecordType, Symbol, Trait, Impl, ItemList,
-    ExposedItem, ModuleDef, Import, Module, TraitBound, DoExpr,
+    ExposedItem, ModuleDef, Import, Module, DoExpr,
 };
 
 
@@ -901,7 +901,13 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
                     None => return Err(()),
                 };
                 try!(self.expect(Token::Colon));
-                let bound = try!(self.trait_bound());
+                let bound = match self.eat_symbol() {
+                    Some(symbol) => symbol,
+                    None => {
+                        self.emit_error();
+                        return Err(());
+                    }
+                };
                 if self.eat(Token::CloseParen) {
                     break;
                 } else {
@@ -1007,29 +1013,6 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
         } else {
             Ok(arg)
         }
-    }
-
-    fn trait_bound(&mut self) -> ParseResult<Node<TraitBound>> {
-        let trait_ = match self.eat_symbol() {
-            Some(sym) => sym,
-            None => {
-                self.emit_error();
-                return Err(());
-            }
-        };
-        let mut params = Vec::new();
-        while let Some(type_) = self.type_term() {
-            params.push(try!(type_));
-        }
-        let whole_span = if params.is_empty() {
-            trait_.span
-        } else {
-            trait_.span.merge(params[params.len() - 1].span)
-        };
-        Ok(Node::new(TraitBound {
-            trait_: trait_,
-            params: params,
-        }, whole_span))
     }
 
     fn pattern_assign(&mut self) -> ParseResult<Node<Def>> {
@@ -1437,15 +1420,16 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
             }
         };
 
-        let mut vars = Vec::new();
-        while let Some(name) = self.eat_var_name() {
-            vars.push(name);
-        }
-
         let mut base_traits = Vec::new();
         if self.eat(Token::Colon) {
             loop {
-                base_traits.push(try!(self.trait_bound()));
+                match self.eat_symbol() {
+                    Some(symbol) => base_traits.push(symbol),
+                    None => {
+                        self.emit_error();
+                        return Err(());
+                    }
+                }
                 if !self.eat(Token::Comma) {
                     break;
                 }
@@ -1476,7 +1460,6 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
         let span = span.merge(self.previous_span());
         Ok(Node::new(Trait {
             name: name,
-            vars: vars,
             base_traits: base_traits,
             values: values,
         }, span))
@@ -1529,7 +1512,13 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
         let span = self.previous_span();
         let scheme = try!(self.scheme());
         try!(self.expect(Token::Colon));
-        let trait_ = try!(self.trait_bound());
+        let trait_ = match self.eat_symbol() {
+            Some(symbol) => symbol,
+            None => {
+                self.emit_error();
+                return Err(());
+            }
+        };
         try!(self.expect(Token::Where));
         let mut values = Vec::new();
         let old_indent = self.align_on_next();

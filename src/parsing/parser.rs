@@ -117,6 +117,7 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
 
         if any_matches {
             message.push_str(" Make sure that your code is properly indented.");
+            message.push_str(&format!(" Current indent is {}, align: {}.", self.current_indent, self.accept_aligned));
         }
 
         self.errors.push(parse_error(message, span, self.module));
@@ -834,7 +835,6 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
         let old_indent = self.align_on_next();
         let mut decls = Vec::new();
         let mut span = self.previous_span();
-
         loop {
             self.accept_aligned = true;
 
@@ -852,6 +852,8 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
                     }
                 }
             }
+
+            self.accept_aligned = true;
             
             if self.peek().is_none() || self.peek().map(|t| &t.value) == Some(&Token::In) {
                 break;

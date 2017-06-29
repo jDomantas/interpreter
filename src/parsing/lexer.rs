@@ -452,10 +452,10 @@ mod tests {
 
     #[test]
     fn special_operators() {
-        let tokens = lex_no_positions(": => | , ..");
+        let tokens = lex_no_positions(": <- | , ..");
         assert_eq!(tokens, vec![
             Token::Colon,
-            Token::FatArrow,
+            Token::BackArrow,
             Token::Pipe,
             Token::Comma,
             Token::DotDot,
@@ -492,8 +492,8 @@ mod tests {
             Node {
                 value: Token::EndOfInput,
                 span: Span {
-                    start: Position { line: 2, column: 2 },
-                    end: Position { line: 2, column: 2 }
+                    start: Position { line: 2, column: 3 },
+                    end: Position { line: 2, column: 3 }
                 },
             }
         ]);

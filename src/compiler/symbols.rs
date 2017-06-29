@@ -925,6 +925,7 @@ impl Resolver {
                         let annotation = r::TypeAnnot {
                             value: sym_node,
                             type_: rtype,
+                            module: name.into(),
                         };
                         match type_annotation.entry(sym) {
                             Entry::Vacant(entry) => {
@@ -980,6 +981,7 @@ impl Resolver {
             scheme: scheme,
             trait_: trait_,
             values: values,
+            module: ctx.module.into(),
         }
     }
 
@@ -1011,6 +1013,7 @@ impl Resolver {
             name: Node::new(name, record.name.span),
             vars: record.vars.clone(),
             fields: resolved_fields,
+            module: ctx.module.into(),
         }
     }
 
@@ -1033,6 +1036,7 @@ impl Resolver {
             let annot = r::TypeAnnot {
                 value: sym.map(r::Symbol::full_name),
                 type_: typ,
+                module: ctx.module.into(),
             };
             values.push(Node::new(annot, value.span));
         }
@@ -1042,6 +1046,7 @@ impl Resolver {
             name: Node::new(name, trait_.name.span),
             base_traits: base_traits,
             values: values,
+            module: ctx.module.into(),
         }
     }
 
@@ -1058,6 +1063,7 @@ impl Resolver {
             name: Node::new(name, alias.name.span),
             vars: alias.vars.clone(),
             type_: resolved_type,
+            module: ctx.module.into(),
         }
     }
 
@@ -1083,6 +1089,7 @@ impl Resolver {
             name: Node::new(name, union.name.span),
             vars: union.vars.clone(),
             cases: resolved_cases,
+            module: ctx.module.into(),
         }
     }
 
@@ -1373,6 +1380,7 @@ impl Resolver {
                     let annot = r::TypeAnnot {
                         value: type_annot.value.clone(),
                         type_: type_,
+                        module: String::new(),
                     };
                     resolved_types.push(Node::new(annot, decl.span));
                 } else {

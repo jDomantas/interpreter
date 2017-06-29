@@ -58,6 +58,7 @@ pub struct Def {
 pub struct TypeAnnot {
     pub value: Node<String>,
     pub type_: Option<Node<Scheme>>,
+    pub module: String,
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -81,6 +82,20 @@ impl Type {
             }
             Type::Tuple(ref items) => {
                 items.iter().any(|t| t.value.contains_self())
+            }
+        }
+    }
+
+    pub fn contains_var(&self, var: &str) -> bool {
+        match *self {
+            Type::Var(ref v) => var == v,
+            Type::SelfType | Type::Concrete(_) => false,
+            Type::Function(ref a, ref b) |
+            Type::Apply(ref a, ref b) => {
+                a.value.contains_var(var) || b.value.contains_var(var)
+            }
+            Type::Tuple(ref items) => {
+                items.iter().any(|t| t.value.contains_var(var))
             }
         }
     }
@@ -115,6 +130,14 @@ impl TypeDecl {
             TypeDecl::Union(ref union) => &union.vars,
         }
     }
+
+    pub fn module(&self) -> &str {
+        match *self {
+            TypeDecl::Record(ref record) => &record.module,
+            TypeDecl::TypeAlias(ref alias) => &alias.module,
+            TypeDecl::Union(ref union) => &union.module,
+        }
+    }
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -122,6 +145,7 @@ pub struct TypeAlias {
     pub name: Node<String>,
     pub vars: Vec<Node<String>>,
     pub type_: Option<Node<Type>>,
+    pub module: String,
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -129,6 +153,7 @@ pub struct UnionType {
     pub name: Node<String>,
     pub vars: Vec<Node<String>>,
     pub cases: Vec<Node<UnionCase>>,
+    pub module: String,
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -142,6 +167,7 @@ pub struct RecordType {
     pub name: Node<String>,
     pub vars: Vec<Node<String>>,
     pub fields: Vec<(Node<String>, Node<Type>)>,
+    pub module: String,
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -149,6 +175,7 @@ pub struct Trait {
     pub name: Node<String>,
     pub base_traits: Vec<Node<String>>,
     pub values: Vec<Node<TypeAnnot>>,
+    pub module: String,
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -156,6 +183,7 @@ pub struct Impl {
     pub scheme: Node<Scheme>,
     pub trait_: Node<String>,
     pub values: Vec<Node<Def>>,
+    pub module: String,
 }
 
 #[derive(PartialEq, Eq, Debug, Hash, Clone)]

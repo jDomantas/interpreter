@@ -893,7 +893,8 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
     }
 
     fn scheme(&mut self) -> ParseResult<Node<Scheme>> {
-        if self.eat(Token::OpenParen) {
+        if self.eat(Token::OpenBracket) {
+            let start_span = self.previous_span();
             let mut constraints = Vec::new();
             loop {
                 let var = match self.eat_var_name() {
@@ -911,17 +912,16 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
                         return Err(());
                     }
                 };
-                if self.eat(Token::CloseParen) {
+                constraints.push((var, bound));
+                if self.eat(Token::CloseBracket) {
                     break;
                 } else {
                     try!(self.expect(Token::Comma));
                 }
-                constraints.push((var, bound));
             }
-            try!(self.expect(Token::FatArrow));
             match self.type_() {
                 Ok(type_) => {
-                    let span = constraints[0].0.span.merge(type_.span);
+                    let span = start_span.merge(type_.span);
                     let scheme = Scheme {
                         bounds: constraints,
                         type_: type_,

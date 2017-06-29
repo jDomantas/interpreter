@@ -90,10 +90,9 @@ impl<'a, 'b> Lexer<'a, 'b> {
     }
 
     fn single_char_token(&mut self, tok: Token) -> Node<Token> {
-        let start = self.current_position();
+        let pos = self.current_position();
         self.advance();
-        let end = self.current_position();
-        Node::new(tok, start.span_to(end))
+        Node::new(tok, pos.span_to(pos))
     }
 
     fn skip_line_comment(&mut self) {
@@ -372,7 +371,6 @@ fn special_operator(op: &str) -> Option<Token> {
     match op {
         ":" => Some(Token::Colon),
         "->" => Some(Token::Arrow),
-        "=>" => Some(Token::FatArrow),
         "=" => Some(Token::Equals),
         "\\" => Some(Token::Backslash),
         ".." => Some(Token::DotDot),

@@ -1487,8 +1487,20 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
         let name = match self.eat_tag_name() {
             Some(name) => name,
             None => {
-                self.emit_error();
-                return Err(());
+                if self.eat(Token::OpenParen) {
+                    let op = match self.eat_unqualified_operator() {
+                        Some(op) => op,
+                        None => {
+                            self.emit_error();
+                            return Err(());
+                        }
+                    };
+                    try!(self.expect(Token::CloseParen));
+                    op
+                } else {
+                    self.emit_error();
+                    return Err(());
+                }
             }
         };
         let mut args = Vec::new();

@@ -1229,6 +1229,9 @@ impl Resolver {
                         value: value,
                     };
                     resolved_arms.push(Node::new(res, arm.span));
+                    while locals.len() > locals_before {
+                        locals.pop();
+                    }
                 }
                 r::Expr::Case(Box::new(value), resolved_arms)
             }

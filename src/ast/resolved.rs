@@ -63,6 +63,7 @@ pub struct TypeAnnot {
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum Type {
+    Any,
     SelfType,
     Var(String),
     Concrete(String),
@@ -74,6 +75,7 @@ pub enum Type {
 impl Type {
     pub fn contains_self(&self) -> bool {
         match *self {
+            Type::Any => false,
             Type::SelfType => true,
             Type::Var(_) | Type::Concrete(_) => false,
             Type::Function(ref a, ref b) |
@@ -88,6 +90,7 @@ impl Type {
 
     pub fn contains_var(&self, var: &str) -> bool {
         match *self {
+            Type::Any => false,
             Type::Var(ref v) => var == v,
             Type::SelfType | Type::Concrete(_) => false,
             Type::Function(ref a, ref b) |

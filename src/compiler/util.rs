@@ -157,7 +157,7 @@ impl<'a, 'b, T: Hash + Eq + ?Sized> TarjanCtx<'a, 'b, T> {
 
 pub fn collect_concrete_types<'a>(type_: &'a Node<Type>, result: &mut Vec<&'a str>) {
     match type_.value {
-        Type::SelfType | Type::Var(_) => { }
+        Type::Any | Type::SelfType | Type::Var(_) => { }
         Type::Concrete(ref name) => {
             result.push(name);
         }

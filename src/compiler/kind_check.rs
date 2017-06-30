@@ -234,6 +234,9 @@ impl<'a> InferCtx<'a> {
                         module: &'a str,
                         allow_new_vars: bool) -> Kind {
         match type_.value {
+            Type::Any => {
+                Kind::Any
+            }
             Type::Var(ref var) => {
                 if self.var_kinds.contains_key(var as &str) {
                     self.var_kinds[var as &str].clone()

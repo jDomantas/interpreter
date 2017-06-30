@@ -63,7 +63,7 @@ fn run_test(source: &str) -> TestResult {
 fn run_program(source: &str) -> Outcome {
     use interpreter::parsing::{parse_modules, SourceProvider};
     use interpreter::compiler::symbols::resolve_symbols;
-    use interpreter::compiler::recursive_check::find_alias_cycles;
+    use interpreter::compiler::alias_expansion::find_alias_cycles;
     use interpreter::compiler::precedence::fix_items;
 
     let modules = parse_modules_from_source(source);

@@ -1,5 +1,5 @@
 pub mod symbols;
-pub mod recursive_check;
+pub mod alias_expansion;
 pub mod precedence;
 pub mod kind_check;
 mod util;

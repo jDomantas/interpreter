@@ -1,0 +1,1 @@
+type List a = Nil | (::) a (List a)

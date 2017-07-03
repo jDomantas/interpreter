@@ -2,6 +2,7 @@ use position::Span;
 
 pub mod parsed;
 pub mod resolved;
+pub mod typed;
 
 
 #[derive(PartialEq, Eq, Debug, Hash, Clone)]

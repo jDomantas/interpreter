@@ -521,9 +521,7 @@ impl<'a> InferCtx<'a> {
         match *expr {
             Expr::Apply(ref a, ref b) => {
                 self.validate_contained_annotations(&a.value, module);
-                for val in &*b {
-                    self.validate_contained_annotations(&val.value, module);
-                }
+                self.validate_contained_annotations(&b.value, module);
             }
             Expr::Case(ref expr, ref branches) => {
                 self.validate_contained_annotations(&expr.value, module);

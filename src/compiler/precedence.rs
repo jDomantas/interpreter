@@ -143,7 +143,7 @@ impl<'a> Context<'a> {
             match expr {
                 Expr::Apply(a, b) => {
                     let a = Box::new(self.fix_expr(*a));
-                    let b = b.into_iter().map(|x| self.fix_expr(x)).collect();
+                    let b = Box::new(self.fix_expr(*b));
                     Expr::Apply(a, b)
                 }
                 Expr::Case(value, branches) => {

@@ -1203,13 +1203,10 @@ impl Resolver {
                                     ctx: &Context,
                                     locals: &mut Vec<Node<&'a str>>) -> Node<r::Expr> {
         let resolved = match expr.value {
-            Expr::Apply(ref f, ref args) => {
-                let f = self.resolve_expr_with_locals(f, ctx, locals);
-                let args = args
-                    .iter()
-                    .map(|e| self.resolve_expr_with_locals(e, ctx, locals))
-                    .collect();
-                r::Expr::Apply(Box::new(f), args)
+            Expr::Apply(ref a, ref b) => {
+                let a = self.resolve_expr_with_locals(a, ctx, locals);
+                let b = self.resolve_expr_with_locals(b, ctx, locals);
+                r::Expr::Apply(Box::new(a), Box::new(b))
             }
             Expr::Case(ref value, ref arms) => {
                 let value = self.resolve_expr_with_locals(value, ctx, locals);

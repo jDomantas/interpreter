@@ -6,7 +6,7 @@ use ast::{Node, Literal, Associativity};
 pub enum Expr {
     Ident(Symbol),
     Literal(Literal),
-    Apply(Box<Node<Expr>>, Vec<Node<Expr>>),
+    Apply(Box<Node<Expr>>, Box<Node<Expr>>),
     If(Box<Node<Expr>>, Box<Node<Expr>>, Box<Node<Expr>>),
     Infix(Box<Node<Expr>>, Node<Symbol>, Box<Node<Expr>>),
     Parenthesised(Box<Node<Expr>>),

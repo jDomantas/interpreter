@@ -185,9 +185,7 @@ fn expand_in_expr(
     match expr.value {
         Expr::Apply(ref mut a, ref mut b) => {
             expand_in_expr(&mut **a, replacements, module, errors);
-            for val in b {
-                expand_in_expr(val, replacements, module, errors);
-            }
+            expand_in_expr(&mut **b, replacements, module, errors);
         }
         Expr::Case(ref mut value, ref mut branches) => {
             expand_in_expr(&mut **value, replacements, module, errors);

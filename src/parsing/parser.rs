@@ -493,7 +493,7 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
     }
 
     fn application(&mut self) -> ParseResult<ExprNode> {
-        let function = match self.expr_term() {
+        let mut result = match self.expr_term() {
             Some(Ok(expr)) => expr,
             Some(Err(_)) => return Err(()),
             None => {
@@ -502,22 +502,13 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
             }
         };
         
-        let mut args = Vec::new();
-        let mut span = function.span;
-
-        while let Some(result) = self.expr_term() {
-            let expr = try!(result);
-            span = span.merge(expr.span);
-            args.push(expr);
+        while let Some(arg) = self.expr_term() {
+            let expr = try!(arg);
+            let span = result.span.merge(expr.span);
+            result = Node::new(Expr::Apply(Box::new(result), Box::new(expr)), span);
         }
 
-        let node = if args.is_empty() {
-            function
-        } else {
-            Node::new(Expr::Apply(Box::new(function), args), span)
-        };
-
-        Ok(node)
+        Ok(result)
     }
 
     fn expr_operation(&mut self, mut can_section: bool) -> ParseResult<ExprNode> {

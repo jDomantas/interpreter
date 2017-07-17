@@ -40,7 +40,7 @@ pub enum Pattern {
     Var(String),
     Literal(Literal),
     Deconstruct(Node<String>, Vec<Node<Pattern>>),
-    Infix(Box<Node<Pattern>>, Node<Symbol>, Box<Node<Pattern>>),
+    Infix(Box<Node<Pattern>>, Node<String>, Box<Node<Pattern>>),
     As(Box<Node<Pattern>>, Node<String>),
     Parenthesised(Box<Node<Pattern>>),
     Tuple(Vec<Node<Pattern>>),

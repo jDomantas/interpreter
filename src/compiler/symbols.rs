@@ -1166,7 +1166,8 @@ impl Resolver {
             Pattern::Infix(ref lhs, ref sym, ref rhs) => {
                 let lhs = self.resolve_pattern(lhs, ctx);
                 let rhs = self.resolve_pattern(rhs, ctx);
-                let s = self.resolve_symbol(sym, Kind::Pattern, ctx);
+                let s = self.resolve_symbol(sym, Kind::Pattern, ctx)
+                    .map(r::Symbol::full_name);
                 r::Pattern::Infix(Box::new(lhs), s, Box::new(rhs))
             }
             Pattern::As(ref pat, ref alias) => {

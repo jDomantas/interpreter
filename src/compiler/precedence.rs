@@ -256,7 +256,9 @@ impl<'a> Context<'a> {
                     let mut ops = Vec::new();
                     let node = Node::new(p, span);
                     collect_pattern(node, &mut ops, &mut patterns);
+                    let ops = ops.into_iter().map(|n| n.map(Symbol::Global)).collect();
                     fn make_infix(lhs: Node<Pattern>, op: Node<Symbol>, rhs: Node<Pattern>) -> Node<Pattern> {
+                        let op = op.map(Symbol::full_name);
                         let span = lhs.span.merge(rhs.span);
                         let pattern = Pattern::Infix(Box::new(lhs), op, Box::new(rhs));
                         Node::new(pattern, span)
@@ -295,7 +297,7 @@ fn collect_expr(expr: Node<Expr>, ops: &mut Vec<Node<Symbol>>, exprs: &mut Vec<N
     }
 }
 
-fn collect_pattern(pat: Node<Pattern>, ops: &mut Vec<Node<Symbol>>, pats: &mut Vec<Node<Pattern>>) {
+fn collect_pattern(pat: Node<Pattern>, ops: &mut Vec<Node<String>>, pats: &mut Vec<Node<Pattern>>) {
     match pat.value {
         Pattern::Infix(lhs, op, rhs) => {
             collect_pattern(*lhs, ops, pats);

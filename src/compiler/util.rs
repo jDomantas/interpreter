@@ -1,7 +1,7 @@
 use std::collections::{HashSet, HashMap};
 use std::hash::Hash;
 use ast::Node;
-use ast::resolved::Type;
+use ast::resolved::{Type, Sym, Symbol};
 
 
 pub struct Graph<'a, T: 'a + ?Sized> {
@@ -155,11 +155,14 @@ impl<'a, 'b, T: Hash + Eq + ?Sized> TarjanCtx<'a, 'b, T> {
     }
 }
 
-pub fn collect_concrete_types<'a>(type_: &'a Node<Type>, result: &mut Vec<&'a str>) {
+pub fn collect_concrete_types<'a>(type_: &'a Node<Type>, result: &mut Vec<&'a Sym>) {
     match type_.value {
         Type::Any | Type::SelfType | Type::Var(_) => { }
         Type::Concrete(ref name) => {
-            result.push(name);
+            match *name {
+                Symbol::Known(ref sym) => result.push(sym),
+                Symbol::Unknown => { }
+            }
         }
         Type::Apply(ref a, ref b) |
         Type::Function(ref a, ref b) => {

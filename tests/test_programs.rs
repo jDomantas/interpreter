@@ -6,6 +6,7 @@ use std::str;
 use std::collections::HashMap;
 use interpreter::parsing::HashMapProvider;
 use interpreter::position::Position;
+use interpreter::errors::Errors;
 
 #[test]
 fn run_test_programs() {
@@ -63,52 +64,42 @@ fn run_test(source: &str) -> TestResult {
 fn run_program(source: &str) -> Outcome {
     use interpreter::parsing::{parse_modules, SourceProvider};
     use interpreter::compiler::symbols::resolve_symbols;
-    use interpreter::compiler::alias_expansion::find_alias_cycles;
+    use interpreter::compiler::alias_expansion::expand_aliases;
     use interpreter::compiler::precedence::fix_items;
 
+    let mut errors = Errors::new();
     let modules = parse_modules_from_source(source);
     let main = modules.get_module_source("Main").unwrap();
 
-    let (modules, mut errors) = parse_modules(&main, &modules);
-    if !errors.is_empty() {
-        errors.sort_by(interpreter::errors::Error::ordering);
-        let pos = errors[0].notes[0].span.start;
-        let message = errors[0].notes[0].message.clone();
+    let modules = parse_modules(&main, &modules, &mut errors);
+    if errors.have_errors() {
+        let err = errors.into_error_list()[0].clone();
+        let pos = err.notes[0].span.start;
+        let message = err.notes[0].message.clone();
         return Outcome::ParseError(pos, message);
     }
 
-    let items = match resolve_symbols(&modules) {
-        Err(mut errors) => {
-            assert!(!errors.is_empty());
-            errors.sort_by(interpreter::errors::Error::ordering);
-            let mut simple_errors = Vec::new();
-            for err in errors {
-                let pos = err.notes[0].span.start;
-                let message = err.notes[0].message.clone();
-                simple_errors.push((pos, message));
-            }
-            return Outcome::SymbolError(simple_errors);
-        }
-        Ok(items) => items,
-    };
-
-    let mut alias_errors = find_alias_cycles(&items);
-    if !alias_errors.is_empty() {
-        alias_errors.sort_by(interpreter::errors::Error::ordering);
-        let mut simple_errors = Vec::new();
-        for err in alias_errors {
-            let pos = err.notes[0].span.start;
-            let message = err.notes[0].message.clone();
-            simple_errors.push((pos, message));
-        }
-        return Outcome::AliasError(simple_errors);
+    let items = resolve_symbols(&modules, &mut errors);
+    if errors.have_errors() {
+        let err = errors.into_error_list().into_iter().map(|e| {
+            (e.notes[0].span.start, e.notes[0].message.clone())
+        }).collect();
+        return Outcome::SymbolError(err);
     }
 
-    let (_items, mut fixity_errors) = fix_items(items);
-    if !fixity_errors.is_empty() {
-        fixity_errors.sort_by(interpreter::errors::Error::ordering);
-        let pos = fixity_errors[0].notes[0].span.start;
-        let message = fixity_errors[0].notes[0].message.clone();
+    let items = expand_aliases(items, &mut errors);
+    if errors.have_errors() {
+        let err = errors.into_error_list().into_iter().map(|e| {
+            (e.notes[0].span.start, e.notes[0].message.clone())
+        }).collect();
+        return Outcome::AliasError(err);
+    }
+
+    let _items = fix_items(items, &mut errors);
+    if errors.have_errors() {
+        let err = errors.into_error_list()[0].clone();
+        let pos = err.notes[0].span.start;
+        let message = err.notes[0].message.clone();
         return Outcome::FixityError(pos, message);
     }
 

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
-use ast::{Node, Literal};
+use ast::{Node, Name, Literal};
 
 
 #[derive(Debug, Clone)]
@@ -102,7 +102,7 @@ pub enum Expr {
     Var(Symbol, Type),
     Apply(Box<Node<Expr>>, Box<Node<Expr>>),
     Infix(Box<Node<Expr>>, Node<Symbol>, Type, Box<Node<Expr>>),
-    Lambda(Vec<Node<Pattern>>, Box<Node<Expr>>),
+    Lambda(Node<Sym>, Box<Node<Expr>>),
     Let(Vec<Def>, Box<Node<Expr>>),
     Tuple(Vec<Node<Expr>>),
     Case(Box<Node<Expr>>, Vec<Node<CaseBranch>>),
@@ -118,43 +118,26 @@ pub struct CaseBranch {
 #[derive(Debug, Clone)]
 pub enum Pattern {
     Wildcard,
-    Var(String),
-    Deconstruct(Node<String>, Vec<Node<Pattern>>),
+    Deconstruct(Node<Symbol>, Vec<Node<Pattern>>),
     Literal(Literal, Type),
-    As(Box<Node<Pattern>>, Node<String>),
+    As(Box<Node<Pattern>>, Node<Sym>),
     Tuple(Vec<Node<Pattern>>),
 }
 
-#[derive(Debug, Clone)]
-pub enum Symbol {
-    Local(String),
-    Global(String),
-    Unknown,
-}
-
-impl Symbol {
-    pub fn from_resolved(sym: super::resolved::Symbol) -> Symbol {
-        use super::resolved::Symbol::*;
-        match sym {
-            Local(name) => Symbol::Local(name),
-            Global(name) => Symbol::Global(name),
-            Unknown => Symbol::Unknown,
-        }
-    }
-}
+pub use ast::resolved::{Sym, Symbol};
 
 #[derive(Debug, Clone)]
 pub struct Def {
-    pub pattern: Node<Pattern>,
+    pub pattern: Node<Sym>,
     pub expr: Node<Expr>,
     pub scheme: Scheme,
-    pub module: String,
+    pub module: Name,
 }
 
 #[derive(Debug, Clone)]
 pub struct SchemeVar {
     pub id: u64,
-    pub bounds: Vec<String>,
+    pub bounds: Vec<Sym>,
 }
 
 #[derive(Debug, Clone)]
@@ -165,31 +148,31 @@ pub struct Scheme {
 
 #[derive(Debug, Clone)]
 pub struct Record {
-    pub name: Node<String>,
-    pub vars: Vec<String>,
-    pub fields: Vec<(Node<String>, Type)>,
-    pub module: String,
+    pub name: Node<Sym>,
+    pub vars: Vec<Sym>,
+    pub fields: Vec<(Node<Sym>, Type)>,
+    pub module: Name,
 }
 
 #[derive(Debug, Clone)]
 pub struct Union {
-    pub name: Node<String>,
-    pub vars: Vec<String>,
-    pub cases: Vec<(Node<String>, Vec<Type>)>,
-    pub module: String,
+    pub name: Node<Sym>,
+    pub vars: Vec<Sym>,
+    pub cases: Vec<(Node<Sym>, Vec<Type>)>,
+    pub module: Name,
 }
 
 #[derive(Debug, Clone)]
 pub struct Trait {
-    pub name: Node<String>,
+    pub name: Node<Sym>,
     pub items: Vec<Type>,
-    pub module: String,
+    pub module: Name,
 }
 
 #[derive(Debug, Clone)]
 pub struct Impl {
     pub type_: Node<Type>,
-    pub trait_: Node<String>,
+    pub trait_: Node<Symbol>,
     pub items: Vec<Def>,
-    pub module: String,
+    pub module: Name,
 }

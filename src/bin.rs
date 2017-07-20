@@ -1,77 +1,71 @@
-/*extern crate interpreter;
+extern crate interpreter;
 
 use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
 use interpreter::position::Span;
-use interpreter::errors::Error;*/
+use interpreter::errors::Error;
 
 
 fn main() {
-    /*let mut file = fs::File::open("test_program.test").unwrap();
+    let mut file = fs::File::open("test_program.test").unwrap();
     let mut source = String::new();
     file.read_to_string(&mut source).unwrap();
-    run(&source);*/
-    println!("I'm broken!");
+    run(&source);
 }
-/*
+
 fn run(source: &str) {
     use interpreter::parsing::parse_modules;
     use interpreter::compiler::symbols::resolve_symbols;
-    use interpreter::compiler::alias_expansion::find_alias_cycles;
+    use interpreter::compiler::alias_expansion::expand_aliases;
     use interpreter::compiler::precedence::fix_items;
     use interpreter::compiler::kind_check::find_kind_errors;
 
     let modules = interpreter::parsing::HashMapProvider::new(HashMap::new());
+    let mut errors = interpreter::errors::Errors::new();
 
-    let (modules, mut errors) = parse_modules(source, &modules);
-    if !errors.is_empty() {
-        errors.sort_by(interpreter::errors::Error::ordering);
-        for err in errors {
+    let modules = parse_modules(source, &modules, &mut errors);
+    if errors.have_errors() {
+        for err in errors.into_error_list() {
             format_error(source, &err);
         }
         return;
     }
 
-    let items = match resolve_symbols(&modules) {
-        Err(mut errors) => {
-            assert!(!errors.is_empty());
-            errors.sort_by(interpreter::errors::Error::ordering);
-            for err in errors {
-                format_error(source, &err);
-            }
-            println!("here");
-            return;
+    let items = resolve_symbols(&modules, &mut errors);
+    if errors.have_errors() {
+        for err in errors.into_error_list() {
+            format_error(source, &err);
         }
-        Ok(items) => items,
+        return;
     };
 
-    let mut alias_errors = find_alias_cycles(&items);
-    if !alias_errors.is_empty() {
-        alias_errors.sort_by(interpreter::errors::Error::ordering);
-        for err in alias_errors {
+    let items = expand_aliases(items, &mut errors);
+    if errors.have_errors() {
+        for err in errors.into_error_list() {
             format_error(source, &err);
         }
         return;
-    }
+    };
 
-    let (items, mut fixity_errors) = fix_items(items);
-    if !fixity_errors.is_empty() {
-        fixity_errors.sort_by(interpreter::errors::Error::ordering);
-        for err in fixity_errors {
+    let items = fix_items(items, &mut errors);
+    if errors.have_errors() {
+        for err in errors.into_error_list() {
             format_error(source, &err);
         }
         return;
-    }
+    };
 
-    let mut kind_errors = find_kind_errors(&items);
-    if !kind_errors.is_empty() {
-        kind_errors.sort_by(interpreter::errors::Error::ordering);
-        for err in kind_errors {
+    let res = find_kind_errors(&items, &mut errors);
+    if errors.have_errors() {
+        for err in errors.into_error_list() {
             format_error(source, &err);
         }
         return;
-    }
+    };
+    assert!(res.is_ok());
+
+    interpreter::ast::resolved::printer::print_items(&items);
 
     println!("OK");
 }
@@ -103,8 +97,7 @@ fn display_span(source: &str, span: Span) {
         line.trim_right().chars().count() + 1
     };
     for _ in (span.start.column)..(end_col + 1) {
-        print!("^");
+        print!("~");
     }
     println!("");
 }
-*/

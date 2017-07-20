@@ -1,10 +1,10 @@
 use std::collections::{HashSet, HashMap};
 use std::collections::hash_map::Entry;
 use std::fmt;
-use ast::Node;
-use ast::resolved::{TypeDecl, Type, Items, Trait, TypeAnnot, Scheme, Impl, Expr, DoExpr};
+use ast::{Node, Name};
+use ast::resolved::{TypeDecl, Type, Items, Trait, TypeAnnot, Scheme, Impl, Sym, Symbol};
 use compiler::util::{self, Graph};
-use errors::{self, Error};
+use errors::Errors;
 use position::Span;
 
 
@@ -83,49 +83,39 @@ impl fmt::Display for Kind {
 }
 
 enum ConstraintSource<'a> {
-    Value(&'a Node<Type>, &'a str),
-    Function(&'a Node<Type>, &'a Node<Type>, &'a str),
+    Value(&'a Node<Type>, &'a Name),
+    Function(&'a Node<Type>, &'a Node<Type>, &'a Name),
     ShouldNotFail,
 }
 
 struct Constraint<'a>(Kind, Kind, ConstraintSource<'a>);
 
-struct InferCtx<'a> {
-    kinds: HashMap<&'a str, Kind>,
-    trait_kinds: HashMap<&'a str, Kind>,
+struct InferCtx<'a, 'b> {
+    kinds: HashMap<Sym, Kind>,
+    trait_kinds: HashMap<Sym, Kind>,
     next_var: u64,
-    errors: Vec<Error>,
+    errors: &'b mut Errors,
     constraints: Vec<Constraint<'a>>,
-    new_kinds: HashMap<&'a str, Kind>,
-    var_kinds: HashMap<&'a str, Kind>,
+    new_kinds: HashMap<Sym, Kind>,
+    var_kinds: HashMap<Sym, Kind>,
     substitutions: HashMap<u64, Kind>,
+    symbol_names: &'b HashMap<Sym, String>,
 }
 
-impl<'a> InferCtx<'a> {
-    fn new() -> Self {
+impl<'a, 'b> InferCtx<'a, 'b> {
+    fn new(errors: &'b mut Errors, symbol_names: &'b HashMap<Sym, String>) -> Self {
         InferCtx {
             kinds: HashMap::new(),
             trait_kinds: HashMap::new(),
-            next_var: 0,
-            errors: Vec::new(),
+            // start from 1 because 0 is used as id for `self`
+            next_var: 1,
+            errors,
             constraints: Vec::new(),
             new_kinds: HashMap::new(),
             var_kinds: HashMap::new(),
             substitutions: HashMap::new(),
+            symbol_names,
         }
-    }
-
-    fn undefined_var(&mut self, var: &Node<String>, module: &str) {
-        let message = format!("Unknown type variable '{}'.", var.value);
-        let error = errors::kind_error(message, var.span, module);
-        self.errors.push(error);
-    }
-
-    fn var_defined_twice(&mut self, var: &Node<String>, module: &str) {
-        let message = format!("Type variable '{}' appears twice in var list.",
-            var.value);
-        let error = errors::kind_error(message, var.span, module);
-        self.errors.push(error);
     }
 
     fn unsolved_constraint(&mut self, constraint: Constraint) {
@@ -139,38 +129,43 @@ impl<'a> InferCtx<'a> {
             ConstraintSource::Value(type_, module) => {
                 debug_assert_eq!(kinds[1], Kind::Star);
                 let msg = format!(
-                    "Previously inferred kind '{}' for this type, but it must have kind '*'.",
+                    "Previously inferred kind `{}` for this type, but it must have kind `*`.",
                     kinds[0]);
                 (msg, module, type_.span)
             }
             ConstraintSource::Function(f, _, module) => {
                 let msg = format!(
-                    "Previously inferred kind '{}' for this type, but here it is expected to be '{}'.",
+                    "Previously inferred kind `{}` for this type, but here it is expected to be `{}`.",
                     kinds[0],
                     kinds[1]);
                 (msg, module, f.span)
             }
         };
-        let error = errors::kind_error(message, span, module);
-        self.errors.push(error);
+        self.errors
+            .kind_error(module)
+            .note(message, span)
+            .done();
     }
 
-    fn invalid_self(&mut self, span: Span, module: &str) {
-        let message = format!("'self' type can only be used in trait definitions.");
-        let error = errors::kind_error(message, span, module);
-        self.errors.push(error);
+    fn invalid_self(&mut self, span: Span, module: &Name) {
+        self.errors
+            .kind_error(module)
+            .note("`self` type can only be used in trait definitions.", span)
+            .done();
     }
 
-    fn missing_self(&mut self, span: Span, module: &str) {
-        let message = format!("'self' must be mentioned at least once in every trait member.");
-        let error = errors::kind_error(message, span, module);
-        self.errors.push(error);
+    fn missing_self(&mut self, span: Span, module: &Name) {
+        self.errors
+            .kind_error(module)
+            .note("`self` must be mentioned at least once in every trait member.", span)
+            .done();
     }
 
-    fn unused_var(&mut self, span: Span, module: &str) {
-        let message = format!("Constrained type variable must be used in implementing type.");
-        let error = errors::kind_error(message, span, module);
-        self.errors.push(error);
+    fn unused_var(&mut self, span: Span, module: &Name) {
+        self.errors
+            .kind_error(module)
+            .note("Constrained type variable must be used in implementing type.", span)
+            .done();
     }
 
     fn fresh_var(&mut self) -> Kind {
@@ -189,7 +184,7 @@ impl<'a> InferCtx<'a> {
             self.new_kinds.insert(decl.name(), var);
         }
         for decl in decls {
-            let mut current_kind = self.new_kinds[decl.name()].clone();
+            let mut current_kind = self.new_kinds[&decl.name()].clone();
             for var in decl.var_list() {
                 let kind = self.fresh_var();
                 let v = self.fresh_var();
@@ -197,11 +192,10 @@ impl<'a> InferCtx<'a> {
                 let source = ConstraintSource::ShouldNotFail;
                 self.constraints.push(Constraint(current_kind, arr, source));
                 current_kind = v;
-                if self.var_kinds.contains_key(&var.value as &str) {
-                    self.var_kinds.insert(&var.value, Kind::Any);
-                    self.var_defined_twice(var, decl.module());
+                if self.var_kinds.contains_key(&var.value) {
+                    self.var_kinds.insert(var.value, Kind::Any);
                 } else {
-                    self.var_kinds.insert(&var.value, kind);
+                    self.var_kinds.insert(var.value, kind);
                 }
             }
             let source = ConstraintSource::ShouldNotFail;
@@ -221,7 +215,6 @@ impl<'a> InferCtx<'a> {
             let mut kind = self.do_substitutions(kind);
             kind.default_vars();
             let kind = if ok { kind } else { Kind::Any };
-            println!("inferred {} : {}", name, kind);
             self.kinds.insert(name, kind);
         }
         self.constraints.clear();
@@ -231,22 +224,21 @@ impl<'a> InferCtx<'a> {
     fn infer_for_type(
                         &mut self,
                         type_: &'a Node<Type>,
-                        module: &'a str,
+                        module: &'a Name,
                         allow_new_vars: bool) -> Kind {
         match type_.value {
             Type::Any => {
                 Kind::Any
             }
-            Type::Var(ref var) => {
-                if self.var_kinds.contains_key(var as &str) {
-                    self.var_kinds[var as &str].clone()
+            Type::Var(sym) => {
+                if self.var_kinds.contains_key(&sym) {
+                    self.var_kinds[&sym].clone()
                 } else if allow_new_vars {
                     let kind = self.fresh_var();
-                    self.var_kinds.insert(var, kind.clone());
+                    self.var_kinds.insert(sym, kind.clone());
                     kind
                 } else {
-                    self.undefined_var(&Node::new(var.clone(), type_.span), module);
-                    Kind::Any
+                    unreachable!()
                 }
             }
             Type::Tuple(ref items) => {
@@ -258,8 +250,9 @@ impl<'a> InferCtx<'a> {
                 Kind::Star
             }
             Type::SelfType => {
-                if self.var_kinds.contains_key("self") {
-                    self.var_kinds["self"].clone()
+                let self_ = Sym::new(0);
+                if self.var_kinds.contains_key(&self_) {
+                    self.var_kinds[&self_].clone()
                 } else {
                     self.invalid_self(type_.span, module);
                     Kind::Any
@@ -274,11 +267,14 @@ impl<'a> InferCtx<'a> {
                 self.constraints.push(Constraint(b_kind, Kind::Star, source));
                 Kind::Star
             }
-            Type::Concrete(ref name) => {
-                if self.kinds.contains_key(name as &str) {
-                    self.kinds[name as &str].clone()
+            Type::Concrete(Symbol::Unknown) => {
+                Kind::Any
+            }
+            Type::Concrete(Symbol::Known(sym)) => {
+                if self.kinds.contains_key(&sym) {
+                    self.kinds[&sym].clone()
                 } else {
-                    self.new_kinds[name as &str].clone()
+                    self.new_kinds[&sym].clone()
                 }
             }
             Type::Apply(ref a, ref b) => {
@@ -308,7 +304,7 @@ impl<'a> InferCtx<'a> {
         true
     }
 
-    fn solve_constraint<'b>(&mut self, a: &'b Kind, b: &'b Kind) -> bool {
+    fn solve_constraint<'c>(&mut self, a: &'c Kind, b: &'c Kind) -> bool {
         match (a, b) {
             (&Kind::Any, _) | (_, &Kind::Any) => true,
             (&Kind::Var(a), &Kind::Var(b)) if a == b => true,
@@ -360,17 +356,16 @@ impl<'a> InferCtx<'a> {
         debug_assert!(self.var_kinds.is_empty());
         debug_assert!(self.substitutions.is_empty());
         let self_kind = self.fresh_var();
-        self.var_kinds.insert("self", self_kind);
+        self.var_kinds.insert(Sym::new(0), self_kind);
         for annot in &trait_.values {
-            if let Some(ref type_) = annot.value.type_ {
-                self.infer_for_type(&type_.value.type_, &trait_.module, true);
-                if !type_.value.type_.value.contains_self() {
-                    self.missing_self(type_.span, &trait_.module);
-                }
+            let scheme = &annot.value.type_;
+            self.infer_for_type(&scheme.value.type_, &trait_.module, true);
+            if !scheme.value.type_.value.contains_self() {
+                self.missing_self(annot.span, &trait_.module);
             }
         }
         let self_kind = if self.solve_constraints() {
-            let kind = self.var_kinds.remove("self").unwrap();
+            let kind = self.var_kinds.remove(&Sym::new(0)).unwrap();
             let mut kind = self.do_substitutions(kind);
             kind.default_vars();
             kind
@@ -380,39 +375,40 @@ impl<'a> InferCtx<'a> {
         self.constraints.clear();
         self.var_kinds.clear();
         self.substitutions.clear();
-        println!("inferred trait {} : {}", trait_.name.value, self_kind);
+        // println!("inferred trait {} : {}", trait_.name.value, self_kind);
         self_kind
     }
 
     fn infer_traits(&mut self, traits: &'a [Trait]) {
         for trait_ in traits {
             let kind = self.infer_trait_kind(trait_);
-            self.trait_kinds.insert(&trait_.name.value, kind);
+            self.trait_kinds.insert(trait_.name.value, kind);
         }
     }
 
-    fn add_trait_bounds(&mut self, bounds: &'a [(Node<String>, Node<String>)], module: &'a str) {
+    fn add_trait_bounds(&mut self, bounds: &'a [(Node<Sym>, Node<Symbol>)], module: &'a Name) {
         for &(ref var, ref trait_) in bounds {
-            let kind = match self.trait_kinds.get(&trait_.value as &str) {
+            let trait_name = match trait_.value {
+                Symbol::Known(sym) => sym,
+                Symbol::Unknown => continue,
+            };
+            let kind = match self.trait_kinds.get(&trait_name) {
                 Some(kind) => kind,
                 None => continue,
             };
-            match self.var_kinds.entry(&var.value) {
+            match self.var_kinds.entry(var.value) {
                 Entry::Occupied(mut entry) => {
                     if entry.get() != kind {
                         if entry.get() != &Kind::Any {
-                            // Error function was inlined here to appease borrow checker.
-                            // I think it would be a good idea to make a sepparate struct
-                            // for error formatting, and have that as field, so that
-                            // reporting an error would only borrow one field, instead
-                            // of whole self.
                             let message = format!(
-                                "Variable {} here has kind '{}', but in previous bound it was bound to '{}'.",
-                                var.value,
+                                "Variable {} here has kind `{}`, but in previous bound it was bound to `{}`.",
+                                self.symbol_names[&var.value],
                                 kind,
                                 entry.get());
-                            let error = errors::kind_error(message, var.span, module);
-                            self.errors.push(error);
+                            self.errors
+                                .kind_error(module)
+                                .note(message, var.span)
+                                .done();
                         }
                         entry.insert(Kind::Any);
                     }
@@ -424,7 +420,7 @@ impl<'a> InferCtx<'a> {
         }
     }
 
-    fn validate_scheme(&mut self, scheme: &'a Scheme, module: &'a str) {
+    fn validate_scheme(&mut self, scheme: &'a Scheme, module: &'a Name) {
         self.add_trait_bounds(&scheme.bounds, module);
         let kind = self.infer_for_type(&scheme.type_, module, true);
         let source = ConstraintSource::Value(&scheme.type_, module);
@@ -434,14 +430,12 @@ impl<'a> InferCtx<'a> {
         self.substitutions.clear();
     }
 
-    fn validate_annotation(&mut self, annot: &'a TypeAnnot, module: &'a str) {
+    fn validate_annotation(&mut self, annot: &'a TypeAnnot, module: &'a Name) {
         debug_assert!(self.constraints.is_empty());
         debug_assert!(self.new_kinds.is_empty());
         debug_assert!(self.var_kinds.is_empty());
         debug_assert!(self.substitutions.is_empty());
-        if let Some(ref type_) = annot.type_ {
-            self.validate_scheme(&type_.value, module);
-        }
+        self.validate_scheme(&annot.type_.value, module);
     }
 
     fn validate_trait(&mut self, trait_: &'a Trait) {
@@ -449,31 +443,29 @@ impl<'a> InferCtx<'a> {
         debug_assert!(self.new_kinds.is_empty());
         debug_assert!(self.var_kinds.is_empty());
         debug_assert!(self.substitutions.is_empty());
-        let self_kind = self.trait_kinds[&trait_.name.value as &str].clone();
+        let self_kind = self.trait_kinds[&trait_.name.value].clone();
         for base_trait in &trait_.base_traits {
-            if let Some(kind) = self.trait_kinds.get(&base_trait.value as &str) {
+            let trait_name = match base_trait.value {
+                Symbol::Known(sym) => sym,
+                Symbol::Unknown => continue,
+            };
+            if let Some(kind) = self.trait_kinds.get(&trait_name) {
                 if self_kind != *kind && self_kind != Kind::Any && *kind != Kind::Any {
-                    // Error function was inlined here to appease borrow checker.
-                    // I think it would be a good idea to make a sepparate struct
-                    // for error formatting, and have that as field, so that
-                    // reporting an error would only borrow one field, instead
-                    // of whole self.
                     let message = format!(
-                        "Trait '{}' has kind '{}', but its parent trait has kind '{}'.",
-                        trait_.name.value,
+                        "Trait `{}` has kind `{}`, but its parent trait has kind `{}`.",
+                        self.symbol_names[&trait_.name.value],
                         self_kind,
                         kind);
-                    let module = &trait_.module;
-                    let error = errors::kind_error(message, base_trait.span, module as &str);
-                    self.errors.push(error);
+                    self.errors
+                        .kind_error(&trait_.module)
+                        .note(message, base_trait.span)
+                        .done();
                 }
             }
         }
         for annot in &trait_.values {
-            if let Some(ref type_) = annot.value.type_ {
-                self.var_kinds.insert("self", self_kind.clone());
-                self.validate_scheme(&type_.value, &trait_.name.value);
-            }
+            self.var_kinds.insert(Sym::new(0), self_kind.clone());
+            self.validate_scheme(&annot.value.type_.value, &trait_.module);
         }
     }
 
@@ -487,7 +479,7 @@ impl<'a> InferCtx<'a> {
         for &(ref var, _) in &impl_.scheme.value.bounds {
             if !checked_vars.contains(&var.value) {
                 checked_vars.insert(&var.value);
-                if !impl_.scheme.value.type_.value.contains_var(&var.value) {
+                if !impl_.scheme.value.type_.value.contains_var(var.value) {
                     self.unused_var(var.span, &impl_.module);
                 }
             }
@@ -496,90 +488,23 @@ impl<'a> InferCtx<'a> {
         if self.solve_constraints() {
             let mut kind = self.do_substitutions(kind);
             kind.default_vars();
-            if let Some(trait_) = self.trait_kinds.get(&impl_.trait_.value as &str) {
-                if trait_ != &Kind::Any && trait_ != &kind {
-                    // Error function was inlined here to appease borrow checker.
-                    // I think it would be a good idea to make a sepparate struct
-                    // for error formatting, and have that as field, so that
-                    // reporting an error would only borrow one field, instead
-                    // of whole self.
-                    let message = format!(
-                        "Inferred kind '{}' for this type, but trait expected it to be '{}'.",
-                        kind,
-                        trait_);
-                    let module = &impl_.module;
-                    let error = errors::kind_error(message, impl_.scheme.value.type_.span, module as &str);
-                    self.errors.push(error);
+            if let Symbol::Known(trait_name) = impl_.trait_.value {
+                if let Some(trait_) = self.trait_kinds.get(&trait_name) {
+                    if trait_ != &Kind::Any && trait_ != &kind {
+                        let message = format!(
+                            "Inferred kind `{}` for this type, but trait expected it to be `{}`.",
+                            kind,
+                            trait_);
+                        self.errors
+                            .kind_error(&impl_.module)
+                            .note(message, impl_.scheme.value.type_.span)
+                            .done();
+                    }
                 }
             }
         }
         self.var_kinds.clear();
         self.substitutions.clear();
-    }
-    
-    fn validate_contained_annotations(&mut self, expr: &'a Expr, module: &'a str) {
-        match *expr {
-            Expr::Apply(ref a, ref b) => {
-                self.validate_contained_annotations(&a.value, module);
-                self.validate_contained_annotations(&b.value, module);
-            }
-            Expr::Case(ref expr, ref branches) => {
-                self.validate_contained_annotations(&expr.value, module);
-                for branch in branches {
-                    if let Some(ref guard) = branch.value.guard {
-                        self.validate_contained_annotations(&guard.value, module);
-                    }
-                    self.validate_contained_annotations(&branch.value.value.value, module);
-                }
-            }
-            Expr::Do(ref do_) => {
-                self.validate_do_expr(&do_.value, module);
-            }
-            Expr::Ident(_) | Expr::Literal(_) => { }
-            Expr::If(ref cond, ref then, ref else_) => {
-                self.validate_contained_annotations(&cond.value, module);
-                self.validate_contained_annotations(&then.value, module);
-                self.validate_contained_annotations(&else_.value, module);
-            }
-            Expr::Infix(ref a, _, ref b) => {
-                self.validate_contained_annotations(&a.value, module);
-                self.validate_contained_annotations(&b.value, module);
-            }
-            Expr::Lambda(_, ref value) | Expr::Parenthesised(ref value) => {
-                self.validate_contained_annotations(&value.value, module);
-            }
-            Expr::Let(ref defs, ref annotations, ref value) => {
-                self.validate_contained_annotations(&value.value, module);
-                for annot in annotations {
-                    self.validate_annotation(&annot.value, module);
-                }
-                for def in defs {
-                    if let Some(ref value) = def.value.value {
-                        self.validate_contained_annotations(&value.value, module);
-                    }
-                }
-            }
-            Expr::List(ref items) | Expr::Tuple(ref items) => {
-                for val in items {
-                    self.validate_contained_annotations(&val.value, module);
-                }
-            }
-        }
-    }
-
-    fn validate_do_expr(&mut self, expr: &'a DoExpr, module: &'a str) {
-        match *expr {
-            DoExpr::Bind(_, ref expr, ref rest) |
-            DoExpr::If(ref expr, ref rest) |
-            DoExpr::Sequence(ref expr, ref rest) |
-            DoExpr::Let(_, ref expr, ref rest) => {
-                self.validate_contained_annotations(&expr.value, module);
-                self.validate_do_expr(&rest.value, module);
-            }
-            DoExpr::Done(ref expr) => {
-                self.validate_contained_annotations(&expr.value, module);
-            }
-        }
     }
 }
 
@@ -623,7 +548,7 @@ fn contained_types(decl: &TypeDecl) -> Vec<&Node<Type>> {
     }
 }
 
-fn contained_concrete_types(decl: &TypeDecl) -> Vec<&str> {
+fn contained_concrete_types<'a>(decl: &'a TypeDecl) -> Vec<&'a Sym> {
     let mut result = Vec::new();
     match *decl {
         TypeDecl::Record(ref record) => {
@@ -647,7 +572,7 @@ fn contained_concrete_types(decl: &TypeDecl) -> Vec<&str> {
     result
 }
 
-fn make_graph<'a, I: Iterator<Item=&'a TypeDecl>>(decls: I) -> Graph<'a, str> {
+fn make_graph<'a, I: Iterator<Item=&'a TypeDecl>>(decls: I) -> Graph<'a, Sym> {
     let nodes = decls.map(|decl| {
         let depends_on = contained_concrete_types(decl);
         let name = match *decl {
@@ -655,39 +580,38 @@ fn make_graph<'a, I: Iterator<Item=&'a TypeDecl>>(decls: I) -> Graph<'a, str> {
             TypeDecl::TypeAlias(ref alias) => &alias.name.value,
             TypeDecl::Union(ref union) => &union.name.value,
         };
-        (name.as_ref(), depends_on)
+        (name, depends_on)
     });
     Graph::new(nodes)
 }
 
-pub fn find_kind_errors(items: &Items) -> Vec<Error> {
+pub fn find_kind_errors(items: &Items, errors: &mut Errors) -> Result<(), ()> {
+    let errors_before = errors.error_count();
     let graph = make_graph(items.types.iter());
     let components = graph.to_strongly_connected_components();
     let table = items.types.iter().map(|decl| (decl.name(), decl)).collect::<HashMap<_, _>>();
-    let mut inferer = InferCtx::new();
-    for scc in components {
-        let decls = scc.into_iter().map(|name| table[name]).collect::<Vec<_>>();
-        inferer.add_types(&decls);
-    }
-    inferer.infer_traits(&items.traits);
-    for annot in items.annotations.values() {
-        inferer.validate_annotation(annot, &annot.module);
-    }
-    for trait_ in &items.traits {
-        inferer.validate_trait(trait_);
-    }
-    for def in &items.items {
-        if let Some(ref expr) = def.value {
-            inferer.validate_contained_annotations(&expr.value, &def.module);
+    
+    {
+        let mut inferer = InferCtx::new(errors, &items.symbol_names);
+        for scc in components {
+            let decls = scc.into_iter().map(|name| table[name]).collect::<Vec<_>>();
+            inferer.add_types(&decls);
+        }
+        inferer.infer_traits(&items.traits);
+        for annot in items.annotations.values() {
+            inferer.validate_annotation(&annot.value, &annot.value.module);
+        }
+        for trait_ in &items.traits {
+            inferer.validate_trait(trait_);
+        }
+        for impl_ in &items.impls {
+            inferer.validate_impl(impl_);
         }
     }
-    for impl_ in &items.impls {
-        inferer.validate_impl(impl_);
-        for def in &impl_.values {
-            if let Some(ref expr) = def.value.value {
-                inferer.validate_contained_annotations(&expr.value, &def.value.module);
-            }
-        }
+
+    if errors.error_count() == errors_before {
+        Ok(())
+    } else {
+        Err(())
     }
-    inferer.errors
 }

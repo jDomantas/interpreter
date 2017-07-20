@@ -88,7 +88,11 @@ impl Errors {
     }
 
     pub fn have_errors(&self) -> bool {
-        self.errors.len() > 0
+        self.error_count() > 0
+    }
+
+    pub fn error_count(&self) -> usize {
+        self.errors.len()
     }
 
     pub fn merge(&mut self, other: Errors) {

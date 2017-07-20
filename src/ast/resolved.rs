@@ -291,3 +291,292 @@ impl Items {
         Default::default()
     }
 }
+
+
+pub mod printer {
+    use super::*;
+    pub fn print_items(items: &Items) {
+        let mut printer = Printer { indent: 0 };
+        for typ in &items.types {
+            match *typ {
+                TypeDecl::Record(_) => unimplemented!(),
+                TypeDecl::TypeAlias(ref alias) => printer.print_alias(alias),
+                TypeDecl::Union(ref union) => printer.print_union(union),
+            }
+        }
+        for def in &items.items {
+            printer.print_def(&def);
+        }
+    }
+
+    struct Printer {
+        indent: usize,
+    }
+
+    impl Printer {
+        fn print_indent(&self) {
+            for _ in 0..(self.indent) {
+                print!("  ");
+            }
+        }
+
+        fn print_expr(&mut self, expr: &Expr) {
+            match *expr {
+                Expr::Apply(ref a, ref b) => {
+                    print!("(");
+                    self.print_expr(&a.value);
+                    print!(" ");
+                    self.print_expr(&b.value);
+                    print!(")");
+                }
+                Expr::Bind(..) => {
+                    unimplemented!();
+                }
+                Expr::Case(ref expr, ref branches) => {
+                    print!("case ");
+                    self.print_expr(&expr.value);
+                    print!(" of");
+                    self.indent += 1;
+                    for branch in branches {
+                        println!("");
+                        self.print_branch(&branch.value);
+                    }
+                    self.indent -= 1;
+                }
+                Expr::DoIf(..) => {
+                    unimplemented!();
+                }
+                Expr::Ident(sym) => {
+                    self.print_symbol(sym);
+                }
+                Expr::If(ref cond, ref then, ref else_) => {
+                    print!("(if ");
+                    self.print_expr(&cond.value);
+                    println!(" then");
+                    self.indent += 1;
+                    self.print_indent();
+                    self.print_expr(&then.value);
+                    println!("");
+                    self.indent -= 1;
+                    self.print_indent();
+                    println!("else");
+                    self.indent += 1;
+                    self.print_indent();
+                    self.print_expr(&else_.value);
+                    print!(")");
+                    self.indent -= 1;
+                }
+                Expr::Infix(ref l, ref op, ref r) => {
+                    print!("(");
+                    self.print_expr(&l.value);
+                    self.print_symbol(op.value);
+                    self.print_expr(&r.value);
+                    print!(")");
+                }
+                Expr::Lambda(ref sym, ref value) => {
+                    print!("(\\ ");
+                    self.print_sym(sym.value);
+                    print!(" -> ");
+                    self.print_expr(&value.value);
+                    print!(")");
+                }
+                Expr::Let(..) => {
+                    unimplemented!()
+                }
+                Expr::List(ref items) => {
+                    print!("[");
+                    let mut need_comma = false;
+                    for item in items {
+                        if need_comma { print!(", "); }
+                        self.print_expr(&item.value);
+                        need_comma = true;
+                    }
+                    print!("]");
+                }
+                Expr::Literal(ref lit) => {
+                    print!("{:?}", lit);
+                }
+                Expr::Parenthesised(ref expr) => {
+                    print!("(");
+                    self.print_expr(&expr.value);
+                    print!(")");
+                }
+                Expr::Tuple(ref items) => {
+                    print!("(");
+                    let mut need_comma = false;
+                    for item in items {
+                        if need_comma { print!(", "); }
+                        self.print_expr(&item.value);
+                        need_comma = true;
+                    }
+                    print!(")");
+                }
+            }
+        }
+
+        fn print_sym(&mut self, symbol: Sym) {
+            self.print_symbol(Symbol::Known(symbol));
+        }
+
+        fn print_symbol(&mut self, symbol: Symbol) {
+            match symbol {
+                Symbol::Known(Sym(id)) => {
+                    print!("s_{}", id);
+                }
+                Symbol::Unknown => {
+                    print!("s_?");
+                }
+            }
+        }
+
+        fn print_branch(&mut self, branch: &CaseBranch) {
+            self.print_indent();
+            self.print_pattern(&branch.pattern.value);
+            if let Some(ref guard) = branch.guard {
+                print!(" if ");
+                self.print_expr(&guard.value);
+            }
+            print!(" -> ");
+            self.print_expr(&branch.value.value);
+        }
+
+        fn print_pattern(&mut self, pattern: &Pattern) {
+            match *pattern {
+                Pattern::As(ref pat, ref alias) => {
+                    print!("(");
+                    self.print_pattern(&pat.value);
+                    print!(" as ");
+                    self.print_sym(alias.value);
+                    print!(")");
+                }
+                Pattern::Deconstruct(ref name, ref parts) => {
+                    self.print_symbol(name.value);
+                    for part in parts {
+                        print!(" ");
+                        self.print_pattern(&part.value);
+                    }
+                }
+                Pattern::Infix(ref l, ref op, ref r) => {
+                    print!("(");
+                    self.print_pattern(&l.value);
+                    self.print_symbol(op.value);
+                    self.print_pattern(&r.value);
+                    print!(")");
+                }
+                Pattern::List(ref items) => {
+                    print!("[");
+                    let mut need_comma = false;
+                    for item in items {
+                        if need_comma { print!(", "); }
+                        self.print_pattern(&item.value);
+                        need_comma = true;
+                    }
+                    print!("]");
+                }
+                Pattern::Literal(ref lit) => {
+                    print!("{:?}", lit);
+                }
+                Pattern::Parenthesised(ref expr) => {
+                    print!("(");
+                    self.print_pattern(&expr.value);
+                    print!(")");
+                }
+                Pattern::Tuple(ref items) => {
+                    print!("(");
+                    let mut need_comma = false;
+                    for item in items {
+                        if need_comma { print!(", "); }
+                        self.print_pattern(&item.value);
+                        need_comma = true;
+                    }
+                    print!(")");
+                }
+                Pattern::Wildcard => {
+                    print!("_");
+                }
+            }
+        }
+
+        fn print_type(&mut self, type_: &Type) {
+            match *type_ {
+                Type::Any => {
+                    print!("?");
+                }
+                Type::Apply(ref a, ref b) => {
+                    print!("(");
+                    self.print_type(&a.value);
+                    print!(" ");
+                    self.print_type(&b.value);
+                    print!(")");
+                }
+                Type::Concrete(sym) => {
+                    self.print_symbol(sym);
+                }
+                Type::Function(ref a, ref b) => {
+                    print!("(");
+                    self.print_type(&a.value);
+                    print!(" -> ");
+                    self.print_type(&b.value);
+                    print!(")");
+                }
+                Type::SelfType => {
+                    print!("self");
+                }
+                Type::Tuple(ref items) => {
+                    print!("(");
+                    let mut need_comma = false;
+                    for item in items {
+                        if need_comma { print!(", "); }
+                        self.print_type(&item.value);
+                        need_comma = true;
+                    }
+                    print!(")");
+                }
+                Type::Var(sym) => {
+                    self.print_sym(sym);
+                }
+            }
+        }
+
+        fn print_union(&mut self, union: &UnionType) {
+            print!("type ");
+            self.print_sym(union.name.value);
+            for var in &alias.vars {
+                print!(" ");
+                self.print_sym(var.value);
+            }
+            println!(" =");
+            self.indent += 1;
+            for case in &union.cases {
+                self.print_indent();
+                print!("| ");
+                self.print_sym(case.value.tag.value);
+                for typ in &case.value.args {
+                    print!(" ");
+                    self.print_type(&typ.value);
+                }
+                println!("");
+            }
+            self.indent -= 1;
+        }
+
+        fn print_alias(&mut self, alias: &TypeAlias) {
+            print!("type alias ");
+            self.print_sym(alias.name.value);
+            for var in &alias.vars {
+                print!(" ");
+                self.print_sym(var.value);
+            }
+            print!(" = ");
+            self.print_type(alias.type_.as_ref().map(|n| &n.value).unwrap());
+            println!("");
+        }
+
+        fn print_def(&mut self, def: &Def) {
+            self.print_sym(def.sym.value);
+            print!(" = ");
+            self.print_expr(&def.value.value);
+            println!("");
+        }
+    }
+}

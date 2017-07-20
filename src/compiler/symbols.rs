@@ -1155,7 +1155,7 @@ impl<'a> Resolver<'a> {
             let case = r::Expr::Case(Box::new(expr), vec![branch]);
             let case = Node::new(case, def_span);
             let def = r::Def {
-                sym: Node::new(fresh, pattern_span),
+                sym: Node::new(vars[0], pattern_span),
                 value: case,
                 module: ctx.module.clone(),
                 artificial: false,

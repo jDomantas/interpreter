@@ -1879,7 +1879,7 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
             let span = Span::new(Position::new(1, 1), Position::new(1, 1));
             let def = ModuleDef {
                 name: Node::new(self.module.to_string(), span),
-                exposing: Node::new(ItemList::Some(Vec::new()), DUMMY_SPAN),
+                exposing: Node::new(ItemList::All, DUMMY_SPAN),
             };
             Node::new(def, span)
         };

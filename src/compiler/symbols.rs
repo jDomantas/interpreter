@@ -12,7 +12,7 @@ use errors::Errors;
 use position::Span;
 
 
-#[derive(Clone, Default)]
+#[derive(Debug, Clone, Default)]
 struct Exports<'a> {
     types: HashMap<&'a str, Sym>,
     traits: HashMap<&'a str, Sym>,
@@ -77,7 +77,7 @@ impl<'a> Exports<'a> {
     }
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct Imports<'a> {
     modules: HashMap<&'a str, &'a str>,
     types: HashMap<&'a str, &'a str>,
@@ -117,6 +117,7 @@ impl<'a> Imports<'a> {
     }
 }
 
+#[derive(Debug)]
 struct Context<'a> {
     module: Name,
     locals: &'a Exports<'a>,

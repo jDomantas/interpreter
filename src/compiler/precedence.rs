@@ -1,32 +1,33 @@
 use std::collections::HashMap;
-use ast::{Node, Associativity};
-use ast::resolved::{Expr, Pattern, Def, Impl, Symbol, Items, CaseBranch, DoExpr};
-use errors::{self, Error};
+use ast::{Node, Associativity, Name};
+use ast::resolved::{Expr, Pattern, Def, Impl, Sym, Symbol, Items, CaseBranch};
+use errors::Errors;
 
 
-struct Context<'a> {
-    errors: Vec<Error>,
-    current_module: Option<String>,
-    operators: &'a HashMap<String, (Associativity, u64)>, 
+struct Context<'a, 'b> {
+    errors: &'b mut Errors,
+    current_module: Option<Name>,
+    symbol_names: &'a HashMap<Sym, String>,
+    operators: &'a HashMap<Sym, (Associativity, u64)>, 
 }
 
-impl<'a> Context<'a> {
-    fn new(operators: &'a HashMap<String, (Associativity, u64)>) -> Context<'a> {
+impl<'a, 'b> Context<'a, 'b> {
+    fn new(
+            operators: &'a HashMap<Sym, (Associativity, u64)>,
+            errors: &'b mut Errors,
+            symbol_names: &'a HashMap<Sym, String>) -> Self {
         Context {
-            errors: Vec::new(),
+            errors,
+            operators,
+            symbol_names,
             current_module: None,
-            operators: operators,
         }
     }
 
-    fn get_precedence(&self, symbol: &Symbol) -> (Associativity, u64) {
-        match *symbol {
-            Symbol::Global(ref name) => {
-                self.operators.get(name).cloned().unwrap_or((Associativity::Left, 9))
-            }
-            Symbol::Local(_) => {
-                // default precedence and associativity
-                (Associativity::Left, 9)
+    fn get_precedence(&self, symbol: Symbol) -> (Associativity, u64) {
+        match symbol {
+            Symbol::Known(sym) => {
+                self.operators.get(&sym).cloned().unwrap_or((Associativity::Left, 9))
             }
             Symbol::Unknown => {
                 // lowest precedence will split expressions apart,
@@ -37,25 +38,31 @@ impl<'a> Context<'a> {
     }
 
     fn precedence_error(&mut self, left: &Node<Symbol>, right: &Node<Symbol>) {
-        let (a1, p1) = self.get_precedence(&left.value);
-        let (a2, p2) = self.get_precedence(&right.value);
+        let (le, ri) = match (left.value, right.value) {
+            (Symbol::Known(l), Symbol::Known(r)) => (l, r),
+            _ => return,
+        };
+        let (a1, p1) = self.get_precedence(left.value);
+        let (a2, p2) = self.get_precedence(right.value);
         debug_assert_eq!(p1, p2);
         debug_assert!(a1 != a2 || a1 == Associativity::None || a2 == Associativity::None);
         debug_assert!(left.value != right.value || a1 == Associativity::None);
         let message = if left.value == right.value {
             format!("Operator '{}' is {}.",
-                left.value.full_name_ref(),
+                self.symbol_names[&le],
                 a1.as_str())
         } else {
             format!("Operator '{}' is {}, and '{}' is {}.",
-                left.value.full_name_ref(),
+                self.symbol_names[&le],
                 a1.as_str(),
-                right.value.full_name_ref(),
+                self.symbol_names[&ri],
                 a2.as_str())
         };
         let span = left.span.merge(right.span);
-        let module = self.current_module.clone().unwrap();
-        self.errors.push(errors::precedence_error(message, span, module));
+        self.errors
+            .fixity_error(self.current_module.as_ref().unwrap())
+            .note(message, span)
+            .done();
     }
 
     fn fix<T, F>(&mut self, mut args: Vec<Node<T>>, ops: Vec<Node<Symbol>>, builder: F) -> Node<T>
@@ -67,10 +74,10 @@ impl<'a> Context<'a> {
         output.push(arg_drain.next().unwrap());
         for op in ops {
             let arg = arg_drain.next().unwrap();
-            let (assoc, prec) = self.get_precedence(&op.value);
+            let (assoc, prec) = self.get_precedence(op.value);
             loop {
                 let prec2 = if let Some(prev_op) = op_stack.last() {
-                    let (assoc2, prec2) = self.get_precedence(&prev_op.value);
+                    let (assoc2, prec2) = self.get_precedence(prev_op.value);
                     if prec == prec2 &&
                         (assoc != assoc2 ||
                         assoc == Associativity::None ||
@@ -105,38 +112,6 @@ impl<'a> Context<'a> {
         output.into_iter().next().unwrap()
     }
 
-    fn fix_do_expr(&mut self, expr: Node<DoExpr>) -> Node<DoExpr> {
-        expr.map(|expr| {
-            match expr {
-                DoExpr::Done(expr) => {
-                    DoExpr::Done(self.fix_expr(expr))
-                }
-                DoExpr::Bind(pattern, value, rest) => {
-                    let pattern = self.fix_pattern(pattern);
-                    let value = self.fix_expr(value);
-                    let rest = Box::new(self.fix_do_expr(*rest));
-                    DoExpr::Bind(pattern, value, rest)
-                }
-                DoExpr::If(cond, rest) => {
-                    let cond = self.fix_expr(cond);
-                    let rest = Box::new(self.fix_do_expr(*rest));
-                    DoExpr::If(cond, rest)
-                }
-                DoExpr::Let(pattern, value, rest) => {
-                    let pattern = self.fix_pattern(pattern);
-                    let value = self.fix_expr(value);
-                    let rest = Box::new(self.fix_do_expr(*rest));
-                    DoExpr::Let(pattern, value, rest)
-                }
-                DoExpr::Sequence(expr, rest) => {
-                    let expr = self.fix_expr(expr);
-                    let rest = Box::new(self.fix_do_expr(*rest));
-                    DoExpr::Sequence(expr, rest)
-                }
-            }
-        })
-    }
-
     fn fix_expr(&mut self, expr: Node<Expr>) -> Node<Expr> {
         let span = expr.span;
         expr.map(|expr| {
@@ -158,9 +133,6 @@ impl<'a> Context<'a> {
                     }).collect();
                     Expr::Case(value, branches)
                 }
-                Expr::Do(do_) => {
-                    Expr::Do(Box::new(self.fix_do_expr(*do_)))
-                }
                 Expr::Ident(symbol) => {
                     Expr::Ident(symbol)
                 }
@@ -171,16 +143,15 @@ impl<'a> Context<'a> {
                     Expr::If(cond, then, else_)
                 }
                 Expr::Lambda(params, value) => {
-                    let params = params.into_iter().map(|p| self.fix_pattern(p)).collect();
                     let value = Box::new(self.fix_expr(*value));
                     Expr::Lambda(params, value)
                 }
-                Expr::Let(defs, types, value) => {
+                Expr::Let(defs, value) => {
                     let defs = defs.into_iter().map(|def| {
                         def.map(|def| self.fix_def(def))
                     }).collect();
                     let value = Box::new(self.fix_expr(*value));
-                    Expr::Let(defs, types, value)
+                    Expr::Let(defs, value)
                 }
                 Expr::List(items) => {
                     let items = items.into_iter().map(|i| self.fix_expr(i)).collect();
@@ -201,12 +172,24 @@ impl<'a> Context<'a> {
                     let mut ops = Vec::new();
                     let node = Node::new(e, span);
                     collect_expr(node, &mut ops, &mut exprs);
+                    let exprs = exprs.into_iter().map(|e| self.fix_expr(e)).collect();
                     fn make_infix(lhs: Node<Expr>, op: Node<Symbol>, rhs: Node<Expr>) -> Node<Expr> {
                         let span = lhs.span.merge(rhs.span);
                         let expr = Expr::Infix(Box::new(lhs), op, Box::new(rhs));
                         Node::new(expr, span)
                     }
                     self.fix(exprs, ops, make_infix).value
+                }
+                Expr::DoIf(cond, rest) => {
+                    let cond = Box::new(self.fix_expr(*cond));
+                    let rest = Box::new(self.fix_expr(*rest));
+                    Expr::DoIf(cond, rest)
+                }
+                Expr::Bind(pat, expr, rest) => {
+                    let pat = self.fix_pattern(pat);
+                    let expr = Box::new(self.fix_expr(*expr));
+                    let rest = Box::new(self.fix_expr(*rest));
+                    Expr::Bind(pat, expr, rest)
                 }
             }
         })
@@ -245,9 +228,6 @@ impl<'a> Context<'a> {
                     }).collect();
                     Pattern::Tuple(items)
                 }
-                Pattern::Var(var) => {
-                    Pattern::Var(var)
-                }
                 Pattern::Wildcard => {
                     Pattern::Wildcard
                 }
@@ -256,9 +236,8 @@ impl<'a> Context<'a> {
                     let mut ops = Vec::new();
                     let node = Node::new(p, span);
                     collect_pattern(node, &mut ops, &mut patterns);
-                    let ops = ops.into_iter().map(|n| n.map(Symbol::Global)).collect();
+                    let patterns = patterns.into_iter().map(|p| self.fix_pattern(p)).collect();
                     fn make_infix(lhs: Node<Pattern>, op: Node<Symbol>, rhs: Node<Pattern>) -> Node<Pattern> {
-                        let op = op.map(Symbol::full_name);
                         let span = lhs.span.merge(rhs.span);
                         let pattern = Pattern::Infix(Box::new(lhs), op, Box::new(rhs));
                         Node::new(pattern, span)
@@ -271,8 +250,7 @@ impl<'a> Context<'a> {
 
     fn fix_def(&mut self, mut def: Def) -> Def {
         self.current_module = Some(def.module.clone());
-        def.pattern = self.fix_pattern(def.pattern);
-        def.value = def.value.map(|e| self.fix_expr(e));
+        def.value = self.fix_expr(def.value);
         def
     }
 
@@ -297,7 +275,7 @@ fn collect_expr(expr: Node<Expr>, ops: &mut Vec<Node<Symbol>>, exprs: &mut Vec<N
     }
 }
 
-fn collect_pattern(pat: Node<Pattern>, ops: &mut Vec<Node<String>>, pats: &mut Vec<Node<Pattern>>) {
+fn collect_pattern(pat: Node<Pattern>, ops: &mut Vec<Node<Symbol>>, pats: &mut Vec<Node<Pattern>>) {
     match pat.value {
         Pattern::Infix(lhs, op, rhs) => {
             collect_pattern(*lhs, ops, pats);
@@ -310,13 +288,13 @@ fn collect_pattern(pat: Node<Pattern>, ops: &mut Vec<Node<String>>, pats: &mut V
     }
 }
 
-pub fn fix_items(items: Items) -> (Items, Vec<Error>) {
-    let Items { types, items, traits, impls, annotations, fixities } = items;
-    let (items, impls, errors) = {
-        let mut ctx = Context::new(&fixities);
+pub fn fix_items(items: Items, errors: &mut Errors) -> Items {
+    let Items { types, items, traits, impls, annotations, fixities, symbol_names } = items;
+    let (items, impls) = {
+        let mut ctx = Context::new(&fixities, errors, &symbol_names);
         let items = items.into_iter().map(|i| ctx.fix_def(i)).collect();
         let impls = impls.into_iter().map(|i| ctx.fix_impl(i)).collect();
-        (items, impls, ctx.errors)
+        (items, impls)
     };
-    (Items { types, items, traits, impls, annotations, fixities }, errors)
+    Items { types, items, traits, impls, annotations, fixities, symbol_names }
 }

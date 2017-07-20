@@ -74,6 +74,10 @@ impl Errors {
         self.new_error(Phase::TypeAliasExpansion, module)
     }
 
+    pub fn fixity_error(&mut self, module: &Name) -> ErrorBuilder {
+        self.new_error(Phase::FixityResolution, module)
+    }
+
     pub fn into_error_list(mut self) -> Vec<Error> {
         self.errors.sort_by(Error::ordering);
         self.errors

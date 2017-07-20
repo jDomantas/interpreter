@@ -34,8 +34,8 @@ pub fn parse_module(source: &str, module: Name, require_def: bool, errors: &mut 
     module
 }
 
-pub fn parse_modules<T: SourceProvider>(main: &str, provider: &T, errors: &mut Errors) -> HashMap<String, Module> {
-    let mut modules = HashMap::<String, Module>::new();
+pub fn parse_modules<T: SourceProvider>(main: &str, provider: &T, errors: &mut Errors) -> HashMap<Name, Module> {
+    let mut modules = HashMap::<Name, Module>::new();
     let mut to_walk = Vec::new();
     let mut checked = HashSet::new();
 
@@ -69,7 +69,7 @@ pub fn parse_modules<T: SourceProvider>(main: &str, provider: &T, errors: &mut E
             }
             checked.insert(name.clone());
         }
-        let name = module.def.value.name.value.clone();
+        let name = Name::from_string(module.def.value.name.value.clone());
         modules.insert(name, module);
     }
 

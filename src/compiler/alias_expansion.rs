@@ -3,7 +3,7 @@ use ast::{Node, Name};
 use ast::resolved::{Items, TypeDecl, Type, TypeAnnot, Sym, Symbol};
 use compiler::util::{self, Graph};
 use errors::Errors;
-use position::{Span, DUMMY_SPAN};
+use position::Span;
 
 
 fn make_graph<'a, I: Iterator<Item=&'a TypeDecl>>(decls: I) -> Graph<'a, Sym> {
@@ -21,7 +21,7 @@ fn make_graph<'a, I: Iterator<Item=&'a TypeDecl>>(decls: I) -> Graph<'a, Sym> {
     Graph::new(nodes)
 }
 
-pub fn find_alias_cycles(items: &Items, errors: &mut Errors) -> Result<(), ()> {
+fn find_alias_cycles(items: &Items, errors: &mut Errors) -> Result<(), ()> {
     let mut positions = HashMap::new();
     for decl in &items.types {
         if let TypeDecl::TypeAlias(ref alias) = *decl {
@@ -33,10 +33,10 @@ pub fn find_alias_cycles(items: &Items, errors: &mut Errors) -> Result<(), ()> {
     let mut had_error = false;
     for cycle in graph.find_all_cycles() {
         let message = if cycle.len() == 2 {
-            format!("Type alias '{}' depends on itself.", items.symbol_names[&cycle[0]])
+            format!("Type alias `{}` depends on itself.", items.symbol_names[&cycle[0]])
         } else {
             let main = &items.symbol_names[&cycle[0]];
-            let mut msg = format!("Type alias '{}' depends on itself indirectly. Dependency chain is '{}'",
+            let mut msg = format!("Type alias `{}` depends on itself indirectly. Dependency chain is `{}`",
                 main,
                 main);
             for typ in &cycle[1..] {
@@ -69,28 +69,193 @@ struct Replacement {
 
 type Replacements = HashMap<Sym, Replacement>;
 
-fn replace_vars(type_: &Type, vars: &HashMap<Sym, &Type>) -> Type {
+fn check_args(
+                module: &Name,
+                span: Span,
+                name: Sym,
+                symbol_names: &HashMap<Sym, String>,
+                args_count: usize,
+                replacements: &Replacements,
+                errors: &mut Errors) -> bool {
+    if let Some(replacement) = replacements.get(&name) {
+        if args_count != replacement.vars.len() {
+            let msg = format!("Type alias `{}` expected {} arguments, got {}.",
+                symbol_names[&name],
+                replacement.vars.len(),
+                args_count);
+            errors
+                .alias_expansion_error(module)
+                .note(msg, span)
+                .done();
+            return false;
+        }
+    }
+    true
+}
+
+fn check_in_type(
+                    type_: &Node<Type>,
+                    replacements: &Replacements,
+                    symbol_names: &HashMap<Sym, String>,
+                    module: &Name,
+                    errors: &mut Errors) -> bool {
+    match type_.value {
+        Type::Any |
+        Type::SelfType |
+        Type::Var(_) => true,
+        Type::Function(ref a, ref b) => {
+            let a = check_in_type(&**a, replacements, symbol_names, module, errors);
+            let b = check_in_type(&**b, replacements, symbol_names, module, errors);
+            a && b
+        }
+        Type::Tuple(ref items) => {
+            let mut res = true;
+            for item in items {
+                let a = check_in_type(item, replacements, symbol_names, module, errors);
+                res &= a;
+            }
+            res
+        }
+        Type::Apply(ref a, ref b) => {
+            let mut arg_count = 1;
+            let mut res = check_in_type(&**b, replacements, symbol_names, module, errors);
+            let mut matched = a;
+            while let Type::Apply(ref l, ref r) = matched.value {
+                let a = check_in_type(&**r, replacements, symbol_names, module, errors);
+                res &= a;
+                arg_count += 1;
+                matched = l;
+            }
+            match matched.value {
+                Type::Concrete(name) => {
+                    match name {
+                        Symbol::Known(sym) => {
+                            let a = check_args(
+                                module,
+                                matched.span,
+                                sym,
+                                symbol_names,
+                                arg_count,
+                                replacements,
+                                errors);
+                            res && a
+                        }
+                        Symbol::Unknown => {
+                            res
+                        }
+                    }
+                }
+                _ => {
+                    let a = check_in_type(matched, replacements, symbol_names, module, errors);
+                    res && a
+                }
+            }
+        }
+        Type::Concrete(name) => {
+            match name {
+                Symbol::Known(sym) => {
+                    check_args(
+                        module,
+                        type_.span,
+                        sym,
+                        symbol_names,
+                        0,
+                        replacements,
+                        errors)
+                }
+                Symbol::Unknown => {
+                    true
+                }
+            }
+        }
+    }
+}
+
+fn check_arg_count(
+                    items: &Items,
+                    replacements: &Replacements,
+                    errors: &mut Errors) -> Result<(), ()> {
+    let mut ok = true;
+    for type_ in &items.types {
+        match *type_ {
+            TypeDecl::Record(ref record) => {
+                for field in &record.fields {
+                    ok = check_in_type(
+                        &field.1,
+                        &replacements,
+                        &items.symbol_names,
+                        &record.module,
+                        errors) && ok;
+                }
+            }
+            TypeDecl::Union(ref union) => {
+                for case in &union.cases {
+                    for arg in &case.value.args {
+                        ok = check_in_type(
+                            arg,
+                            &replacements,
+                            &items.symbol_names,
+                            &union.module,
+                            errors) && ok;
+                    }
+                }
+            }
+            TypeDecl::TypeAlias(ref alias) => {
+                if let Some(ref type_) = alias.type_ {
+                    ok = check_in_type(
+                        type_,
+                        &replacements,
+                        &items.symbol_names,
+                        &alias.module,
+                        errors) && ok;
+                }
+            }
+        }
+    }
+    for annot in items.annotations.values() {
+        ok = check_in_type(
+            &annot.value.type_.value.type_,
+            &replacements,
+            &items.symbol_names,
+            &annot.value.module,
+            errors) && ok;
+    }
+    for trait_ in &items.traits {
+        for item in &trait_.values {
+            ok = check_in_type(
+                &item.value.type_.value.type_,
+                &replacements,
+                &items.symbol_names,
+                &trait_.module,
+                errors) && ok;
+        }
+    }
+
+    if ok { Ok(()) } else { Err(()) }
+}
+
+fn replace_vars(type_: &Type, vars: &HashMap<Sym, &Type>, span: Span) -> Type {
     match *type_ {
         Type::Any => Type::Any,
         Type::Apply(ref a, ref b) => {
-            let a = Node::new(replace_vars(&a.value, vars), DUMMY_SPAN);
-            let b = Node::new(replace_vars(&b.value, vars), DUMMY_SPAN);
+            let a = Node::new(replace_vars(&a.value, vars, span), span);
+            let b = Node::new(replace_vars(&b.value, vars, span), span);
             Type::Apply(Box::new(a), Box::new(b))
         }
         Type::Concrete(ref name) => {
             Type::Concrete(name.clone())
         }
         Type::Function(ref a, ref b) => {
-            let a = Node::new(replace_vars(&a.value, vars), DUMMY_SPAN);
-            let b = Node::new(replace_vars(&b.value, vars), DUMMY_SPAN);
+            let a = Node::new(replace_vars(&a.value, vars, span), span);
+            let b = Node::new(replace_vars(&b.value, vars, span), span);
             Type::Function(Box::new(a), Box::new(b))
         }
         Type::SelfType => Type::SelfType,
         Type::Tuple(ref items) => {
             let mut new_items = Vec::new();
             for item in items {
-                let item = replace_vars(&item.value, vars);
-                new_items.push(Node::new(item, DUMMY_SPAN));
+                let item = replace_vars(&item.value, vars, span);
+                new_items.push(Node::new(item, span));
             }
             Type::Tuple(new_items)
         }
@@ -104,28 +269,18 @@ fn make_result(
                 module: &Name,
                 span: Span,
                 name: Sym,
-                name_str: &str,
+                symbol_names: &HashMap<Sym, String>,
                 args: &[Node<Type>],
                 replacements: &Replacements,
                 errors: &mut Errors) -> Type {
     if let Some(replacement) = replacements.get(&name) {
-        if args.len() != replacement.vars.len() {
-            let msg = format!("Type alias {} expected {} arguments, got {}.",
-                name_str,
-                replacement.vars.len(),
-                args.len());
-            errors
-                .alias_expansion_error(module)
-                .note(msg, span)
-                .done();
-            Type::Any
-        } else {
-            let mut vars = HashMap::new();
-            for i in 0..args.len() {
-                vars.insert(replacement.vars[i], &args[i].value);
-            }
-            replace_vars(&replacement.type_, &vars)
+        debug_assert_eq!(args.len(), replacement.vars.len());
+        let mut vars = HashMap::new();
+        for i in 0..args.len() {
+            vars.insert(replacement.vars[i], &args[i].value);
         }
+        let res = Node::new(replace_vars(&replacement.type_, &vars, span), span);
+        expand_in_type(&res, replacements, symbol_names, module, errors).value
     } else {
         let mut result = Node::new(Type::Concrete(Symbol::Known(name)), span);
         for arg in args {
@@ -175,7 +330,7 @@ fn expand_in_type(
                                 module,
                                 matched.span,
                                 sym,
-                                &symbol_names[&sym],
+                                symbol_names,
                                 &args,
                                 replacements,
                                 errors)
@@ -188,8 +343,9 @@ fn expand_in_type(
                 _ => {
                     let mut result = expand_in_type(matched, replacements, symbol_names, module, errors);
                     for item in args {
+                        let span = type_.span;
                         let type_ = Type::Apply(Box::new(result), Box::new(item));
-                        result = Node::new(type_, DUMMY_SPAN);
+                        result = Node::new(type_, span);
                     }
                     result.value
                 }
@@ -202,7 +358,7 @@ fn expand_in_type(
                         module,
                         type_.span,
                         sym,
-                        &symbol_names[&sym],
+                        symbol_names,
                         &[],
                         replacements,
                         errors)
@@ -231,6 +387,9 @@ fn expand_in_annotation(
 }
 
 pub fn expand_aliases(mut items: Items, errors: &mut Errors) -> Items {
+    if find_alias_cycles(&items, errors).is_err() {
+        return items;
+    }
     let mut replacements = HashMap::new();
     for type_ in &items.types {
         if let TypeDecl::TypeAlias(ref alias) = *type_ {
@@ -240,6 +399,9 @@ pub fn expand_aliases(mut items: Items, errors: &mut Errors) -> Items {
             };
             replacements.insert(alias.name.value.clone(), replacement);
         }
+    }
+    if check_arg_count(&items, &replacements, errors).is_err() {
+        return items;
     }
     for type_ in &mut items.types {
         match *type_ {

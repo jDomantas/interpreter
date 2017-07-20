@@ -1763,9 +1763,11 @@ impl<'a> Resolver<'a> {
                         ctx: &Context) {
         for (index, first) in vars.iter().enumerate() {
             for second in vars.iter().skip(index + 1) {
-                if first.value == second.value {
-                    let name = &self.result.symbol_names[&first.value];
-                    let message = format!("Type variable `{}` is defined twice.", name);
+                let first_name = &self.result.symbol_names[&first.value];
+                let second_name = &self.result.symbol_names[&second.value];
+                if first_name == second_name {
+                    let message = format!(
+                        "Type variable `{}` is defined twice.", first_name);
                     self.errors
                         .symbol_error(&ctx.module)
                         .note(message, second.span)

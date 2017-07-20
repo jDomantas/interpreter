@@ -78,9 +78,17 @@ impl Errors {
         self.new_error(Phase::FixityResolution, module)
     }
 
+    pub fn kind_error(&mut self, module: &Name) -> ErrorBuilder {
+        self.new_error(Phase::KindChecking, module)
+    }
+
     pub fn into_error_list(mut self) -> Vec<Error> {
         self.errors.sort_by(Error::ordering);
         self.errors
+    }
+
+    pub fn have_errors(&self) -> bool {
+        self.errors.len() > 0
     }
 
     pub fn merge(&mut self, other: Errors) {

@@ -182,7 +182,6 @@ pub fn resolve_symbols(modules: &HashMap<Name, Module>, errors: &mut Errors) -> 
 
 struct Resolver<'a> {
     errors: &'a mut Errors,
-    emit_errors: bool,
     result: r::Items,
     traits: HashMap<Sym, TraitInfo>,
     next_sym: u64,
@@ -192,7 +191,6 @@ impl<'a> Resolver<'a> {
     fn new(errors: &'a mut Errors) -> Resolver<'a> {
         Resolver {
             errors: errors,
-            emit_errors: true,
             result: r::Items::new(),
             traits: HashMap::new(),
             next_sym: 0,
@@ -212,156 +210,128 @@ impl<'a> Resolver<'a> {
     }
 
     fn double_definition(&mut self, name: &str, span: Span, previous: Span, module: &Name) {
-        if self.emit_errors {
-            let message = format!("Item `{}` is defined multiple times.", name);
-            let previous_message = "Note: previously defined here.";
-            self.errors
-                .symbol_error(module)
-                .note(message, span)
-                .note(previous_message, previous)
-                .done();
-        }
+        let message = format!("Item `{}` is defined multiple times.", name);
+        let previous_message = "Note: previously defined here.";
+        self.errors
+            .symbol_error(module)
+            .note(message, span)
+            .note(previous_message, previous)
+            .done();
     }
 
     fn duplicate_binding(&mut self, name: &str, span: Span, previous: Span, module: &Name) {
-        if self.emit_errors {
-            let message = format!("Name `{}` is bound multiple times.", name);
-            let previous_message = "Note: previously bound here.";
-            self.errors
-                .symbol_error(module)
-                .note(message, span)
-                .note(previous_message, previous)
-                .done();
-        }
+        let message = format!("Name `{}` is bound multiple times.", name);
+        let previous_message = "Note: previously bound here.";
+        self.errors
+            .symbol_error(module)
+            .note(message, span)
+            .note(previous_message, previous)
+            .done();
     }
 
     fn bad_export(&mut self, message: String, span: Span, module: &Name) {
-        if self.emit_errors {
-            self.errors
-                .symbol_error(module)
-                .note(message, span)
-                .done();
-        }
+        self.errors
+            .symbol_error(module)
+            .note(message, span)
+            .done();
     }
 
     fn module_double_import(&mut self, offending: &str, span: Span, previous: Span, module: &Name) {
-        if self.emit_errors {
-            let message = format!("Module `{}` is imported twice.", offending);
-            let previous_message = "Note: previously imported here.";
-            self.errors
-                .symbol_error(module)
-                .note(message, span)
-                .note(previous_message, previous)
-                .done();
-        }
+        let message = format!("Module `{}` is imported twice.", offending);
+        let previous_message = "Note: previously imported here.";
+        self.errors
+            .symbol_error(module)
+            .note(message, span)
+            .note(previous_message, previous)
+            .done();
     }
 
     fn double_import(&mut self, item: &str, span: Span, previous: Span, module: &Name) {
-        if self.emit_errors {
-            let message = format!("Item `{}` is imported multiple times.", item);
-            let previous_message = "Note: previously imported here.";
-            self.errors
-                .symbol_error(module)
-                .note(message, span)
-                .note(previous_message, previous)
-                .done();
-        }
+        let message = format!("Item `{}` is imported multiple times.", item);
+        let previous_message = "Note: previously imported here.";
+        self.errors
+            .symbol_error(module)
+            .note(message, span)
+            .note(previous_message, previous)
+            .done();
     }
 
     fn double_fixity_decl(&mut self, name: &str, span: Span, previous: Span, module: &Name) {
-        if self.emit_errors {
-            let message = format!("Fixity of `{}` is declared twice.", name);
-            let previous_message = "Note: previously declared here.";
-            self.errors
-                .symbol_error(module)
-                .note(message, span)
-                .note(previous_message, previous)
-                .done();
-        }
+        let message = format!("Fixity of `{}` is declared twice.", name);
+        let previous_message = "Note: previously declared here.";
+        self.errors
+            .symbol_error(module)
+            .note(message, span)
+            .note(previous_message, previous)
+            .done();
     }
 
     fn double_type_annotation(&mut self, name: &str, span: Span, previous: Span, module: &Name) {
-        if self.emit_errors {
-            let message = format!("Type of `{}` is declared twice.", name);
-            let previous_message = "Note: previously declared here.";
-            self.errors
-                .symbol_error(module)
-                .note(message, span)
-                .note(previous_message, previous)
-                .done();
-        }
+        let message = format!("Type of `{}` is declared twice.", name);
+        let previous_message = "Note: previously declared here.";
+        self.errors
+            .symbol_error(module)
+            .note(message, span)
+            .note(previous_message, previous)
+            .done();
     }
 
     fn not_exported(&mut self, item: &str, by: &str, span: Span, module: &Name) {
-        if self.emit_errors {
-            let message = format!("Item `{}` is not exported by `{}`.", item, by);
-            self.errors
-                .symbol_error(module)
-                .note(message, span)
-                .done();
-        }
+        let message = format!("Item `{}` is not exported by `{}`.", item, by);
+        self.errors
+            .symbol_error(module)
+            .note(message, span)
+            .done();
     }
 
     fn subitem_not_exported(&mut self, item: &str, parent: &str, by: &str, span: Span, module: &Name) {
-        if self.emit_errors {
-            let message = format!("Module `{}` does not export `{}` as subitem of `{}`.", by, item, parent);
-            self.errors
-                .symbol_error(module)
-                .note(message, span)
-                .done();
-        }
+        let message = format!("Module `{}` does not export `{}` as subitem of `{}`.", by, item, parent);
+        self.errors
+            .symbol_error(module)
+            .note(message, span)
+            .done();
     }
 
     fn no_subitems(&mut self, item: &str, by: &str, span: Span, module: &Name) {
-        if self.emit_errors {
-            let message = format!("Module `{}` does not export any subitems of `{}`.", by, item);
-            self.errors
-                .symbol_error(module)
-                .note(message, span)
-                .done();
-        }
+        let message = format!("Module `{}` does not export any subitems of `{}`.", by, item);
+        self.errors
+            .symbol_error(module)
+            .note(message, span)
+            .done();
     }
 
     fn unknown_symbol(&mut self, kind: Kind, symbol: &Node<p::Symbol>, module: &Name) {
-        if self.emit_errors {
-            let message = format!("Unknown {}: `{}`.", kind, symbol.value.clone().full_name());
-            self.errors
-                .symbol_error(module)
-                .note(message, symbol.span)
-                .done();
-        }
+        let message = format!("Unknown {}: `{}`.", kind, symbol.value.clone().full_name());
+        self.errors
+            .symbol_error(module)
+            .note(message, symbol.span)
+            .done();
     }
 
     fn unknown_type_var(&mut self, name: &str, span: Span, module: &Name) {
-        if self.emit_errors {
-            let message = format!("Unknown type var: `{}`.", name);
-            self.errors
-                .symbol_error(module)
-                .note(message, span)
-                .done();
-        }
+        let message = format!("Unknown type var: `{}`.", name);
+        self.errors
+            .symbol_error(module)
+            .note(message, span)
+            .done();
     }
 
     fn unknown_local_symbol(&mut self, kind: Kind, symbol: &Node<String>, module: &Name) {
-        if self.emit_errors {
-            let message = format!("Unknown local {}: `{}`.", kind, symbol.value);
-            self.errors
-                .symbol_error(module)
-                .note(message, symbol.span)
-                .done();
-        }
+        let message = format!("Unknown local {}: `{}`.", kind, symbol.value);
+        self.errors
+            .symbol_error(module)
+            .note(message, symbol.span)
+            .done();
     }
 
     fn unknown_module(&mut self, m: &str, span: Span, module: &Name) {
-        if self.emit_errors {
-            let message = format!("Unknown module: `{}`.", m);
-            self.errors
-                .symbol_error(module)
-                .note(message, span)
-                .done();
-        }
+        let message = format!("Unknown module: `{}`.", m);
+        self.errors
+            .symbol_error(module)
+            .note(message, span)
+            .done();
     }
-
+    
     fn collect_items<'b>(&mut self, module: &'b Module) -> Exports<'b> {
         let mut values: HashMap<&'b str, (Option<&'b str>, Span, Sym)> = HashMap::new();
         let mut patterns: HashMap<&'b str, (Option<&'b str>, Span, Sym)> = HashMap::new();

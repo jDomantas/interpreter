@@ -1246,6 +1246,7 @@ impl<'a> Resolver<'a> {
             vars.push(Node::new(sym, var.span));
             var_symbols.insert(var.value.as_str(), sym);
         }
+        self.check_dupe_vars(&vars, ctx);
         let mut resolved_fields = Vec::new();
         for &(ref name, ref type_) in &record.fields {
             let resolved_type = self.resolve_type(type_, &mut var_symbols, ctx, false);
@@ -1307,6 +1308,7 @@ impl<'a> Resolver<'a> {
             vars.push(Node::new(sym, var.span));
             var_symbols.insert(var.value.as_str(), sym);
         }
+        self.check_dupe_vars(&vars, ctx);
         let resolved_type = alias.type_.as_ref().map(|t| {
             self.resolve_type(t, &mut var_symbols, ctx, false)
         });
@@ -1331,6 +1333,7 @@ impl<'a> Resolver<'a> {
             vars.push(Node::new(sym, var.span));
             var_symbols.insert(var.value.as_str(), sym);
         }
+        self.check_dupe_vars(&vars, ctx);
         let mut resolved_cases = Vec::new();
         for case in &union.cases {
             let mut args = Vec::new();
@@ -1779,6 +1782,25 @@ impl<'a> Resolver<'a> {
                         second.0.span,
                         first.0.span,
                         &ctx.module);
+                }
+            }
+        }
+    }
+
+    fn check_dupe_vars(
+                        &mut self, 
+                        vars: &[Node<Sym>],
+                        ctx: &Context) {
+        for (index, first) in vars.iter().enumerate() {
+            for second in vars.iter().skip(index + 1) {
+                if first.value == second.value {
+                    let name = &self.result.symbol_names[&first.value];
+                    let message = format!("Type variable `{}` is defined twice.", name);
+                    self.errors
+                        .symbol_error(&ctx.module)
+                        .note(message, second.span)
+                        .note("Note: previously defined here.", first.span)
+                        .done();
                 }
             }
         }

@@ -2,7 +2,7 @@ use position::Span;
 use ast::{Node, Literal, Associativity};
 
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub enum Expr {
     Ident(Symbol),
     Literal(Literal),
@@ -18,7 +18,7 @@ pub enum Expr {
     Do(Box<Node<DoExpr>>),
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub enum DoExpr {
     Done(Node<Expr>),
     Bind(Node<Pattern>, Node<Expr>, Box<Node<DoExpr>>),
@@ -27,14 +27,14 @@ pub enum DoExpr {
     Let(Node<Pattern>, Node<Expr>, Box<Node<DoExpr>>),
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct CaseBranch {
     pub pattern: Node<Pattern>,
     pub value: Node<Expr>,
     pub guard: Option<Node<Expr>>,
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub enum Pattern {
     Wildcard,
     Var(String),
@@ -102,26 +102,26 @@ impl Pattern {
     }
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub enum LetDecl {
     Def(Def),
     Type(TypeAnnot),
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct Def {
     pub pattern: Node<Pattern>,
     // if none, then value could not be parsed completely
     pub value: Option<Node<Expr>>,
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct TypeAnnot {
     pub value: Node<String>,
     pub type_: Option<Node<Scheme>>,
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub enum Type {
     SelfType,
     Var(String),
@@ -148,13 +148,13 @@ impl Type {
     }
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct Scheme {
     pub type_: Node<Type>,
     pub bounds: Vec<(Node<String>, Node<Symbol>)>,
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub enum Decl {
     Let(LetDecl),
     Infix(Associativity, Node<String>, Node<u64>),
@@ -165,7 +165,7 @@ pub enum Decl {
     Impl(Impl),
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct TypeAlias {
     pub name: Node<String>,
     pub vars: Vec<Node<String>>,
@@ -173,66 +173,66 @@ pub struct TypeAlias {
     pub type_: Option<Node<Type>>,
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct UnionType {
     pub name: Node<String>,
     pub vars: Vec<Node<String>>,
     pub cases: Vec<Node<UnionCase>>,
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct UnionCase {
     pub tag: Node<String>,
     pub args: Vec<Node<Type>>,
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct RecordType {
     pub name: Node<String>,
     pub vars: Vec<Node<String>>,
     pub fields: Vec<(Node<String>, Node<Type>)>,
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct Trait {
     pub name: Node<String>,
     pub base_traits: Vec<Node<Symbol>>,
     pub values: Vec<Node<TypeAnnot>>,
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct Impl {
     pub scheme: Node<Scheme>,
     pub trait_: Node<Symbol>,
     pub values: Vec<Node<Def>>,
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct ModuleDef {
     pub name: Node<String>,
     pub exposing: Node<ItemList<Node<ExposedItem>>>,
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct Import {
     pub name: Node<String>,
     pub alias: Option<Node<String>>,
     pub exposing: Option<Node<ItemList<Node<ExposedItem>>>>,
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct ExposedItem {
     pub name: Node<String>,
     pub subitems: Option<Node<ItemList<Node<String>>>>,
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub enum ItemList<T> {
     Some(Vec<T>),
     All,
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct Module {
     pub def: Node<ModuleDef>,
     pub imports: Vec<Node<Import>>,

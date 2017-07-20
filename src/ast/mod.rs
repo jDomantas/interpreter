@@ -1,8 +1,10 @@
+use std::fmt;
+use std::rc::Rc;
 use position::Span;
 
 pub mod parsed;
 pub mod resolved;
-pub mod typed;
+// pub mod typed;
 
 
 #[derive(PartialEq, Eq, Debug, Hash, Clone)]
@@ -50,5 +52,35 @@ impl Associativity {
             Associativity::Right => "right-associative",
             Associativity::None => "non-associative",
         }
+    }
+}
+
+#[derive(PartialEq, Eq, Debug, Hash, Clone)]
+pub struct Name {
+    name: Rc<String>,
+}
+
+impl Name {
+    pub fn from_string(s: String) -> Name {
+        Name {
+            name: Rc::new(s)
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &*self.name
+    }
+}
+
+impl ::std::ops::Deref for Name {
+    type Target = str;
+    fn deref(&self) -> &Self::Target {
+        self.as_str()
+    }
+}
+
+impl fmt::Display for Name {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", *self.name)
     }
 }

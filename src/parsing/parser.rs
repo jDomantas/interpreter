@@ -1,9 +1,9 @@
 use std::cmp::Ordering;
 use std::iter::Peekable;
-use errors::{Error, parse_error};
+use errors::Errors;
 use position::{Position, Span, DUMMY_SPAN};
 use parsing::tokens::{Token, TokenKind};
-use ast::{Node, Literal, Associativity};
+use ast::{Node, Name, Literal, Associativity};
 use ast::parsed::{
     Expr, Pattern, CaseBranch, LetDecl, Decl, Def, TypeAnnot, Scheme, Type,
     TypeAlias, UnionType, UnionCase, RecordType, Symbol, Trait, Impl, ItemList,
@@ -41,13 +41,16 @@ impl<T> PartialResult<T> {
     }
 }
 
-pub fn parse_module<I>(tokens: I, module: &str, require_def: bool) -> (Option<Module>, Vec<Error>)
+pub fn parse_module<I>(
+                        tokens: I,
+                        module: Name,
+                        require_def: bool,
+                        errors: &mut Errors) -> Option<Module>
         where I: Iterator<Item=Node<Token>> {
-    let mut parser = Parser::new(tokens, module);
+    let mut parser = Parser::new(tokens, module, errors);
     let module = parser.module(require_def).ok();
     debug_assert!(parser.is_at_end());
-
-    (module, parser.errors)
+    module
 }
 
 type ParseResult<T> = Result<T, ()>;
@@ -60,21 +63,21 @@ struct Parser<'a, I: Iterator<Item=Node<Token>>> {
     next_token: Option<Node<Token>>,
     tokens: Peekable<I>,
     expected_tokens: Vec<TokenKind>,
-    errors: Vec<Error>,
+    errors: &'a mut Errors,
     current_indent: usize,
     accept_aligned: bool,
     last_token_span: Span,
-    module: &'a str,
+    module: Name,
 }
 
 impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
-    fn new(mut tokens: I, module: &'a str) -> Parser<'a, I> {
+    fn new(mut tokens: I, module: Name, errors: &'a mut Errors) -> Self {
         let next_token = tokens.next();
         Parser {
             next_token: next_token,
             tokens: tokens.peekable(),
             expected_tokens: Vec::new(),
-            errors: Vec::new(),
+            errors: errors,
             current_indent: 0,
             accept_aligned: false,
             last_token_span: DUMMY_SPAN,
@@ -120,13 +123,19 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
             message.push_str(&format!(" Current indent is {}, align: {}.", self.current_indent, self.accept_aligned));
         }
 
-        self.errors.push(parse_error(message, span, self.module));
+        self.errors
+            .parse_error(&self.module)
+            .note(message, span)
+            .done();
     }
 
     fn bad_module_name(&mut self) {
         let span = self.previous_span();
         let message = format!("Expected to find module `{}`", self.module);
-        self.errors.push(parse_error(message, span, self.module));
+        self.errors
+            .parse_error(&self.module)
+            .note(message, span)
+            .done();
     }
 
     fn previous_span(&self) -> Span {
@@ -1801,7 +1810,7 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
             }
         };
 
-        if name.value != self.module {
+        if &name.value != self.module.as_str() {
             self.bad_module_name();
             return Err(());
         }
@@ -1936,8 +1945,9 @@ fn operator_left_section(operator: Node<Symbol>, expr: ExprNode, span: Span) -> 
 #[cfg(test)]
 mod tests {
     use parsing::lexer::lex;
-    use ast::Literal;
+    use ast::{Literal, Name};
     use ast::parsed::{Expr, Pattern, Type, Scheme, LetDecl, Def, TypeAnnot, Symbol, DoExpr};
+    use errors::Errors;
     use super::Parser;
 
     fn write_symbol(symbol: &Symbol, output: &mut String) {
@@ -2025,13 +2035,11 @@ mod tests {
 
     fn write_expr(expr: &Expr, output: &mut String) {
         match *expr {
-            Expr::Apply(ref f, ref args) => {
+            Expr::Apply(ref f, ref arg) => {
                 output.push_str("(apply ");
                 write_expr(&f.value, output);
-                for arg in args {
-                    output.push(' ');
-                    write_expr(&arg.value, output);
-                }
+                output.push(' ');
+                write_expr(&arg.value, output);
                 output.push(')');
             }
             Expr::Ident(ref symbol) => {
@@ -2231,32 +2239,42 @@ mod tests {
     }
 
     fn check_expr(source: &str, expected: &str) {
-        let (tokens, errors) = lex(source, "<test>");
-        assert!(errors.is_empty());
-        let mut parser = Parser::new(tokens.into_iter(), "<test>");
-        let expr = parser.expr(false).ok().unwrap();
+        let mut errors = Errors::new();
+        let name = Name::from_string("<test>".into());
+        let tokens = lex(source, name.clone(), &mut errors);
+        assert!(errors.into_error_list().is_empty());
+        let mut errors = Errors::new();
+        let expr = {
+            let mut parser = Parser::new(tokens.into_iter(), name, &mut errors);
+            parser.expr(false).ok().unwrap()
+        };
+        assert!(errors.into_error_list().is_empty());
         let mut printed = String::new();
         write_expr(&expr.value, &mut printed);
         assert_eq!(expected, printed);
-        assert!(parser.errors.is_empty());
     }
 
     fn check_pattern(source: &str, expected: &str) {
-        let (tokens, errors) = lex(source, "<test>");
-        assert!(errors.is_empty());
-        let mut parser = Parser::new(tokens.into_iter(), "<test>");
-        let pattern = parser.pattern().ok().unwrap();
+        let mut errors = Errors::new();
+        let name = Name::from_string("<test>".into());
+        let tokens = lex(source, name.clone(), &mut errors);
+        assert!(errors.into_error_list().is_empty());
+        let mut errors = Errors::new();
+        let pattern = {
+            let mut parser = Parser::new(tokens.into_iter(), name, &mut errors);
+            parser.pattern().ok().unwrap()
+        };
+        assert!(errors.into_error_list().is_empty());
         let mut printed = String::new();
         write_pattern(&pattern.value, &mut printed);
         assert_eq!(expected, printed);
-        assert!(parser.errors.is_empty());
     }
 
     #[test]
     fn basic_expr() {
         check_expr(
             "(f (g 4 true))",
-            "(parens (apply f (parens (apply g 4 true))))")
+            "(parens (apply f (parens (apply (apply g 4) true))))")
     }
 
     #[test]

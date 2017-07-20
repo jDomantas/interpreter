@@ -1,20 +1,20 @@
 use std::str::{Chars, FromStr};
 use std::iter::Peekable;
-use ast::Node;
+use ast::{Node, Name};
 use ast::parsed::Symbol;
-use errors::{Error, parse_error};
+use errors::Errors;
 use parsing::tokens::Token;
 use position::{Position, Span};
 
 
-pub fn lex(source: &str, module: &str) -> (Vec<Node<Token>>, Vec<Error>) {
-    let mut lexer = Lexer::new(source, module);
+pub fn lex(source: &str, module: Name, errors: &mut Errors) -> Vec<Node<Token>> {
+    let mut lexer = Lexer::new(source, module, errors);
     let mut tokens = Vec::new();
     while let Some(token) = lexer.next_token() {
         tokens.push(token);
     }
     tokens.push(lexer.make_eof_token());
-    (tokens, lexer.errors)
+    tokens
 }
 
 struct Lexer<'a, 'b> {
@@ -24,12 +24,12 @@ struct Lexer<'a, 'b> {
     column: usize,
     eof_position: Position,
     panicking: bool,
-    errors: Vec<Error>,
-    module: &'b str,
+    errors: &'b mut Errors,
+    module: Name,
 }
 
 impl<'a, 'b> Lexer<'a, 'b> {
-    fn new(source: &'a str, module: &'b str) -> Lexer<'a, 'b> {
+    fn new(source: &'a str, module: Name, errors: &'b mut Errors) -> Self {
         let mut chars = source.chars();
         let current = chars.next();
         Lexer {
@@ -39,13 +39,16 @@ impl<'a, 'b> Lexer<'a, 'b> {
             column: 1,
             eof_position: Position::new(1, 1),
             panicking: false,
-            errors: Vec::new(),
+            errors: errors,
             module: module,
         }
     }
 
-    fn emit_error(&mut self, message: &str, span: Span) {
-        self.errors.push(parse_error(message, span, self.module));
+    fn error(&mut self, message: &str, span: Span) {
+        self.errors
+            .parse_error(&self.module)
+            .note(message, span)
+            .done();
     }
 
     fn peek(&self) -> Option<char> {
@@ -128,7 +131,7 @@ impl<'a, 'b> Lexer<'a, 'b> {
                     }
                 }
                 None => {
-                    self.emit_error("unterminated block comment", opened_at);
+                    self.error("Unterminated block comment.", opened_at);
                     break;
                 }
                 _ => { }
@@ -168,7 +171,7 @@ impl<'a, 'b> Lexer<'a, 'b> {
             return Node::new(Token::Float(number), span);
         }
         
-        self.emit_error("invalid number literal", span);
+        self.error("Invalid number literal.", span);
         Node::new(Token::Error, span)
     }
 
@@ -188,7 +191,7 @@ impl<'a, 'b> Lexer<'a, 'b> {
                     let (segment, segment_span) = self.collect_chars(is_symbol_char);
                     debug_assert!(!segment.is_empty());
                     if ident_keyword(&segment).is_some() {
-                        self.emit_error("path contains keyword", segment_span);
+                        self.error("Path segment is a keyword.", segment_span);
                         return Node::new(Token::Error, span);
                     }
                     if !path.is_empty() {
@@ -200,7 +203,7 @@ impl<'a, 'b> Lexer<'a, 'b> {
                 }
                 _ => {
                     let error_span = self.current_position().span_to(self.current_position());
-                    self.emit_error("missing path segment", error_span);
+                    self.error("Expected path segment after dot.", error_span);
                     return Node::new(Token::Error, span);
                 }
             }
@@ -226,7 +229,7 @@ impl<'a, 'b> Lexer<'a, 'b> {
                 column: end_position.column - 1,
             };
             let error_span = start_position.span_to(end_position);
-            self.emit_error("unexpected end of block comment", error_span);
+            self.error("Unexpected end of block comment.", error_span);
             self.consume();
             return Node::new(Token::Error, span);
         }
@@ -287,7 +290,7 @@ impl<'a, 'b> Lexer<'a, 'b> {
                 }
                 '\t' => {
                     let span = self.current_position().span_to(self.current_position());
-                    self.emit_error("tab character", span);
+                    self.error("Found tab character. Please indent your code using spaces.", span);
                     self.advance();
                 }
                 ch if ch.is_whitespace() => {
@@ -295,7 +298,7 @@ impl<'a, 'b> Lexer<'a, 'b> {
                 }
                 _ => {
                     let span = self.current_position().span_to(self.current_position());
-                    self.emit_error("unknown character", span);
+                    self.error("Found unknown character.", span);
                     self.advance();
                 }
             }
@@ -401,15 +404,18 @@ fn change_special(token: Token) -> Token {
 
 #[cfg(test)]
 mod tests {
-    use ast::Node;
+    use ast::{Node, Name};
     use ast::parsed::Symbol;
+    use errors::Errors;
     use position::{Position, Span};
     use parsing::tokens::Token;
     use parsing::lexer::lex;
 
     fn lex_no_positions(source: &str) -> Vec<Token> {
-        let (tokens, errors) = lex(source, "<test>");
-        assert!(errors.is_empty());
+        let mut errors = Errors::new();
+        let name = Name::from_string("<test>".into());
+        let tokens = lex(source, name, &mut errors);
+        assert!(errors.into_error_list().is_empty());
         tokens.into_iter().map(|tok| tok.value).collect()
     }
 
@@ -465,8 +471,10 @@ mod tests {
 
     #[test]
     fn positions() {
-        let (tokens, errors) = lex("a =\n1", "<test>");
-        assert!(errors.is_empty());
+        let mut errors = Errors::new();
+        let name = Name::from_string("<test>".into());
+        let tokens = lex("a =\n1", name, &mut errors);
+        assert!(errors.into_error_list().is_empty());
         assert_eq!(tokens, vec![
             Node {
                 value: Token::Ident(Symbol::Unqualified("a".to_string())),

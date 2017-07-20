@@ -1,19 +1,20 @@
-extern crate interpreter;
+/*extern crate interpreter;
 
 use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
 use interpreter::position::Span;
-use interpreter::errors::Error;
+use interpreter::errors::Error;*/
 
 
 fn main() {
-    let mut file = fs::File::open("test_program.test").unwrap();
+    /*let mut file = fs::File::open("test_program.test").unwrap();
     let mut source = String::new();
     file.read_to_string(&mut source).unwrap();
-    run(&source);
+    run(&source);*/
+    println!("I'm broken!");
 }
-
+/*
 fn run(source: &str) {
     use interpreter::parsing::parse_modules;
     use interpreter::compiler::symbols::resolve_symbols;
@@ -106,3 +107,4 @@ fn display_span(source: &str, span: Span) {
     }
     println!("");
 }
+*/

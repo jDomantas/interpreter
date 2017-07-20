@@ -3,8 +3,9 @@ mod lexer;
 mod parser;
 
 use std::collections::{HashSet, HashMap};
+use ast::Name;
 use ast::parsed::Module;
-use errors::{self, Error};
+use errors::Errors;
 
 pub trait SourceProvider {
     fn get_module_source(&self, name: &str) -> Result<&str, String>;
@@ -27,19 +28,19 @@ impl SourceProvider for HashMapProvider {
     }
 }
 
-pub fn parse_module(source: &str, module: &str, require_def: bool) -> (Option<Module>, Vec<Error>) {
-    let (tokens, lex_errors) = lexer::lex(source, module);
-    let (module, mut parse_errors) = parser::parse_module(tokens.into_iter(), module, require_def);
-    parse_errors.extend(lex_errors);
-    (module, parse_errors)
+pub fn parse_module(source: &str, module: Name, require_def: bool, errors: &mut Errors) -> Option<Module> {
+    let tokens = lexer::lex(source, module.clone(), errors);
+    let module = parser::parse_module(tokens.into_iter(), module, require_def, errors);
+    module
 }
 
-pub fn parse_modules<T: SourceProvider>(main: &str, provider: &T) -> (HashMap<String, Module>, Vec<Error>) {
+pub fn parse_modules<T: SourceProvider>(main: &str, provider: &T, errors: &mut Errors) -> HashMap<String, Module> {
     let mut modules = HashMap::<String, Module>::new();
     let mut to_walk = Vec::new();
     let mut checked = HashSet::new();
 
-    let (main_module, mut errors) = parse_module(main, "<main>", false);
+    let main_name = Name::from_string("<main>".into());
+    let main_module = parse_module(main, main_name, false, errors);
 
     if let Some(module) = main_module {
         to_walk.push(module);
@@ -53,18 +54,17 @@ pub fn parse_modules<T: SourceProvider>(main: &str, provider: &T) -> (HashMap<St
             }
             match provider.get_module_source(name) {
                 Ok(source) => {
-                    let (module, parse_errors) = parse_module(source, name, true);
-                    errors.extend(parse_errors);
+                    let name = Name::from_string(name.clone());
+                    let module = parse_module(source, name, true, errors);
                     if let Some(module) = module {
                         to_walk.push(module);
                     }
                 }
                 Err(message) => {
-                    let error = errors::module_not_loaded(
-                        message,
-                        import.value.name.span,
-                        name.as_ref());
-                    errors.push(error);
+                    errors
+                        .parse_error(&Name::from_string(module.name().into()))
+                        .note(message, import.value.name.span)
+                        .done();
                 }
             }
             checked.insert(name.clone());
@@ -73,5 +73,5 @@ pub fn parse_modules<T: SourceProvider>(main: &str, provider: &T) -> (HashMap<St
         modules.insert(name, module);
     }
 
-    (modules, errors)
+    modules
 }

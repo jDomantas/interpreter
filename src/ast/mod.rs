@@ -4,7 +4,7 @@ use position::Span;
 
 pub mod parsed;
 pub mod resolved;
-// pub mod typed;
+pub mod typed;
 
 
 #[derive(PartialEq, Eq, Debug, Hash, Clone)]
@@ -26,6 +26,40 @@ impl<T> Node<T> {
             value: f(self.value),
             span: self.span,
         }
+    }
+}
+
+pub trait NodeView<T> {
+    fn inner(&self) -> &T;
+    fn inner_mut(&mut self) -> &mut T;
+    fn get_span(&self) -> Span;
+}
+
+impl<T> NodeView<T> for T {
+    fn inner(&self) -> &T {
+        self
+    }
+
+    fn inner_mut(&mut self) -> &mut T {
+        self
+    }
+
+    fn get_span(&self) -> Span {
+        ::position::DUMMY_SPAN
+    }
+}
+
+impl<T> NodeView<T> for Node<T> {
+    fn inner(&self) -> &T {
+        &self.value
+    }
+
+    fn inner_mut(&mut self) -> &mut T {
+        &mut self.value
+    }
+
+    fn get_span(&self) -> Span {
+        self.span
     }
 }
 

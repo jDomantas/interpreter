@@ -260,8 +260,18 @@ pub struct Impl {
     pub module: Name,
 }
 
+#[derive(Debug, Clone)]
+pub struct GroupedImpl {
+    pub scheme: Node<Scheme>,
+    pub trait_: Node<Symbol>,
+    pub values: Vec<Vec<Node<Def>>>,
+    // mapping from impl symbols to trait symbols
+    pub trait_items: HashMap<Sym, Sym>,
+    pub module: Name,
+}
+
 #[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Hash, Copy, Clone)]
-pub struct Sym(u64);
+pub struct Sym(pub u64);
 
 impl Sym {
     pub fn new(id: u64) -> Sym {
@@ -292,28 +302,51 @@ impl Items {
     }
 }
 
+#[derive(Default)]
+pub struct GroupedItems {
+    pub types: Vec<TypeDecl>,
+    pub items: Vec<Vec<Def>>,
+    pub traits: Vec<Trait>,
+    pub impls: Vec<GroupedImpl>,
+    pub annotations: HashMap<Sym, Node<TypeAnnot>>,
+    pub fixities: HashMap<Sym, (Associativity, u64)>,
+    pub symbol_names: HashMap<Sym, String>,
+}
+
+impl GroupedItems {
+    pub fn new() -> Items {
+        Default::default()
+    }
+}
+
 
 pub mod printer {
     use super::*;
     pub fn print_items(items: &Items) {
-        let mut printer = Printer { indent: 0 };
+        let mut printer = Printer {
+            indent: 0,
+            symbol_names: &items.symbol_names,
+        };
         for typ in &items.types {
             match *typ {
-                TypeDecl::Record(_) => unimplemented!(),
+                TypeDecl::Record(ref record) => printer.print_record(record),
                 TypeDecl::TypeAlias(ref alias) => printer.print_alias(alias),
                 TypeDecl::Union(ref union) => printer.print_union(union),
             }
+            println!("");
         }
         for def in &items.items {
             printer.print_def(&def);
+            println!("");
         }
     }
 
-    struct Printer {
+    struct Printer<'a> {
         indent: usize,
+        symbol_names: &'a HashMap<Sym, String>,
     }
 
-    impl Printer {
+    impl<'a> Printer<'a> {
         fn print_indent(&self) {
             for _ in 0..(self.indent) {
                 print!("  ");
@@ -329,8 +362,17 @@ pub mod printer {
                     self.print_expr(&b.value);
                     print!(")");
                 }
-                Expr::Bind(..) => {
-                    unimplemented!();
+                Expr::Bind(ref pat, ref value, ref rest) => {
+                    println!("do");
+                    self.indent += 1;
+                    self.print_indent();
+                    self.print_pattern(&pat.value);
+                    print!(" <- ");
+                    self.print_expr(&value.value);
+                    println!("");
+                    self.print_indent();
+                    self.print_expr(&rest.value);
+                    self.indent -= 1;
                 }
                 Expr::Case(ref expr, ref branches) => {
                     print!("case ");
@@ -343,8 +385,16 @@ pub mod printer {
                     }
                     self.indent -= 1;
                 }
-                Expr::DoIf(..) => {
-                    unimplemented!();
+                Expr::DoIf(ref expr, ref rest) => {
+                    println!("do");
+                    self.indent += 1;
+                    self.print_indent();
+                    print!("if ");
+                    self.print_expr(&expr.value);
+                    println!("");
+                    self.print_indent();
+                    self.print_expr(&rest.value);
+                    self.indent -= 1;
                 }
                 Expr::Ident(sym) => {
                     self.print_symbol(sym);
@@ -369,7 +419,9 @@ pub mod printer {
                 Expr::Infix(ref l, ref op, ref r) => {
                     print!("(");
                     self.print_expr(&l.value);
+                    print!(" `");
                     self.print_symbol(op.value);
+                    print!("` ");
                     self.print_expr(&r.value);
                     print!(")");
                 }
@@ -380,8 +432,21 @@ pub mod printer {
                     self.print_expr(&value.value);
                     print!(")");
                 }
-                Expr::Let(..) => {
-                    unimplemented!()
+                Expr::Let(ref defs, ref value) => {
+                    println!("(let");
+                    self.indent += 1;
+                    for def in defs {
+                        self.print_indent();
+                        self.print_def(&def.value);
+                    }
+                    self.indent -= 1;
+                    self.print_indent();
+                    println!("in");
+                    self.indent += 1;
+                    self.print_indent();
+                    self.print_expr(&value.value);
+                    print!(")");
+                    self.indent -= 1;
                 }
                 Expr::List(ref items) => {
                     print!("[");
@@ -420,11 +485,11 @@ pub mod printer {
 
         fn print_symbol(&mut self, symbol: Symbol) {
             match symbol {
-                Symbol::Known(Sym(id)) => {
-                    print!("s_{}", id);
+                Symbol::Known(sym) => {
+                    print!("{}", self.symbol_names[&sym]);
                 }
                 Symbol::Unknown => {
-                    print!("s_?");
+                    print!("?");
                 }
             }
         }
@@ -436,8 +501,11 @@ pub mod printer {
                 print!(" if ");
                 self.print_expr(&guard.value);
             }
-            print!(" -> ");
+            println!(" ->");
+            self.indent += 1;
+            self.print_indent();
             self.print_expr(&branch.value.value);
+            self.indent -= 1;
         }
 
         fn print_pattern(&mut self, pattern: &Pattern) {
@@ -541,7 +609,7 @@ pub mod printer {
         fn print_union(&mut self, union: &UnionType) {
             print!("type ");
             self.print_sym(union.name.value);
-            for var in &alias.vars {
+            for var in &union.vars {
                 print!(" ");
                 self.print_sym(var.value);
             }
@@ -572,11 +640,42 @@ pub mod printer {
             println!("");
         }
 
+        fn print_record(&mut self, record: &RecordType) {
+            print!("type ");
+            self.print_sym(record.name.value);
+            for var in &record.vars {
+                print!(" ");
+                self.print_sym(var.value);
+            }
+            if record.fields.len() == 0 {
+                println!(" = {{}}");
+            } else {
+                println!(" =");
+                self.indent += 1;
+                let mut first = true;
+                for &(ref name, ref type_) in &record.fields {
+                    self.print_indent();
+                    if first { print!("{{ "); } else { print!(", "); }
+                    self.print_sym(name.value);
+                    print!(" : ");
+                    self.print_type(&type_.value);
+                    println!("");
+                    first = false;
+                }
+                self.print_indent();
+                println!("}}");
+                self.indent -= 1;
+            }
+        }
+
         fn print_def(&mut self, def: &Def) {
             self.print_sym(def.sym.value);
-            print!(" = ");
+            println!(" =");
+            self.indent += 1;
+            self.print_indent();
             self.print_expr(&def.value.value);
             println!("");
+            self.indent -= 1;
         }
     }
 }

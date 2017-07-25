@@ -189,11 +189,47 @@ struct Resolver<'a> {
 
 impl<'a> Resolver<'a> {
     fn new(errors: &'a mut Errors) -> Resolver<'a> {
+        use compiler::builtins::{types, values, traits};
+        let mut result = r::Items::new();
+        // TODO: fix this horrible horrible hack?
+        result.symbol_names.insert(Sym(0), "self".into());
+
+        result.symbol_names.insert(types::FRAC, "Basics.Frac".into());
+        result.symbol_names.insert(types::BOOL, "Basics.Bool".into());
+        result.symbol_names.insert(types::CHAR, "Basics.Char".into());
+        result.symbol_names.insert(types::STRING, "String.String".into());
+        result.symbol_names.insert(types::LIST, "List.List".into());
+
+        result.symbol_names.insert(traits::MONAD, "Monad.Monad".into());
+        result.symbol_names.insert(traits::DEFAULT, "Basics.Default".into());
+        result.symbol_names.insert(traits::NUMBER, "Basics.Number".into());
+
+        result.symbol_names.insert(values::NIL, "List.Nil".into());
+        result.symbol_names.insert(values::CONS, "List.::".into());
+        result.symbol_names.insert(values::BIND, "Monad.bind".into());
+        result.symbol_names.insert(values::DEFAULT, "Basics.default".into());
+        result.symbol_names.insert(values::AND, "Basics.&&".into());
+        result.symbol_names.insert(values::OR, "Basics.||".into());
+        result.symbol_names.insert(values::INT_ADD, "Basics.intAdd".into());
+        result.symbol_names.insert(values::INT_SUB, "Basics.intSub".into());
+        result.symbol_names.insert(values::INT_MUL, "Basics.intMul".into());
+        result.symbol_names.insert(values::INT_DIV, "Basics.intDiv".into());
+        result.symbol_names.insert(values::INT_LE, "Basics.intLe".into()); 
+        result.symbol_names.insert(values::INT_EQ, "Basics.intEq".into()); 
+        result.symbol_names.insert(values::INT_GR, "Basics.intGr".into()); 
+        result.symbol_names.insert(values::FRAC_ADD, "Basics.fracAdd".into());
+        result.symbol_names.insert(values::FRAC_SUB, "Basics.fracSub".into());
+        result.symbol_names.insert(values::FRAC_MUL, "Basics.fracMul".into());
+        result.symbol_names.insert(values::FRAC_DIV, "Basics.fracDiv".into());
+        result.symbol_names.insert(values::FRAC_LE, "Basics.fracLe".into());
+        result.symbol_names.insert(values::FRAC_EQ, "Basics.fracEq".into());
+        result.symbol_names.insert(values::FRAC_GR, "Basics.fracGr".into());
+        
         Resolver {
             errors: errors,
-            result: r::Items::new(),
+            result: result,
             traits: HashMap::new(),
-            next_sym: 0,
+            next_sym: 100,
         }
     }
 
@@ -202,6 +238,68 @@ impl<'a> Resolver<'a> {
         self.next_sym += 1;
         self.result.symbol_names.insert(sym, name.into());
         sym
+    }
+
+    fn fresh_type_sym(&mut self, module: &Name, name: &str) -> r::Sym {
+        use compiler::builtins::types;
+        match (module.as_str(), name) {
+            ("Basics", "Frac") => types::FRAC,
+            ("Basics", "Bool") => types::BOOL,
+            ("Basics", "Char") => types::CHAR,
+            ("String", "String") => types::STRING,
+            ("List", "List") => types::LIST,
+            _ => {
+                let name = format!("{}.{}", module, name);
+                self.fresh_sym(name)
+            }
+        }
+    }
+
+    fn fresh_trait_sym(&mut self, module: &Name, name: &str) -> r::Sym {
+        use compiler::builtins::traits;
+        match (module.as_str(), name) {
+            ("Monad", "Monad") => traits::MONAD,
+            ("Basics", "Default") => traits::DEFAULT,
+            ("Basics", "Number") => traits::NUMBER,
+            _ => {
+                let name = format!("{}.{}", module, name);
+                self.fresh_sym(name)
+            }
+        }
+    }
+
+    fn fresh_value_sym(&mut self, module: &Name, name: &str, parent: Option<&str>) -> r::Sym {
+        use compiler::builtins::values;
+        match (module.as_str(), parent, name) {
+            ("List", Some("List"), "Nil") => values::NIL,
+            ("List", Some("List"), "::") => values::CONS,
+            ("Monad", None, "bind") => values::BIND,
+            ("Basics", None, "default") => values::DEFAULT,
+            ("Basics", None, "&&") => values::AND,
+            ("Basics", None, "||") => values::OR,
+            ("Basics", None, "intAdd") => values::INT_ADD,
+            ("Basics", None, "intSub") => values::INT_SUB,
+            ("Basics", None, "intMul") => values::INT_MUL,
+            ("Basics", None, "intDiv") => values::INT_DIV,
+            ("Basics", None, "intLe") => values::INT_LE,
+            ("Basics", None, "intEq") => values::INT_EQ,
+            ("Basics", None, "intGr") => values::INT_GR,
+            ("Basics", None, "fracAdd") => values::FRAC_ADD,
+            ("Basics", None, "fracSub") => values::FRAC_SUB,
+            ("Basics", None, "fracMul") => values::FRAC_MUL,
+            ("Basics", None, "fracDiv") => values::FRAC_DIV,
+            ("Basics", None, "fracLe") => values::FRAC_LE,
+            ("Basics", None, "fracEq") => values::FRAC_EQ,
+            ("Basics", None, "fracGr") => values::FRAC_GR,
+            _ => {
+                let name = format!("{}.{}", module, name);
+                self.fresh_sym(name)
+            }
+        }
+    }
+
+    fn fresh_var_sym(&mut self, var: &str) -> r::Sym {
+        self.fresh_sym(var)
     }
 
     fn fresh_artificial_sym(&mut self) -> r::Sym {
@@ -346,7 +444,8 @@ impl<'a> Resolver<'a> {
                     for Node { value: var, span } in vars {
                         match values.entry(var) {
                             Entry::Vacant(entry) => {
-                                entry.insert((None, span, self.fresh_sym(var)));
+                                let sym = self.fresh_value_sym(module_name, var, None);
+                                entry.insert((None, span, sym));
                             }
                             Entry::Occupied(entry) => {
                                 let another = entry.get().1;
@@ -362,7 +461,7 @@ impl<'a> Resolver<'a> {
                 }
                 Decl::Record(ref record) => {
                     let mut reported = false;
-                    let sym = self.fresh_sym(record.name.value.clone());
+                    let sym = self.fresh_type_sym(module_name, &record.name.value);
                     match types.entry(&record.name.value) {
                         Entry::Vacant(entry) => {
                             entry.insert((record.name.span, sym));
@@ -414,11 +513,14 @@ impl<'a> Resolver<'a> {
                     for field in &record.fields {
                         match values.entry(&field.0.value) {
                             Entry::Vacant(entry) => {
+                                let sym = self.fresh_value_sym(
+                                        module_name,
+                                        &field.0.value,
+                                        Some(&record.name.value));
                                 entry.insert((
                                     Some(&record.name.value),
                                     field.0.span,
-                                    self.fresh_sym(field.0.value.clone())
-                                ));
+                                    sym));
                             }
                             Entry::Occupied(entry) => {
                                 let span = entry.get().1;
@@ -433,7 +535,7 @@ impl<'a> Resolver<'a> {
                     }
                 }
                 Decl::Trait(ref trait_) => {
-                    let trait_sym = self.fresh_sym(trait_.name.value.clone());
+                    let trait_sym = self.fresh_trait_sym(module_name, &trait_.name.value);
                     let mut info = TraitInfo::new();
                     match traits.entry(&trait_.name.value) {
                         Entry::Vacant(entry) => {
@@ -454,7 +556,7 @@ impl<'a> Resolver<'a> {
                         let item = &value.value.value.value;
                         match values.entry(item) {
                             Entry::Vacant(entry) => {
-                                let sym = self.fresh_sym(item.clone());
+                                let sym = self.fresh_value_sym(module_name, item, None);
                                 info.item_symbols.insert(item.clone(), sym);
                                 entry.insert((None, value.value.value.span, sym));
                             }
@@ -475,7 +577,7 @@ impl<'a> Resolver<'a> {
                 Decl::TypeAlias(ref type_) => {
                     match types.entry(&type_.name.value) {
                         Entry::Vacant(entry) => {
-                            let sym = self.fresh_sym(type_.name.value.clone());
+                            let sym = self.fresh_type_sym(module_name, &type_.name.value);
                             entry.insert((type_.name.span, sym));
                         }
                         Entry::Occupied(entry) => {
@@ -492,7 +594,7 @@ impl<'a> Resolver<'a> {
                 Decl::Union(ref union) => {
                     match types.entry(&union.name.value) {
                         Entry::Vacant(entry) => {
-                            let sym = self.fresh_sym(union.name.value.clone());
+                            let sym = self.fresh_type_sym(module_name, &union.name.value);
                             entry.insert((union.name.span, sym));
                         }
                         Entry::Occupied(entry) => {
@@ -506,14 +608,16 @@ impl<'a> Resolver<'a> {
                         }
                     }
                     for case in &union.cases {
-                        let sym = self.fresh_sym(case.value.tag.value.clone());
+                        let sym = self.fresh_value_sym(
+                            module_name,
+                            &case.value.tag.value,
+                            Some(&union.name.value));
                         let reported = match values.entry(&case.value.tag.value) {
                             Entry::Vacant(entry) => {
                                 entry.insert((
                                     Some(&union.name.value),
                                     case.value.tag.span,
-                                    sym
-                                ));
+                                    sym));
                                 false
                             }
                             Entry::Occupied(entry) => {
@@ -1061,6 +1165,11 @@ impl<'a> Resolver<'a> {
             }
             r::Symbol::Unknown => HashMap::new(),
         };
+
+        // remove locals that are trait items, so that trait items used in
+        // definitions would not resolve to this impl, but to the general item
+        locals.retain(|&(_, sym)| !trait_items.contains_key(&sym));
+
         let mut resolved_defs = Vec::new();
         for def in &impl_.values {
             let span = def.span;
@@ -1091,8 +1200,8 @@ impl<'a> Resolver<'a> {
         let vars = def.pattern.value.bound_vars(def.pattern.span);
         let mut var_symbols = HashMap::new();
         for var in &vars {
-            let name = var.value.to_string();
-            var_symbols.insert(var.value, self.fresh_sym(name));
+            let sym = ctx.locals.get_value(&var.value).unwrap();
+            var_symbols.insert(var.value, sym);
         }
         let pattern = self.resolve_pattern(&def.pattern, &var_symbols, ctx);
         let expr = match def.value.as_ref().map(|e| self.resolve_expr(e, ctx)) {
@@ -1195,7 +1304,7 @@ impl<'a> Resolver<'a> {
                 let case = r::Expr::Case(Box::new(expr), vec![branch]);
                 let case = Node::new(case, def_span);
                 defs.push(r::Def {
-                    sym: Node::new(fresh, pattern_span),
+                    sym: Node::new(var, pattern_span),
                     value: case,
                     module: ctx.module.clone(),
                     artificial: false,
@@ -1212,7 +1321,7 @@ impl<'a> Resolver<'a> {
         let mut vars = Vec::new();
         let mut var_symbols = HashMap::new();
         for var in &record.vars {
-            let sym = self.fresh_sym(var.value.clone());
+            let sym = self.fresh_var_sym(&var.value);
             vars.push(Node::new(sym, var.span));
             var_symbols.insert(var.value.as_str(), sym);
         }
@@ -1274,7 +1383,7 @@ impl<'a> Resolver<'a> {
         let mut vars = Vec::new();
         let mut var_symbols = HashMap::new();
         for var in &alias.vars {
-            let sym = self.fresh_sym(var.value.clone());
+            let sym = self.fresh_var_sym(&var.value);
             vars.push(Node::new(sym, var.span));
             var_symbols.insert(var.value.as_str(), sym);
         }
@@ -1299,7 +1408,7 @@ impl<'a> Resolver<'a> {
         let mut vars = Vec::new();
         let mut var_symbols = HashMap::new();
         for var in &union.vars {
-            let sym = self.fresh_sym(var.value.clone());
+            let sym = self.fresh_var_sym(&var.value);
             vars.push(Node::new(sym, var.span));
             var_symbols.insert(var.value.as_str(), sym);
         }
@@ -1338,7 +1447,7 @@ impl<'a> Resolver<'a> {
                 if let Some(&sym) = vars.get(v.as_str()) {
                     r::Type::Var(sym)
                 } else if allow_new_vars {
-                    let sym = self.fresh_sym(v.clone());
+                    let sym = self.fresh_var_sym(v);
                     vars.insert(v, sym);
                     r::Type::Var(sym)
                 } else {
@@ -1384,7 +1493,7 @@ impl<'a> Resolver<'a> {
             let bound = self.resolve_trait_bound(bound, ctx);
             let v = vars
                 .entry(var.value.as_str())
-                .or_insert_with(|| self.fresh_sym(var.value.clone()));
+                .or_insert_with(|| self.fresh_var_sym(&var.value));
             bounds.push((Node::new(*v, var.span), bound));
         }
 
@@ -1550,14 +1659,14 @@ impl<'a> Resolver<'a> {
                     let pattern_span = pattern.span;
                     let sym = r::Symbol::Known(fresh);
                     let ident = Node::new(r::Expr::Ident(sym), pattern_span);
+                    let span = pattern_span.merge(result.span);
                     let branch = r::CaseBranch {
                         pattern: pattern,
-                        value: ident,
+                        value: result,
                         guard: None,
                     };
                     let branch = Node::new(branch, pattern_span);
-                    let span = pattern_span.merge(result.span);
-                    let case = r::Expr::Case(Box::new(result), vec![branch]);
+                    let case = r::Expr::Case(Box::new(ident), vec![branch]);
                     result = Node::new(case, span);
                 }
                 for sym in fresh_symbols.into_iter().rev() {
@@ -1639,7 +1748,8 @@ impl<'a> Resolver<'a> {
                 let rest = Node::new(Expr::Do(rest.clone()), rest.span);
                 let let_ = Expr::Let(decls, Box::new(rest));
                 let let_ = Node::new(let_, expr.span);
-                // I know that no references derived from 'let_' will escape
+                // I know that no references derived from 'let_' will escape,
+                // because `locals` is restored to previous size after resolving
                 // .. right?
                 let hack = unsafe { ::std::mem::transmute(&let_) };
                 self.resolve_expr_with_locals(hack, ctx, locals).value

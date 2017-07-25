@@ -125,7 +125,10 @@ impl<'a, 'b, T: Hash + Eq + ?Sized> TarjanCtx<'a, 'b, T> {
         self.on_stack.insert(node);
         self.stack.push(node);
 
-        for &ng in self.neighbours.get(node).unwrap() {
+        for &ng in &self.neighbours[node] {
+            if !self.neighbours.contains_key(&ng) {
+                continue;
+            }
             if !self.index.contains_key(ng) {
                 let link = self.connect(ng);
                 let my_link = ::std::cmp::min(self.lowlink[node], link);
@@ -175,4 +178,8 @@ pub fn collect_concrete_types<'a>(type_: &'a Node<Type>, result: &mut Vec<&'a Sy
             }
         }
     }
+}
+
+pub fn slice_from_ref<T>(item: &T) -> &[T] {
+    unsafe { ::std::slice::from_raw_parts(item, 1) }
 }

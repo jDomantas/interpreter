@@ -48,11 +48,11 @@ impl<'a, 'b> Context<'a, 'b> {
         debug_assert!(a1 != a2 || a1 == Associativity::None || a2 == Associativity::None);
         debug_assert!(left.value != right.value || a1 == Associativity::None);
         let message = if left.value == right.value {
-            format!("Operator '{}' is {}.",
+            format!("Operator `{}` is {}.",
                 self.symbol_names[&le],
                 a1.as_str())
         } else {
-            format!("Operator '{}' is {}, and '{}' is {}.",
+            format!("Operator `{}` is {}, and `{}` is {}.",
                 self.symbol_names[&le],
                 a1.as_str(),
                 self.symbol_names[&ri],

@@ -45,6 +45,7 @@ pub enum Phase {
     FixityResolution,
     KindChecking,
     TypeAliasExpansion,
+    PatternError,
     TypeChecking,
 }
 
@@ -80,6 +81,14 @@ impl Errors {
 
     pub fn kind_error(&mut self, module: &Name) -> ErrorBuilder {
         self.new_error(Phase::KindChecking, module)
+    }
+
+    pub fn type_error(&mut self, module: &Name) -> ErrorBuilder {
+        self.new_error(Phase::TypeChecking, module)
+    }
+
+    pub fn pattern_error(&mut self, module: &Name) -> ErrorBuilder {
+        self.new_error(Phase::PatternError, module)
     }
 
     pub fn into_error_list(mut self) -> Vec<Error> {

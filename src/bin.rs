@@ -20,6 +20,8 @@ fn run(source: &str) {
     use interpreter::compiler::alias_expansion::expand_aliases;
     use interpreter::compiler::precedence::fix_items;
     use interpreter::compiler::kind_check::find_kind_errors;
+    use interpreter::compiler::def_grouping::group_items;
+    use interpreter::compiler::type_check::infer_types;
 
     let modules = interpreter::parsing::HashMapProvider::new(HashMap::new());
     let mut errors = interpreter::errors::Errors::new();
@@ -65,7 +67,17 @@ fn run(source: &str) {
     };
     assert!(res.is_ok());
 
-    interpreter::ast::resolved::printer::print_items(&items);
+    let items = group_items(items);
+
+    let items = infer_types(items, &mut errors);
+    if errors.have_errors() {
+        for err in errors.into_error_list() {
+            format_error(source, &err);
+        }
+        return;
+    }
+
+    interpreter::ast::typed::printer::print_items(&items);
 
     println!("OK");
 }
@@ -86,7 +98,8 @@ fn format_error(source: &str, error: &Error) {
 }
 
 fn display_span(source: &str, span: Span) {
-    let line = source.lines().skip(span.start.line - 1).next().unwrap();
+    let line = if span.start.line == 0 { 0 } else { span.start.line - 1 };
+    let line = source.lines().skip(line).next().unwrap();
     println!("{: >5} | {}", span.start.line, line);
     for _ in 0..(span.start.column + 7) {
         print!(" ");

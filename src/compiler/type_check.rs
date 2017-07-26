@@ -1349,9 +1349,16 @@ fn collect_constructor_types(items: &r::GroupedItems) -> HashMap<Sym, (Scheme, S
                         bounds: Vec::new()
                     });
                 }
-                for &(_, ref ty) in record.fields.iter().rev() {
-                    let arg = convert_resolved_type(&ty.value, &Type::Any);
-                    type_ = Type::Function(Rc::new(type_), Rc::new(arg));
+                for &(ref sym, ref ty) in record.fields.iter().rev() {
+                    let arg = Rc::new(convert_resolved_type(&ty.value, &Type::Any));
+                    let ty = Rc::new(type_);
+                    let getter = Type::Function(ty.clone(), arg.clone());
+                    let getter_scheme = Scheme {
+                        vars: scheme_vars.clone(),
+                        type_: getter,
+                    };
+                    types.insert(sym.value, (getter_scheme, sym.span));
+                    type_ = Type::Function(arg, ty);
                 }
                 let scheme = Scheme {
                     vars: scheme_vars,

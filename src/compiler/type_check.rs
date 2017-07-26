@@ -1430,6 +1430,54 @@ fn collect_resolved_type_vars(type_: &r::Type, vars: &mut HashSet<u64>) {
     }
 }
 
+fn are_schemes_equal(a: &Scheme, b: &Scheme) -> bool {
+    fn unify(a: &Type, b: &Type, mapping: &mut HashMap<u64, u64>) -> bool {
+        match (a, b) {
+            (&Type::Any, &Type::Any) => true,
+            (&Type::Concrete(a), &Type::Concrete(b)) => a == b,
+            (&Type::Apply(ref a1, ref a2), &Type::Apply(ref b1, ref b2)) |
+            (&Type::Function(ref a1, ref a2), &Type::Function(ref b1, ref b2)) => {
+                unify(a1, b1, mapping) && unify(a2, b2, mapping)
+            }
+            (&Type::Tuple(ref a), &Type::Tuple(ref b)) => {
+                a.len() == b.len() && {
+                    for (a, b) in a.iter().zip(b.iter()) {
+                        if !unify(a, b, mapping) {
+                            return false;
+                        }
+                    }
+                    true
+                }
+            }
+            (&Type::Var(a), &Type::Var(b)) => {
+                *mapping.entry(a).or_insert(b) == b
+            }
+            _ => false,
+        }
+    }
+    fn sorted<T: Clone + Ord>(v: &[T]) -> Vec<T> {
+        let mut v = v.iter().cloned().collect::<Vec<_>>();
+        v.sort();
+        v
+    }
+    let mut var_mapping = HashMap::new();
+    if !unify(&a.type_, &b.type_, &mut var_mapping) {
+        return false;
+    }
+    if var_mapping.values().cloned().collect::<HashSet<_>>().len() != var_mapping.len() {
+        return false;
+    }
+    let b_bounds = b.vars.iter().map(|v| (v.id, sorted(&v.bounds))).collect::<HashMap<_, _>>();
+    for a_var in &a.vars {
+        let b_var = var_mapping[&a_var.id];
+        let expected_bounds = sorted(&a_var.bounds);
+        if b_bounds.get(&b_var) != Some(&expected_bounds) {
+            return false;
+        }
+    }
+    true
+}
+
 fn make_impl_annotations(
                             items: &r::GroupedItems,
                             trait_item_types: &HashMap<Sym, Scheme>) -> HashMap<Sym, Scheme> {
@@ -1491,8 +1539,8 @@ pub fn infer_types(mut items: r::GroupedItems, errors: &mut Errors) -> t::Items 
     let mut known_types = collect_constructor_types(&items);
     known_types.extend(collect_trait_item_types(&items));
     known_types.extend(items.annotations
-        .drain()
-        .map(|(sym, annot)| {
+        .iter()
+        .map(|(&sym, annot)| {
             let scheme = convert_resolved_scheme(&annot.value.type_.value);
             (sym, (scheme, annot.span))
         }));
@@ -1528,8 +1576,25 @@ pub fn infer_types(mut items: r::GroupedItems, errors: &mut Errors) -> t::Items 
         .filter_map(convert_resolved_type_decl)
         .collect();
 
-    // TODO: check that infered types match annotations
-
+    for def in &defs {
+        if let Some(annot) = items.annotations.get(&def.sym.value) {
+            let scheme = convert_resolved_scheme(&annot.value.type_.value);
+            if !are_schemes_equal(&def.scheme, &scheme) {
+                let msg1 = format!(
+                    "Infered type of `{}` is less general than annotated. Infered type `{}`,",
+                    items.symbol_names[&annot.value.value.value],
+                    def.scheme.display(&items.symbol_names));
+                let msg2 = format!(
+                    "while annotation says it should be `{}`.",
+                    scheme.display(&items.symbol_names));
+                errors.type_error(&annot.value.module)
+                    .note(msg1, def.sym.span)
+                    .note(msg2, annot.value.value.span)
+                    .done();
+            }
+        }
+    }
+    
     t::Items {
         types: types,
         traits,

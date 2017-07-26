@@ -28,6 +28,24 @@ impl SourceProvider for HashMapProvider {
     }
 }
 
+struct WrappingProvider<'a, 'b, T: 'a> {
+    inner: &'a T,
+    main: &'b str,
+}
+
+impl<'a, 'b, T: 'a + SourceProvider> SourceProvider for WrappingProvider<'a, 'b, T> {
+    fn get_module_source(&self, name: &str) -> Result<&str, String> {
+        use compiler::builtins::modules;
+        match name {
+            "Main" => Ok(self.main),
+            "Basics" => Ok(modules::BASICS),
+            "Option" => Ok(modules::OPTION),
+            "List" => Ok(modules::LIST),
+            _ => self.inner.get_module_source(name),
+        }
+    }
+}
+
 pub fn parse_module(source: &str, module: Name, require_def: bool, errors: &mut Errors) -> Option<Module> {
     let tokens = lexer::lex(source, module.clone(), errors);
     let module = parser::parse_module(tokens.into_iter(), module, require_def, errors);
@@ -35,11 +53,16 @@ pub fn parse_module(source: &str, module: Name, require_def: bool, errors: &mut 
 }
 
 pub fn parse_modules<T: SourceProvider>(main: &str, provider: &T, errors: &mut Errors) -> HashMap<Name, Module> {
+    let provider = WrappingProvider {
+        inner: provider,
+        main: main,
+    };
+    
     let mut modules = HashMap::<Name, Module>::new();
     let mut to_walk = Vec::new();
     let mut checked = HashSet::new();
 
-    let main_name = Name::from_string("<main>".into());
+    let main_name = Name::from_string("Main".into());
     let main_module = parse_module(main, main_name, false, errors);
 
     if let Some(module) = main_module {

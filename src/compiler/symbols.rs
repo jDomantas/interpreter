@@ -136,7 +136,7 @@ impl TraitInfo {
     }
 }
 
-#[derive(PartialEq, Eq, Debug, Copy, Clone)]
+#[derive(PartialEq, Eq, Debug, Copy, Hash, Clone)]
 enum Kind {
     LocalValue,
     Value,
@@ -194,36 +194,36 @@ impl<'a> Resolver<'a> {
         // TODO: fix this horrible horrible hack?
         result.symbol_names.insert(Sym(0), "self".into());
 
-        result.symbol_names.insert(types::FRAC, "Basics.Frac".into());
-        result.symbol_names.insert(types::BOOL, "Basics.Bool".into());
-        result.symbol_names.insert(types::CHAR, "Basics.Char".into());
-        result.symbol_names.insert(types::STRING, "String.String".into());
-        result.symbol_names.insert(types::LIST, "List.List".into());
+        result.symbol_names.insert(types::FRAC, "Frac".into());
+        result.symbol_names.insert(types::BOOL, "Bool".into());
+        result.symbol_names.insert(types::CHAR, "Char".into());
+        result.symbol_names.insert(types::STRING, "String".into());
+        result.symbol_names.insert(types::LIST, "List".into());
 
-        result.symbol_names.insert(traits::MONAD, "Monad.Monad".into());
-        result.symbol_names.insert(traits::DEFAULT, "Basics.Default".into());
-        result.symbol_names.insert(traits::NUMBER, "Basics.Number".into());
+        result.symbol_names.insert(traits::MONAD, "Monad".into());
+        result.symbol_names.insert(traits::DEFAULT, "Default".into());
+        result.symbol_names.insert(traits::NUMBER, "Number".into());
 
-        result.symbol_names.insert(values::NIL, "List.Nil".into());
-        result.symbol_names.insert(values::CONS, "List.::".into());
-        result.symbol_names.insert(values::BIND, "Monad.bind".into());
-        result.symbol_names.insert(values::DEFAULT, "Basics.default".into());
-        result.symbol_names.insert(values::AND, "Basics.&&".into());
-        result.symbol_names.insert(values::OR, "Basics.||".into());
-        result.symbol_names.insert(values::INT_ADD, "Basics.intAdd".into());
-        result.symbol_names.insert(values::INT_SUB, "Basics.intSub".into());
-        result.symbol_names.insert(values::INT_MUL, "Basics.intMul".into());
-        result.symbol_names.insert(values::INT_DIV, "Basics.intDiv".into());
-        result.symbol_names.insert(values::INT_LE, "Basics.intLe".into()); 
-        result.symbol_names.insert(values::INT_EQ, "Basics.intEq".into()); 
-        result.symbol_names.insert(values::INT_GR, "Basics.intGr".into()); 
-        result.symbol_names.insert(values::FRAC_ADD, "Basics.fracAdd".into());
-        result.symbol_names.insert(values::FRAC_SUB, "Basics.fracSub".into());
-        result.symbol_names.insert(values::FRAC_MUL, "Basics.fracMul".into());
-        result.symbol_names.insert(values::FRAC_DIV, "Basics.fracDiv".into());
-        result.symbol_names.insert(values::FRAC_LE, "Basics.fracLe".into());
-        result.symbol_names.insert(values::FRAC_EQ, "Basics.fracEq".into());
-        result.symbol_names.insert(values::FRAC_GR, "Basics.fracGr".into());
+        result.symbol_names.insert(values::NIL, "Nil".into());
+        result.symbol_names.insert(values::CONS, "::".into());
+        result.symbol_names.insert(values::BIND, "bind".into());
+        result.symbol_names.insert(values::DEFAULT, "default".into());
+        result.symbol_names.insert(values::AND, "&&".into());
+        result.symbol_names.insert(values::OR, "||".into());
+        result.symbol_names.insert(values::INT_ADD, "intAdd".into());
+        result.symbol_names.insert(values::INT_SUB, "intSub".into());
+        result.symbol_names.insert(values::INT_MUL, "intMul".into());
+        result.symbol_names.insert(values::INT_DIV, "intDiv".into());
+        result.symbol_names.insert(values::INT_LE, "intLe".into()); 
+        result.symbol_names.insert(values::INT_EQ, "intEq".into()); 
+        result.symbol_names.insert(values::INT_GR, "intGr".into()); 
+        result.symbol_names.insert(values::FRAC_ADD, "fracAdd".into());
+        result.symbol_names.insert(values::FRAC_SUB, "fracSub".into());
+        result.symbol_names.insert(values::FRAC_MUL, "fracMul".into());
+        result.symbol_names.insert(values::FRAC_DIV, "fracDiv".into());
+        result.symbol_names.insert(values::FRAC_LE, "fracLe".into());
+        result.symbol_names.insert(values::FRAC_EQ, "fracEq".into());
+        result.symbol_names.insert(values::FRAC_GR, "fracGr".into());
         
         Resolver {
             errors: errors,
@@ -249,7 +249,7 @@ impl<'a> Resolver<'a> {
             ("String", "String") => types::STRING,
             ("List", "List") => types::LIST,
             _ => {
-                let name = format!("{}.{}", module, name);
+                //let name = name.into();
                 self.fresh_sym(name)
             }
         }
@@ -262,7 +262,7 @@ impl<'a> Resolver<'a> {
             ("Basics", "Default") => traits::DEFAULT,
             ("Basics", "Number") => traits::NUMBER,
             _ => {
-                let name = format!("{}.{}", module, name);
+                //let name = name.into();
                 self.fresh_sym(name)
             }
         }
@@ -292,7 +292,7 @@ impl<'a> Resolver<'a> {
             ("Basics", None, "fracEq") => values::FRAC_EQ,
             ("Basics", None, "fracGr") => values::FRAC_GR,
             _ => {
-                let name = format!("{}.{}", module, name);
+                //let name = name.into();
                 self.fresh_sym(name)
             }
         }
@@ -344,9 +344,19 @@ impl<'a> Resolver<'a> {
             .done();
     }
 
-    fn double_import(&mut self, item: &str, span: Span, previous: Span, module: &Name) {
-        let message = format!("Item `{}` is imported multiple times.", item);
+    fn double_import(&mut self, kind: Kind, item: &str, span: Span, previous: Span, module: &Name) {
+        let message = format!("{} `{}` is imported multiple times.", kind, item);
         let previous_message = "Note: previously imported here.";
+        self.errors
+            .symbol_error(module)
+            .note(message, span)
+            .note(previous_message, previous)
+            .done();
+    }
+
+    fn double_export(&mut self, kind: Kind, item: &str, span: Span, previous: Span, module: &Name) {
+        let message = format!("{} `{}` is exported multiple times.", kind, item);
+        let previous_message = "Note: previously exported here.";
         self.errors
             .symbol_error(module)
             .note(message, span)
@@ -698,12 +708,26 @@ impl<'a> Resolver<'a> {
         };
 
         let mut result = Exports::empty();
+        let mut export_pos = HashMap::new();
         for item in exposed {
             let name = &item.value.name.value;
             let span = item.value.name.span;
             let mut found = false;
             if let Some(sym) = items.get_value_with_parent(name, None) {
                 result.values.insert(name, sym);
+                match export_pos.entry((name, Kind::Value)) {
+                    Entry::Vacant(entry) => {
+                        entry.insert(span);
+                    }
+                    Entry::Occupied(entry) => {
+                        self.double_export(
+                            Kind::Value,
+                            name,
+                            span,
+                            *entry.get(),
+                            module_name);
+                    }
+                }
                 found = true;
             }
             if let Some(sym) = items.get_pattern_with_parent(name, None) {
@@ -712,10 +736,36 @@ impl<'a> Resolver<'a> {
             }
             if let Some(sym) = items.get_type(name) {
                 result.types.insert(name, sym);
+                match export_pos.entry((name, Kind::Type)) {
+                    Entry::Vacant(entry) => {
+                        entry.insert(span);
+                    }
+                    Entry::Occupied(entry) => {
+                        self.double_export(
+                            Kind::Type,
+                            name,
+                            span,
+                            *entry.get(),
+                            module_name);
+                    }
+                }
                 found = true;
             }
             if let Some(sym) = items.get_trait(name) {
                 result.traits.insert(name, sym);
+                match export_pos.entry((name, Kind::Trait)) {
+                    Entry::Vacant(entry) => {
+                        entry.insert(span);
+                    }
+                    Entry::Occupied(entry) => {
+                        self.double_export(
+                            Kind::Trait,
+                            name,
+                            span,
+                            *entry.get(),
+                            module_name);
+                    }
+                }
                 found = true;
             }
             if !found {
@@ -760,6 +810,19 @@ impl<'a> Resolver<'a> {
                         if let Some(sym) = items.get_value_with_parent(subname, Some(name)) {
                             result.values.insert(subname, sym);
                             result.value_parents.insert(subname, name);
+                            match export_pos.entry((subname, Kind::Value)) {
+                                Entry::Vacant(entry) => {
+                                    entry.insert(span);
+                                }
+                                Entry::Occupied(entry) => {
+                                    self.double_export(
+                                        Kind::Value,
+                                        subname,
+                                        item.span,
+                                        *entry.get(),
+                                        module_name);
+                                }
+                            }
                             is_ok = true;
                         }
                         if let Some(sym) = items.get_pattern_with_parent(subname, Some(name)) {
@@ -823,13 +886,14 @@ impl<'a> Resolver<'a> {
             match import.value.exposing {
                 Some(Node { value: ItemList::All, span: list_span }) => {
                     for &type_ in exports.types.keys() {
-                        match first_import.entry(type_) {
+                        match first_import.entry((type_, Kind::Type)) {
                             Entry::Vacant(entry) => {
                                 entry.insert(list_span);
                                 imports.types.insert(type_, name);
                             }
                             Entry::Occupied(entry) => {
                                 self.double_import(
+                                    Kind::Type,
                                     type_,
                                     list_span,
                                     *entry.get(),
@@ -838,13 +902,14 @@ impl<'a> Resolver<'a> {
                         }
                     }
                     for &trait_ in exports.traits.keys() {
-                        match first_import.entry(trait_) {
+                        match first_import.entry((trait_, Kind::Trait)) {
                             Entry::Vacant(entry) => {
                                 entry.insert(list_span);
                                 imports.traits.insert(trait_, name);
                             }
                             Entry::Occupied(entry) => {
                                 self.double_import(
+                                    Kind::Trait,
                                     trait_,
                                     list_span,
                                     *entry.get(),
@@ -853,28 +918,26 @@ impl<'a> Resolver<'a> {
                         }
                     }
                     for &pattern in exports.patterns.keys() {
-                        match first_import.entry(pattern) {
+                        match first_import.entry((pattern, Kind::Pattern)) {
                             Entry::Vacant(entry) => {
                                 entry.insert(list_span);
                                 imports.patterns.insert(pattern, name);
                             }
-                            Entry::Occupied(entry) => {
-                                self.double_import(
-                                    pattern,
-                                    list_span,
-                                    *entry.get(),
-                                    module_name);
+                            Entry::Occupied(_) => {
+                                // don't report error on pattern, because it
+                                // will match some error regarding value
                             }
                         }
                     }
                     for &value in exports.values.keys() {
-                        match first_import.entry(value) {
+                        match first_import.entry((value, Kind::Value)) {
                             Entry::Vacant(entry) => {
                                 entry.insert(list_span);
                                 imports.values.insert(value, name);
                             }
                             Entry::Occupied(entry) => {
                                 self.double_import(
+                                    Kind::Value,
                                     value,
                                     list_span,
                                     *entry.get(),
@@ -887,34 +950,71 @@ impl<'a> Resolver<'a> {
                     for item_ in items {
                         let span = item_.value.name.span;
                         let item = &item_.value.name.value;
-                        match first_import.entry(item) {
-                            Entry::Vacant(entry) => {
-                                entry.insert(span);
-                            }
-                            Entry::Occupied(entry) => {
-                                self.double_import(
-                                    name,
-                                    span,
-                                    *entry.get(),
-                                    module_name);
-                                continue;
-                            }
-                        }
                         let mut is_ok = false;
                         if exports.get_type(item).is_some() {
-                            imports.types.insert(item, name);
+                            match first_import.entry((item, Kind::Type)) {
+                                Entry::Vacant(entry) => {
+                                    entry.insert(span);
+                                    imports.types.insert(item, name);
+                                }
+                                Entry::Occupied(entry) => {
+                                    self.double_import(
+                                        Kind::Type,
+                                        item,
+                                        span,
+                                        *entry.get(),
+                                        module_name);
+                                }
+                            }
                             is_ok = true;
                         }
                         if exports.get_trait(item).is_some() {
                             imports.traits.insert(item, name);
+                            match first_import.entry((item, Kind::Trait)) {
+                                Entry::Vacant(entry) => {
+                                    entry.insert(span);
+                                    imports.types.insert(item, name);
+                                }
+                                Entry::Occupied(entry) => {
+                                    self.double_import(
+                                        Kind::Trait,
+                                        item,
+                                        span,
+                                        *entry.get(),
+                                        module_name);
+                                }
+                            }
                             is_ok = true;
                         }
                         if exports.get_pattern_with_parent(item, None).is_some() {
                             imports.patterns.insert(item, name);
+                            match first_import.entry((item, Kind::Pattern)) {
+                                Entry::Vacant(entry) => {
+                                    entry.insert(span);
+                                    imports.types.insert(item, name);
+                                }
+                                Entry::Occupied(_) => {
+                                    // don't report errors on patterns
+                                }
+                            }
                             is_ok = true;
                         }
                         if exports.get_value_with_parent(item, None).is_some() {
                             imports.values.insert(item, name);
+                            match first_import.entry((item, Kind::Value)) {
+                                Entry::Vacant(entry) => {
+                                    entry.insert(span);
+                                    imports.types.insert(item, name);
+                                }
+                                Entry::Occupied(entry) => {
+                                    self.double_import(
+                                        Kind::Value,
+                                        item,
+                                        span,
+                                        *entry.get(),
+                                        module_name);
+                                }
+                            }
                             is_ok = true;
                         }
                         if !is_ok {
@@ -932,18 +1032,12 @@ impl<'a> Resolver<'a> {
                                         continue;
                                     }
                                     found_any = true;
-                                    match first_import.entry(pattern) {
+                                    match first_import.entry((pattern, Kind::Pattern)) {
                                         Entry::Vacant(entry) => {
                                             entry.insert(list_span);
                                             imports.patterns.insert(pattern, name);
                                         }
-                                        Entry::Occupied(entry) => {
-                                            self.double_import(
-                                                pattern,
-                                                list_span,
-                                                *entry.get(),
-                                                module_name);
-                                        }
+                                        Entry::Occupied(_) => { }
                                     }
                                 }
                                 for (&value, &parent) in &exports.value_parents {
@@ -951,13 +1045,14 @@ impl<'a> Resolver<'a> {
                                         continue;
                                     }
                                     found_any = true;
-                                    match first_import.entry(value) {
+                                    match first_import.entry((value, Kind::Value)) {
                                         Entry::Vacant(entry) => {
                                             entry.insert(list_span);
                                             imports.values.insert(value, name);
                                         }
                                         Entry::Occupied(entry) => {
                                             self.double_import(
+                                                Kind::Value,
                                                 value,
                                                 list_span,
                                                 *entry.get(),
@@ -971,26 +1066,32 @@ impl<'a> Resolver<'a> {
                             }
                             Some(Node { value: ItemList::Some(ref items), .. }) => {
                                 for subitem in items {
-                                    match first_import.entry(&subitem.value) {
-                                        Entry::Vacant(entry) => {
-                                            entry.insert(subitem.span);
-                                        }
-                                        Entry::Occupied(entry) => {
-                                            self.double_import(
-                                                &subitem.value,
-                                                subitem.span,
-                                                *entry.get(),
-                                                module_name);
-                                            continue;
-                                        }
-                                    }
                                     let mut is_ok = false;
                                     if exports.get_value_with_parent(&subitem.value, Some(item)).is_some() {
-                                        imports.values.insert(&subitem.value, name);
+                                        match first_import.entry((&subitem.value, Kind::Value)) {
+                                            Entry::Vacant(entry) => {
+                                                entry.insert(subitem.span);
+                                                imports.values.insert(&subitem.value, name);
+                                            }
+                                            Entry::Occupied(entry) => {
+                                                self.double_import(
+                                                    Kind::Value,
+                                                    &subitem.value,
+                                                    subitem.span,
+                                                    *entry.get(),
+                                                    module_name);
+                                            }
+                                        }
                                         is_ok = true;
                                     }
                                     if exports.get_pattern_with_parent(&subitem.value, Some(item)).is_some() {
-                                        imports.patterns.insert(&subitem.value, name);
+                                        match first_import.entry((&subitem.value, Kind::Pattern)) {
+                                            Entry::Vacant(entry) => {
+                                                entry.insert(subitem.span);
+                                                imports.patterns.insert(&subitem.value, name);
+                                            }
+                                            Entry::Occupied(_) => { }
+                                        }
                                         is_ok = true;
                                     }
                                     if !is_ok {
@@ -1916,13 +2017,21 @@ impl<'a> Resolver<'a> {
                 }
             }
             Symbol::Unqualified(ref s) => {
-                let m: &str = if let Some(m) = ctx.imports.get_origin(kind, s) {
-                    m
+                if let Some(m) = ctx.imports.get_origin(kind, s) {
+                    let s = if m == ctx.module.as_str() {
+                        // value comes from current module, look in ctx.locals
+                        ctx.locals.get_symbol(kind, s)
+                    } else {
+                        // value comes from other module, look in ctx.exports[m]
+                        ctx.exports[m].get_symbol(kind, s)
+                    };
+                    // if we got origin then symbol must exist there,
+                    // therefore unwrap
+                    r::Symbol::Known(s.unwrap())
                 } else {
                     self.unknown_symbol(kind, symbol, &ctx.module);
-                    return unknown;
-                };
-                r::Symbol::Known(ctx.exports[m].get_symbol(kind, s).unwrap())
+                    r::Symbol::Unknown
+                }
             }
         };
         Node::new(sym, symbol.span)

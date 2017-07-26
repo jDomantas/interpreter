@@ -98,8 +98,14 @@ fn format_error(source: &str, error: &Error) {
 }
 
 fn display_span(source: &str, span: Span) {
-    let line = if span.start.line == 0 { 0 } else { span.start.line - 1 };
-    let line = source.lines().skip(line).next().unwrap();
+    let _line = if span.start.line == 0 { 0 } else { span.start.line - 1 };
+    println!("Error position: {}:{} to {}:{}",
+        span.start.line,
+        span.start.column,
+        span.end.line,
+        span.end.column);
+    let _ = source;
+    /*let line = source.lines().skip(line).next().unwrap();
     println!("{: >5} | {}", span.start.line, line);
     for _ in 0..(span.start.column + 7) {
         print!(" ");
@@ -112,5 +118,5 @@ fn display_span(source: &str, span: Span) {
     for _ in (span.start.column)..(end_col + 1) {
         print!("~");
     }
-    println!("");
+    println!("");*/
 }

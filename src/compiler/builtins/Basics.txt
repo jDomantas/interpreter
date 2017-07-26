@@ -1,0 +1,266 @@
+module Basics exposing
+    ( Int, Bool, Frac, Char, Ordering(LT, EQ, GR), Never
+    , Number, Eq, Ord, Default
+    , (+), (-), (*), (/), (//), negate
+    , (==), (!=), compare, (<), (>), (<=), (>=)
+    , not, (&&), (||)
+    , id, always, flip, (>>), (<<), (|>), (<|)
+    , default, never
+    )
+
+
+type Int = InternalInt
+type Bool = InternalBool
+type Frac = InternalFrac
+type Char = InternalChar
+
+
+intAdd : Int -> Int -> Int
+intAdd = intAdd
+
+
+intSub : Int -> Int -> Int
+intSub = intSub
+
+
+intMul : Int -> Int -> Int
+intMul = intMul
+
+
+intDiv : Int -> Int -> Int
+intDiv = intDiv
+
+
+intLe : Int -> Int -> Bool
+intLe = intLe
+
+
+intEq : Int -> Int -> Bool
+intEq = intEq
+
+
+intGr : Int -> Int -> Bool
+intGr = intGr
+
+
+fracAdd : Frac -> Frac -> Frac
+fracAdd = fracAdd
+
+
+fracSub : Frac -> Frac -> Frac
+fracSub = fracSub
+
+
+fracMul : Frac -> Frac -> Frac
+fracMul = fracMul
+
+
+fracDiv : Frac -> Frac -> Frac
+fracDiv = fracDiv
+
+
+fracLe : Frac -> Frac -> Bool
+fracLe = fracLe
+
+
+fracEq : Frac -> Frac -> Bool
+fracEq = fracEq
+
+
+fracGr : Frac -> Frac -> Bool
+fracGr = fracGr
+
+
+trait Number where
+    (+) : self -> self -> self
+    (-) : self -> self -> self
+    (*) : self -> self -> self
+
+
+impl Int : Number where
+    (+) = intAdd
+    (-) = intSub
+    (*) = intMul
+
+
+impl Frac : Number where
+    (+) = fracAdd
+    (-) = fracSub
+    (*) = fracMul
+
+
+(/) : Frac -> Frac -> Frac  
+(/) = fracDiv
+
+
+(//) : Int -> Int -> Int
+(//) = intDiv
+
+
+infixl 6 +
+infixl 6 -
+infixl 7 *
+infixl 7 /
+infixl 7 //
+
+
+negate : [a : Number] a -> a
+negate x = 0 - x
+
+
+trait Eq where
+    (==) : self -> self -> Bool
+
+
+(!=) : [a : Eq] a -> a -> Bool
+a != b = not (a == b)
+
+
+impl Int : Eq where
+    (==) = intEq
+
+
+impl Frac : Eq where
+    (==) = fracEq
+
+
+impl Bool : Eq where
+    a == b = if a then b else not b
+
+
+infix 4 ==
+infix 4 !=
+
+
+type Ordering = LT | EQ | GR
+
+
+impl Ordering : Eq where
+    a == b = case (a, b) of
+        (LT, LT) -> true
+        (EQ, EQ) -> true
+        (GR, GR) -> true
+        _        -> false
+
+
+trait Ord : Eq where
+    compare : self -> self -> Ordering
+
+
+(>) : [a : Ord] a -> a -> Bool
+a > b = case compare a b of
+    GR -> true
+    _ -> false
+
+
+(>=) : [a : Ord] a -> a -> Bool
+a >= b = case compare a b of
+    LT -> false
+    _ -> true
+
+
+(<) : [a : Ord] a -> a -> Bool
+a < b = case compare a b of
+    LT -> true
+    _ -> false
+
+
+(<=) : [a : Ord] a -> a -> Bool
+a <= b = case compare a b of
+    GR -> false
+    _ -> true
+
+
+infix 4 <
+infix 4 <=
+infix 4 >
+infix 4 >=
+
+
+impl Int : Ord where
+    compare a b =
+        if intLe a b then
+            LT
+        else if intEq a b then
+            EQ
+        else
+            GR
+
+
+impl Frac : Ord where
+    compare a b =
+        if fracLe a b then
+            LT
+        else if fracEq a b then
+            EQ
+        else
+            GR
+
+
+not : Bool -> Bool
+not b = if b then false else true
+
+
+(&&) : Bool -> Bool -> Bool
+a && b = if a then b else false
+
+
+(||) : Bool -> Bool -> Bool
+a || b = if a then true else b
+
+
+infixl 3 &&
+infixl 2 ||
+
+
+trait Default where
+    default : self
+
+
+impl Int : Default where
+    default = 0
+
+
+impl Frac : Default where
+    default = 0
+
+
+id : a -> a
+id x = x
+
+
+(|>) : a -> (a -> b) -> b
+x |> f = f x
+
+
+(<|) : (a -> b) -> a -> b
+f <| x = f x
+
+
+(<<) : (a -> b) -> (c -> a) -> (c -> b)
+(<<) g f x = g (f x)
+
+
+(>>) : (a -> b) -> (b -> c) -> (a -> c)
+(>>) f g x = g (f x)
+
+
+infixr 9 <<
+infixl 9 >>
+infixr 0 <|
+infixl 0 |>
+
+
+flip : (a -> b -> c) -> b -> a -> c
+flip f a b = f b a
+
+
+always : a -> (b -> a)
+always x _ = x
+
+
+type Never = JustOneMore Never
+
+
+never : Never -> a
+never (JustOneMore x) = never x

@@ -257,7 +257,7 @@ impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
                     typed_items.push(item);
                     types.push(type_);
                 }
-                for i in 0..(types.len() - 1) {
+                for i in 0..(types.len().saturating_sub(1)) {
                     let a = &types[i];
                     let b = &types[i + 1];
                     let a_span = typed_items[i].span;
@@ -894,7 +894,7 @@ impl<'a, 'b, 'c> Solver<'a, 'b, 'c> {
         }
     }
 
-    fn unsolved_constaint(&mut self, constraint: &Constraint) {
+    fn unsolved_constraint(&mut self, constraint: &Constraint) {
         let type1 = self.do_substitutions(&constraint.0);
         let type1 = type1.display(self.symbol_names);
         let type2 = self.do_substitutions(&constraint.1);
@@ -1065,7 +1065,7 @@ impl<'a, 'b, 'c> Solver<'a, 'b, 'c> {
             let type1 = self.do_substitutions(&constraint.0);
             let type2 = self.do_substitutions(&constraint.1);
             if !self.unify(&type1, &type2) {
-                self.unsolved_constaint(constraint);
+                self.unsolved_constraint(constraint);
             }
         }
         (self.substitution, self.var_unifications)

@@ -1,0 +1,31 @@
+module List exposing
+    ( List((::)) -- don't export Nil, as it can be refered to as `[]`
+    , map, head, tail
+    )
+
+import Basics exposing (..)
+import Option exposing (..)
+
+
+type List a = Nil | (::) a (List a)
+
+
+infixr 5 ::
+
+
+map : (a -> b) -> List a -> List b
+map f list = case list of
+    [] -> []
+    x :: xs -> f x :: map f xs
+
+
+head : List a -> Option a
+head list = case list of
+    [] -> None
+    x :: _ -> Some x
+
+
+tail : List a -> Option (List a)
+tail list = case list of
+    [] -> None
+    _ :: xs -> Some xs

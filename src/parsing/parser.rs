@@ -1719,11 +1719,23 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
         }
 
         loop {
-            let name = match self.eat_unqualified_name() {
-                Some(name) => name,
-                None => {
-                    self.emit_error();
-                    return Err(());
+            let name = if self.eat(Token::OpenParen) {
+                let operator = match self.eat_unqualified_operator() {
+                    Some(op) => op,
+                    None => {
+                        self.emit_error();
+                        return Err(());
+                    }
+                };
+                try!(self.expect(Token::CloseParen));
+                operator
+            } else {
+                match self.eat_unqualified_name() {
+                    Some(name) => name,
+                    None => {
+                        self.emit_error();
+                        return Err(());
+                    }
                 }
             };
 
@@ -1770,11 +1782,23 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
         }
 
         loop {
-            let (name, span) = match self.eat_unqualified_name() {
-                Some(Node { value, span }) => (value, span),
-                None => {
-                    self.emit_error();
-                    return Err(());
+            let (name, span) = if self.eat(Token::OpenParen) {
+                let Node { value, span } = match self.eat_unqualified_operator() {
+                    Some(op) => op,
+                    None => {
+                        self.emit_error();
+                        return Err(());
+                    }
+                };
+                try!(self.expect(Token::CloseParen));
+                (value, span)
+            } else {
+                match self.eat_unqualified_name() {
+                    Some(Node { value, span }) => (value, span),
+                    None => {
+                        self.emit_error();
+                        return Err(());
+                    }
                 }
             };
 
@@ -1873,7 +1897,12 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
         let def = if require_def {
             match self.module_def() {
                 Ok(def) => def,
-                Err(()) => return Err(()),
+                Err(()) => {
+                    while !self.is_at_end() {
+                        self.consume();
+                    }
+                    return Err(())
+                }
             }
         } else {
             let span = Span::new(Position::new(1, 1), Position::new(1, 1));

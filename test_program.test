@@ -1,0 +1,12 @@
+import Basics exposing (..)
+import Option exposing (..)
+import List exposing (List(..))
+
+
+f : a -> (b -> a)
+f x =
+    let
+        g : b -> a
+        g _ = x
+    in
+        g

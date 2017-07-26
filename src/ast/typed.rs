@@ -384,14 +384,25 @@ pub mod printer {
         };
         for typ in &items.types {
             match *typ {
-                TypeDecl::Record(ref record) => printer.print_record(record),
-                TypeDecl::Union(ref union) => printer.print_union(union),
+                TypeDecl::Record(ref record) => {
+                    if record.module.as_str() == "Main" {
+                        printer.print_record(record);
+                        println!("");
+                    }
+                }
+                TypeDecl::Union(ref union) => {
+                    if union.module.as_str() == "Main" {
+                        printer.print_union(union);
+                        println!("");
+                    }
+                }
             }
-            println!("");
         }
         for def in &items.items {
-            printer.print_def(&def);
-            println!("");
+            if def.module.as_str() == "Main" {
+                printer.print_def(&def);
+                println!("");
+            }
         }
     }
 

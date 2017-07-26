@@ -44,3 +44,9 @@ pub mod values {
     pub const FRAC_EQ: Sym = Sym(65);
     pub const FRAC_GR: Sym = Sym(66);
 }
+
+pub mod modules {
+    pub const BASICS: &'static str = include_str!("Basics.txt");
+    pub const OPTION: &'static str = include_str!("Option.txt");
+    pub const LIST: &'static str = include_str!("List.txt");
+}

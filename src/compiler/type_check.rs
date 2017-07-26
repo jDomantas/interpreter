@@ -627,11 +627,6 @@ impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
         }
         // solve constraints, apply substitution
         mem::swap(&mut self.constraints, &mut constraints);
-        for &Constraint(ref t1, ref t2, _, _) in &constraints {
-            println!("constraint: {} ~ {}",
-                t1.display(self.symbol_names),
-                t2.display(self.symbol_names));
-        }
         let (substitution, var_unifications) = {
             let solver = Solver::new(
                 &constraints,
@@ -639,7 +634,6 @@ impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
                 self.symbol_names);
             solver.solve_constraints()
         };
-        println!("got substitution: {:?}", substitution);
         for (a, b) in var_unifications {
             self.merge_var_bounds(a, b);
             self.merge_var_bounds(b, a);
@@ -1494,12 +1488,6 @@ pub fn infer_types(mut items: r::GroupedItems, errors: &mut Errors) -> t::Items 
             let scheme = convert_resolved_scheme(&annot.value.type_.value);
             (sym, (scheme, annot.span))
         }));
-    println!("known types:");
-    for (&sym, &(ref scheme, _)) in &known_types {
-        let name = &items.symbol_names[&sym];
-        let scheme = scheme.display(&items.symbol_names);
-        println!("  {}: {}", name, scheme);
-    }
     
     let (defs, impls) = {
         let mut inferer = InferCtx::new(

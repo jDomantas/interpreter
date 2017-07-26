@@ -450,7 +450,8 @@ impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
                     typed_items.push(item);
                     types.push(type_);
                 }
-                for i in 0..(types.len() - 1) {
+                // TODO: this might be nices if rewritten to use `windows`
+                for i in 0..(types.len().saturating_sub(1)) {
                     let a = &types[i];
                     let b = &types[i + 1];
                     let a_span = typed_items[i].span;

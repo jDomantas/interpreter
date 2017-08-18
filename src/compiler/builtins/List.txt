@@ -49,5 +49,33 @@ foldr init f list = case list of
     x :: xs -> f x (foldr init f xs)
 
 
+fold : [a : Appendable, a : Default] List a -> a
+fold = foldl default (++)
+
+
 reverse : List a -> List a
 reverse list = foldl [] (flip (::)) list
+
+
+append : List a -> List a -> List a
+append a b = case a of
+    [] -> b
+    x :: xs -> x :: append xs b
+
+
+impl List a : Appendable where
+    (++) = append
+
+
+{- impl [a : ToString] List a : ToString where
+    toString list = 
+        let
+            items acc list = case list of
+                [] -> acc
+                x :: xs -> items (acc ++ ", " ++ toString x) xs
+        in
+            case list of
+                [] -> "[]"
+                [x] -> "[" ++ toString x ++ "]"
+                x :: xs -> "[" ++ toString x ++ items xs ++ "]"
+-}

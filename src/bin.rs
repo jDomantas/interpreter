@@ -22,6 +22,7 @@ fn run(source: &str) {
     use interpreter::compiler::kind_check::find_kind_errors;
     use interpreter::compiler::def_grouping::group_items;
     use interpreter::compiler::type_check::infer_types;
+    use interpreter::compiler::trait_check::check_items;
 
     let modules = interpreter::parsing::HashMapProvider::new(HashMap::new());
     let mut errors = interpreter::errors::Errors::new();
@@ -69,7 +70,15 @@ fn run(source: &str) {
 
     let items = group_items(items);
 
-    let items = infer_types(items, &mut errors);
+    let mut items = infer_types(items, &mut errors);
+    if errors.have_errors() {
+        for err in errors.into_error_list() {
+            format_error(source, &err);
+        }
+        return;
+    }
+
+    check_items(&mut items, &mut errors);
     if errors.have_errors() {
         for err in errors.into_error_list() {
             format_error(source, &err);

@@ -1,12 +1,14 @@
 module Basics exposing
     ( Int, Bool, Frac, Char, Ordering(LT, EQ, GR), Never
-    , Number, Eq, Ord, Default
+    , Number, Eq, Ord, Default, ToString, Appendable
     , (+), (-), (*), (/), (//), negate
     , (==), (!=), compare, (<), (>), (<=), (>=)
     , not, (&&), (||)
     , id, always, flip, (>>), (<<), (|>), (<|)
-    , default, never
+    , default, never, toString, (++)
     )
+
+import String exposing (String)
 
 
 type Int = InternalInt
@@ -264,3 +266,14 @@ type Never = JustOneMore Never
 
 never : Never -> a
 never (JustOneMore x) = never x
+
+
+trait ToString where
+    toString : self -> String
+
+
+trait Appendable where
+    (++) : self -> self -> self
+
+
+infixr 5 ++

@@ -14,6 +14,9 @@ pub mod traits {
     pub const MONAD: Sym = Sym(20);
     pub const DEFAULT: Sym = Sym(21);
     pub const NUMBER: Sym = Sym(22);
+    pub const EQ: Sym = Sym(23);
+    pub const ORD: Sym = Sym(24);
+    pub const TO_STRING: Sym = Sym(25);
 }
 
 pub mod values {
@@ -49,4 +52,5 @@ pub mod modules {
     pub const BASICS: &'static str = include_str!("Basics.txt");
     pub const OPTION: &'static str = include_str!("Option.txt");
     pub const LIST: &'static str = include_str!("List.txt");
+    pub const STRING: &'static str = include_str!("String.txt");
 }

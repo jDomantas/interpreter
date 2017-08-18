@@ -1,7 +1,7 @@
 use std::collections::{HashSet, HashMap};
 use std::mem;
 use std::rc::Rc;
-use ast::typed::{self as t, Type, Scheme, SchemeVar, Symbol, Sym};
+use ast::typed::{self as t, Type, Scheme, SchemeVar, Symbol, Sym, ImplSym, ImplDef, Impls};
 use ast::resolved as r;
 use ast::{Node, NodeView, Name, Literal};
 use compiler::{builtins, util};
@@ -361,7 +361,7 @@ impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
             }
             r::Expr::Ident(symbol) => {
                 let type_ = self.infer_symbol(symbol);
-                (t::Expr::Var(symbol, type_.clone()), type_)
+                (t::Expr::Var(symbol, type_.clone(), Impls::empty()), type_)
             }
             r::Expr::If(ref cond, ref then, ref else_) => {
                 let (cond, cond_type) = self.infer_expr(cond);
@@ -410,7 +410,7 @@ impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
                 } else if op.value == Symbol::Known(builtins::values::OR) {
                     t::Expr::Or(Box::new(typed_lhs), Box::new(typed_rhs))
                 } else {
-                    let op_expr = t::Expr::Var(op.value, op_type);
+                    let op_expr = t::Expr::Var(op.value, op_type, Impls::empty());
                     let op = Node::new(op_expr, op.span);
                     let span = lhs.span.merge(op.span);
                     let apply_lhs = t::Expr::Apply(Box::new(op), Box::new(typed_lhs));
@@ -505,7 +505,7 @@ impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
                 let source = ConstraintSource::DoIf(rest.span);
                 self.add_constraint(&rest_type, &default_type, source);
                 let default = Symbol::Known(builtins::values::DEFAULT);
-                let default = t::Expr::Var(default, default_type);
+                let default = t::Expr::Var(default, default_type, Impls::empty());
                 let default = Node::new(default, cond.span);
                 let if_ = make_if(cond, rest, default);
                 (if_, rest_type)
@@ -535,7 +535,7 @@ impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
                 // build case expr for pattern
                 let pat_span = pat.span;
                 let param_sym = Sym(0);
-                let param = t::Expr::Var(Symbol::Known(param_sym), pat_type);
+                let param = t::Expr::Var(Symbol::Known(param_sym), pat_type, Impls::empty());
                 let param = Node::new(param, pat.span);
                 let span = pat.span.merge(rest.span);
                 let branch = t::CaseBranch {
@@ -563,7 +563,7 @@ impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
                             Rc::new(Type::Function(a, mb.clone())),
                             mb)));
                 let bind_symbol = Symbol::Known(builtins::values::BIND);
-                let bind = t::Expr::Var(bind_symbol, bind_type);
+                let bind = t::Expr::Var(bind_symbol, bind_type, Impls::empty());
                 let bind = Node::new(bind, expr.span);
                 let span = expr.span;
                 let result = t::Expr::Apply(Box::new(bind), Box::new(expr));
@@ -712,12 +712,18 @@ fn make_list(span: Span, mut items: Vec<Node<t::Expr>>, type_var: u64) -> t::Exp
         Rc::new(Type::Concrete(builtins::types::LIST)),
         Rc::new(Type::Var(type_var))));
     let nil_span = items.last().map(|i| i.span).unwrap_or(span);
-    let nil_sym = t::Expr::Var(Symbol::Known(builtins::values::NIL), (*list_type).clone());
+    let nil_sym = t::Expr::Var(
+        Symbol::Known(builtins::values::NIL),
+        (*list_type).clone(),
+        Impls::empty());
     let nil = Node::new(nil_sym, nil_span);
     let cons_type = Type::Function(
         Rc::new(Type::Var(type_var)),
         Rc::new(Type::Function(list_type.clone(), list_type.clone())));
-    let cons_sym = t::Expr::Var(Symbol::Known(builtins::values::CONS), cons_type);
+    let cons_sym = t::Expr::Var(
+        Symbol::Known(builtins::values::CONS),
+        cons_type,
+        Impls::empty());
     let mut list = nil;
     while let Some(item) = items.pop() {
         let first_span = item.span;
@@ -1175,7 +1181,11 @@ fn convert_resolved_scheme(scheme: &r::Scheme) -> Scheme {
         .into_iter()
         .map(|(v, bounds)| SchemeVar {
             id: v,
-            bounds: bounds.into_iter().collect::<Vec<_>>(),
+            bounds: bounds
+                .into_iter()
+                .collect::<HashSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>(),
         })
         .collect();
     Scheme {
@@ -1430,7 +1440,7 @@ fn collect_resolved_type_vars(type_: &r::Type, vars: &mut HashSet<u64>) {
     }
 }
 
-fn are_schemes_equal(a: &Scheme, b: &Scheme) -> bool {
+fn make_var_mapping(a: &Scheme, b: &Scheme) -> Option<HashMap<u64, u64>> {
     fn unify(a: &Type, b: &Type, mapping: &mut HashMap<u64, u64>) -> bool {
         match (a, b) {
             (&Type::Any, &Type::Any) => true,
@@ -1462,30 +1472,35 @@ fn are_schemes_equal(a: &Scheme, b: &Scheme) -> bool {
     }
     let mut var_mapping = HashMap::new();
     if !unify(&a.type_, &b.type_, &mut var_mapping) {
-        return false;
+        return None;
     }
     if var_mapping.values().cloned().collect::<HashSet<_>>().len() != var_mapping.len() {
-        return false;
+        return None;
     }
     let b_bounds = b.vars.iter().map(|v| (v.id, sorted(&v.bounds))).collect::<HashMap<_, _>>();
     for a_var in &a.vars {
         let b_var = var_mapping[&a_var.id];
         let expected_bounds = sorted(&a_var.bounds);
         if b_bounds.get(&b_var) != Some(&expected_bounds) {
-            return false;
+            return None;
         }
     }
-    true
+    Some(var_mapping)
+}
+
+fn are_schemes_equal(a: &Scheme, b: &Scheme) -> bool {
+    make_var_mapping(a, b).is_some()
 }
 
 fn make_impl_annotations(
                             items: &r::GroupedItems,
-                            trait_item_types: &HashMap<Sym, Scheme>) -> HashMap<Sym, Scheme> {
+                            trait_item_types: &HashMap<Sym, (Scheme, Span)>) -> HashMap<Sym, (Scheme, Span)> {
     let mut types = HashMap::new();
     for impl_ in &items.impls {
-        let mut new_vars = HashSet::new();
-        collect_resolved_type_vars(&impl_.scheme.value.type_.value, &mut new_vars);
-        let impl_type = convert_resolved_type(&impl_.scheme.value.type_.value, &Type::Any);
+        //let mut new_vars = HashSet::new();
+        //collect_resolved_type_vars(&impl_.scheme.value.type_.value, &mut new_vars);
+        //let impl_type = convert_resolved_type(&impl_.scheme.value.type_.value, &Type::Any);
+        let impl_scheme = convert_resolved_scheme(&impl_.scheme.value);
         for def in impl_.values.iter().flat_map(|group| group.iter()) {
             let def_sym = def.value.sym.value;
             let trait_item_sym = if let Some(sym) = impl_.trait_items.get(&def_sym) {
@@ -1493,39 +1508,51 @@ fn make_impl_annotations(
             } else {
                 continue;
             };
-            let scheme = if let Some(s) = trait_item_types.get(&trait_item_sym) {
+            let &(ref scheme, span) = if let Some(s) = trait_item_types.get(&trait_item_sym) {
                 s
             } else {
                 continue;
             };
             let mut mapping = HashMap::new();
-            mapping.insert(0, impl_type.clone());
+            mapping.insert(0, impl_scheme.type_.clone());
             let type_ = scheme.type_.map_vars(&mapping);
             let mut vars = scheme.vars.clone();
-            for &var in &new_vars {
-                vars.push(SchemeVar {
-                    id: var,
-                    bounds: Vec::new(),
-                });
-            }
+            vars.extend(impl_scheme.vars.iter().cloned());
+            vars.retain(|v| v.id != 0);
             let scheme = Scheme {
                 vars,
                 type_,
             };
-            types.insert(def_sym, scheme);
+            types.insert(def_sym, (scheme, span));
         }
     }
     types
 }
 
-fn infer_impl(impl_: r::GroupedImpl, inferer: &mut InferCtx) -> t::Impl {
+fn infer_impl(
+                impl_: r::GroupedImpl,
+                impl_item_types: &HashMap<Sym, (Scheme, Span)>,
+                inferer: &mut InferCtx) -> t::Impl {
     let r::GroupedImpl { scheme, trait_, values, trait_items, module } = impl_;
     let mut typed_values = Vec::new();
     for group in &values {
-        typed_values.extend(inferer.infer_top_level_defs(group));
+        for def in inferer.infer_top_level_defs(group) {
+            let mapping = match impl_item_types.get(&def.sym.value) {
+                Some(&(ref scheme, _)) => {
+                    make_var_mapping(scheme, &def.scheme)
+                        .unwrap_or_default()
+                }
+                None => HashMap::new(),
+            };
+            typed_values.push(ImplDef {
+                def,
+                var_mapping: mapping,
+            });
+        }
     }
     let scheme = Node::new(convert_resolved_scheme(&scheme.value), scheme.span);
     t::Impl {
+        symbol: ImplSym(0),
         scheme,
         trait_,
         items: typed_values,
@@ -1536,8 +1563,11 @@ fn infer_impl(impl_: r::GroupedImpl, inferer: &mut InferCtx) -> t::Impl {
 
 pub fn infer_types(mut items: r::GroupedItems, errors: &mut Errors) -> t::Items {
     let pattern_types = collect_pattern_types(&items);
+    let trait_item_types = collect_trait_item_types(&items);
+    let impl_item_types = make_impl_annotations(&items, &trait_item_types);
     let mut known_types = collect_constructor_types(&items);
-    known_types.extend(collect_trait_item_types(&items));
+    known_types.extend(impl_item_types.clone());
+    known_types.extend(trait_item_types);
     known_types.extend(items.annotations
         .iter()
         .map(|(&sym, annot)| {
@@ -1545,7 +1575,7 @@ pub fn infer_types(mut items: r::GroupedItems, errors: &mut Errors) -> t::Items 
             (sym, (scheme, annot.span))
         }));
     
-    let (defs, impls) = {
+    let (defs, impls, mut symbol_types) = {
         let mut inferer = InferCtx::new(
             &pattern_types,
             &known_types,
@@ -1559,12 +1589,18 @@ pub fn infer_types(mut items: r::GroupedItems, errors: &mut Errors) -> t::Items 
         }
         
         let mut typed_impls = Vec::new();
+        let mut next_meta_sym = 0;
         for impl_ in items.impls.drain(..) {
-            typed_impls.push(infer_impl(impl_, &mut inferer));
+            let mut impl_ = infer_impl(impl_, &impl_item_types, &mut inferer);
+            impl_.symbol = ImplSym(next_meta_sym);
+            next_meta_sym += 1;
+            typed_impls.push(impl_);
         }
 
-        (typed_defs, typed_impls)
+        (typed_defs, typed_impls, inferer.env)
     };
+
+    symbol_types.extend(known_types.into_iter().map(|(s, (t, _))| (s, t)));
 
     let traits = items.traits
         .drain(..)
@@ -1594,6 +1630,24 @@ pub fn infer_types(mut items: r::GroupedItems, errors: &mut Errors) -> t::Items 
             }
         }
     }
+
+    for def in impls.iter().flat_map(|i| i.items.iter()) {
+        if let Some(&(ref scheme, span)) = impl_item_types.get(&def.def.sym.value) {
+            if !are_schemes_equal(&def.def.scheme, scheme) {
+                let msg1 = format!(
+                    "Infered type of `{}` is less general than required. Infered type `{}`,",
+                    items.symbol_names[&def.def.sym.value],
+                    def.def.scheme.display(&items.symbol_names));
+                let msg2 = format!(
+                    "while annotation says it should be `{}`.",
+                    scheme.display(&items.symbol_names));
+                errors.type_error(&def.def.module)
+                    .note(msg1, def.def.sym.span)
+                    .note(msg2, span)
+                    .done();
+            }
+        }
+    }
     
     t::Items {
         types: types,
@@ -1601,5 +1655,6 @@ pub fn infer_types(mut items: r::GroupedItems, errors: &mut Errors) -> t::Items 
         impls,
         items: defs,
         symbol_names: items.symbol_names,
+        symbol_types: symbol_types,
     }
 }

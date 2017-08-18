@@ -4,7 +4,7 @@ use std::rc::Rc;
 use ast::{Node, Name, Literal};
 pub use ast::resolved::{Sym, Symbol};
 
-#[derive(Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum Type {
     Any,
     Var(u64),
@@ -152,7 +152,7 @@ impl<'a, 'b> fmt::Display for TypeFormatter<'a, 'b> {
 #[derive(Debug, Clone)]
 pub enum Expr {
     Literal(Literal, Type),
-    Var(Symbol, Type),
+    Var(Symbol, Type, Impls),
     Apply(Box<Node<Expr>>, Box<Node<Expr>>),
     And(Box<Node<Expr>>, Box<Node<Expr>>),
     Or(Box<Node<Expr>>, Box<Node<Expr>>),
@@ -168,7 +168,8 @@ impl Expr {
             Expr::Literal(_, ref mut typ) => {
                 *typ = typ.map_vars(substitution);
             }
-            Expr::Var(_, ref mut typ) => {
+            Expr::Var(_, ref mut typ, _) => {
+                // TODO: also substitute in impl params?
                 *typ = typ.map_vars(substitution);
             }
             Expr::Apply(ref mut a, ref mut b) |
@@ -200,6 +201,24 @@ impl Expr {
             }
         }
     }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct Impls(pub HashMap<(u64, Sym), ImplSource>);
+
+impl Impls {
+    pub fn empty() -> Impls {
+        Default::default()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum ImplSource {
+    FromContext(u64, Sym),
+    Apply(ImplSym, Impls),
+    TupleEq(Vec<ImplSource>),
+    TupleOrd(Vec<ImplSource>),
+    TupleToString(Vec<ImplSource>),
 }
 
 #[derive(Debug, Clone)]
@@ -350,10 +369,18 @@ pub struct Trait {
 }
 
 #[derive(Debug, Clone)]
+pub struct ImplDef {
+    pub def: Def,
+    // mapping from impl vars to def vars
+    pub var_mapping: HashMap<u64, u64>,
+}
+
+#[derive(Debug, Clone)]
 pub struct Impl {
+    pub symbol: ImplSym,
     pub scheme: Node<Scheme>,
     pub trait_: Node<Symbol>,
-    pub items: Vec<Def>,
+    pub items: Vec<ImplDef>,
     // mapping from impl symbols to trait symbols
     pub trait_items: HashMap<Sym, Sym>,
     pub module: Name,
@@ -366,6 +393,7 @@ pub struct Items {
     pub traits: Vec<Trait>,
     pub impls: Vec<Impl>,
     pub symbol_names: HashMap<Sym, String>,
+    pub symbol_types: HashMap<Sym, Scheme>,
 }
 
 impl Items {
@@ -373,6 +401,9 @@ impl Items {
         Default::default()
     }
 }
+
+#[derive(PartialEq, Eq, Debug, Copy, Clone)]
+pub struct ImplSym(pub u64);
 
 
 pub mod printer {
@@ -400,7 +431,13 @@ pub mod printer {
         }
         for def in &items.items {
             if def.module.as_str() == "Main" {
-                printer.print_def(&def);
+                printer.print_def(def);
+                println!("");
+            }
+        }
+        for impl_ in &items.impls {
+            if impl_.module.as_str() == "Main" {
+                printer.print_impl(impl_);
                 println!("");
             }
         }
@@ -439,7 +476,7 @@ pub mod printer {
                     print!(")");
                     self.indent -= 1;
                 }
-                Expr::Var(sym, ref type_) => {
+                Expr::Var(sym, ref type_, _) => {
                     print!("(");
                     self.print_symbol(sym);
                     print!(" : {})", type_.display(self.symbol_names));
@@ -609,6 +646,17 @@ pub mod printer {
             self.print_indent();
             self.print_expr(&def.value.value);
             println!("");
+            self.indent -= 1;
+        }
+
+        fn print_impl(&mut self, impl_: &Impl) {
+            println!("impl {}", impl_.scheme.value.display(self.symbol_names));
+            self.indent += 1;
+            for def in &impl_.items {
+                self.print_indent();
+                self.print_def(&def.def);
+                println!("");
+            }
             self.indent -= 1;
         }
     }

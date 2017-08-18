@@ -261,6 +261,9 @@ impl<'a> Resolver<'a> {
             ("Monad", "Monad") => traits::MONAD,
             ("Basics", "Default") => traits::DEFAULT,
             ("Basics", "Number") => traits::NUMBER,
+            ("Basics", "Eq") => traits::EQ,
+            ("Basics", "Ord") => traits::ORD,
+            ("Basics", "ToString") => traits::TO_STRING,
             _ => {
                 //let name = name.into();
                 self.fresh_sym(name)
@@ -1130,8 +1133,9 @@ impl<'a> Resolver<'a> {
         for decl in &module.items {
             match decl.value {
                 Decl::Impl(ref impl_) => {
-                    let impl_ = self.resolve_impl(impl_, &ctx);
+                    let (impl_, defs) = self.resolve_impl(impl_, &ctx);
                     self.result.impls.push(impl_);
+                    self.result.items.extend(defs);
                 }
                 Decl::Infix(assoc, ref sym, ref prec) => {
                     let sym_ = &sym.value;
@@ -1219,7 +1223,7 @@ impl<'a> Resolver<'a> {
     fn resolve_impl(
                     &mut self,
                     impl_: &Impl,
-                    ctx: &Context) -> r::Impl {
+                    ctx: &Context) -> (r::Impl, Vec<r::Def>) {
         let scheme = self.resolve_scheme(&impl_.scheme, ctx);
         let trait_ = self.resolve_trait_bound(&impl_.trait_, ctx);
         
@@ -1271,7 +1275,8 @@ impl<'a> Resolver<'a> {
         // definitions would not resolve to this impl, but to the general item
         locals.retain(|&(_, sym)| !trait_items.contains_key(&sym));
 
-        let mut resolved_defs = Vec::new();
+        let mut impl_defs = Vec::new();
+        let mut other_defs = Vec::new();
         for def in &impl_.values {
             let span = def.span;
             let pat = self.resolve_pattern(&def.value.pattern, &symbols, ctx);
@@ -1282,16 +1287,24 @@ impl<'a> Resolver<'a> {
             let defs = self.resolve_def_raw(pat, value, ctx)
                 .into_iter()
                 .map(|def| Node::new(def, span));
-            resolved_defs.extend(defs);
+            for def in defs {
+                if trait_items.contains_key(&def.value.sym.value) {
+                    impl_defs.push(def);
+                } else {
+                    other_defs.push(def.value);
+                }
+            }
         }
 
-        r::Impl {
+        let impl_ = r::Impl {
             scheme,
             trait_,
-            values: resolved_defs,
+            values: impl_defs,
             trait_items,
             module: ctx.module.clone(),
-        }
+        };
+
+        (impl_, other_defs)
     }
 
     fn resolve_def(

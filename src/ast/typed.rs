@@ -151,7 +151,7 @@ impl<'a, 'b> fmt::Display for TypeFormatter<'a, 'b> {
 
 #[derive(Debug, Clone)]
 pub enum Expr {
-    Literal(Literal, Type),
+    Literal(Literal),
     Var(Symbol, Type, Impls),
     Apply(Box<Node<Expr>>, Box<Node<Expr>>),
     And(Box<Node<Expr>>, Box<Node<Expr>>),
@@ -165,9 +165,7 @@ pub enum Expr {
 impl Expr {
     pub fn substitute_inner(&mut self, substitution: &HashMap<u64, Type>) {
         match *self {
-            Expr::Literal(_, ref mut typ) => {
-                *typ = typ.map_vars(substitution);
-            }
+            Expr::Literal(_) => {}
             Expr::Var(_, ref mut typ, _) => {
                 // TODO: also substitute in impl params?
                 *typ = typ.map_vars(substitution);
@@ -242,7 +240,7 @@ impl CaseBranch {
 pub enum Pattern {
     Wildcard,
     Deconstruct(Node<Symbol>, Vec<Node<Pattern>>),
-    Literal(Literal, Type),
+    Literal(Literal),
     As(Box<Node<Pattern>>, Node<Sym>),
     Tuple(Vec<Node<Pattern>>),
 }
@@ -257,9 +255,7 @@ impl Pattern {
                     item.value.substitute_inner(substitution);
                 }
             }
-            Pattern::Literal(_, ref mut typ) => {
-                *typ = typ.map_vars(substitution);
-            }
+            Pattern::Literal(_) => {}
             Pattern::As(ref mut pat, _) => {
                 pat.value.substitute_inner(substitution);
             }
@@ -504,8 +500,8 @@ pub mod printer {
                     print!(")");
                     self.indent -= 1;
                 }
-                Expr::Literal(ref lit, ref type_) => {
-                    print!("({:?} : {})", lit, type_.display(self.symbol_names));
+                Expr::Literal(ref lit) => {
+                    print!("{:?}", lit);
                 }
                 Expr::Tuple(ref items) => {
                     print!("(");
@@ -575,8 +571,8 @@ pub mod printer {
                         self.print_pattern(&part.value);
                     }
                 }
-                Pattern::Literal(ref lit, ref type_) => {
-                    print!("({:?} : {})", lit, type_.display(self.symbol_names));
+                Pattern::Literal(ref lit) => {
+                    print!("{:?}", lit);
                 }
                 Pattern::Tuple(ref items) => {
                     print!("(");

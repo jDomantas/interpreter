@@ -204,7 +204,7 @@ impl<'a, 'b> SolverCtx<'a, 'b> {
                     self.check_expr(item);
                 }
             }
-            Expr::Literal(_, _) => {}
+            Expr::Literal(_) => {}
             Expr::Lambda(_, ref mut expr) => {
                 self.check_expr(&mut **expr);
             }

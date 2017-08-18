@@ -6,6 +6,7 @@ pub mod types {
     pub const LIST: Sym = Sym(3);
     pub const CHAR: Sym = Sym(4);
     pub const STRING: Sym = Sym(5);
+    pub const INT: Sym = Sym(6);
 }
 
 pub mod traits {

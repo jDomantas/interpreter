@@ -199,6 +199,7 @@ impl<'a> Resolver<'a> {
         result.symbol_names.insert(types::CHAR, "Char".into());
         result.symbol_names.insert(types::STRING, "String".into());
         result.symbol_names.insert(types::LIST, "List".into());
+        result.symbol_names.insert(types::INT, "Int".into());
 
         result.symbol_names.insert(traits::MONAD, "Monad".into());
         result.symbol_names.insert(traits::DEFAULT, "Default".into());
@@ -248,6 +249,7 @@ impl<'a> Resolver<'a> {
             ("Basics", "Char") => types::CHAR,
             ("String", "String") => types::STRING,
             ("List", "List") => types::LIST,
+            ("Basics", "Int") => types::INT,
             _ => {
                 //let name = name.into();
                 self.fresh_sym(name)

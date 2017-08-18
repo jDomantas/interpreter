@@ -77,18 +77,21 @@ trait Number where
     (+) : self -> self -> self
     (-) : self -> self -> self
     (*) : self -> self -> self
+    negate : self -> self
 
 
 impl Int : Number where
     (+) = intAdd
     (-) = intSub
     (*) = intMul
+    negate x = 0 - x
 
 
 impl Frac : Number where
     (+) = fracAdd
     (-) = fracSub
     (*) = fracMul
+    negate x = 0.0 - x
 
 
 (/) : Frac -> Frac -> Frac  
@@ -104,10 +107,6 @@ infixl 6 -
 infixl 7 *
 infixl 7 /
 infixl 7 //
-
-
-negate : [a : Number] a -> a
-negate x = 0 - x
 
 
 trait Eq where
@@ -224,7 +223,7 @@ impl Int : Default where
 
 
 impl Frac : Default where
-    default = 0
+    default = 0.0
 
 
 id : a -> a

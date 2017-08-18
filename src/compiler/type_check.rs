@@ -163,11 +163,7 @@ impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
             Literal::Char(_) => Type::Concrete(builtins::types::CHAR),
             Literal::Float(_) => Type::Concrete(builtins::types::FRAC),
             Literal::Str(_) => Type::Concrete(builtins::types::STRING),
-            Literal::Int(_) => {
-                let var = self.fresh_var();
-                self.add_var_bound(var, builtins::traits::NUMBER);
-                Type::Var(var)
-            }
+            Literal::Int(_) => Type::Concrete(builtins::types::INT),
         }
     }
 
@@ -284,7 +280,7 @@ impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
             }
             r::Pattern::Literal(ref literal) => {
                 let type_ = self.infer_literal(literal);
-                (t::Pattern::Literal(literal.clone(), type_.clone()), type_)
+                (t::Pattern::Literal(literal.clone()), type_)
             }
             r::Pattern::Parenthesised(ref pat) => {
                 let (pat, type_) = self.infer_pattern(pat);
@@ -478,7 +474,7 @@ impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
             }
             r::Expr::Literal(ref literal) => {
                 let type_ = self.infer_literal(literal);
-                (t::Expr::Literal(literal.clone(), type_.clone()), type_)
+                (t::Expr::Literal(literal.clone()), type_)
             }
             r::Expr::Parenthesised(ref expr) => {
                 return self.infer_expr(expr);
@@ -754,14 +750,13 @@ fn make_list_pattern(span: Span, mut items: Vec<Node<t::Pattern>>) -> t::Pattern
 fn make_if(cond: Node<t::Expr>, then: Node<t::Expr>, else_: Node<t::Expr>) -> t::Expr {
     let then_span = then.span;
     let else_span = else_.span;
-    let bool_type = Type::Concrete(builtins::types::BOOL);
-    let true_ = t::Pattern::Literal(Literal::Bool(true), bool_type.clone());
+    let true_ = t::Pattern::Literal(Literal::Bool(true));
     let true_ = t::CaseBranch {
         pattern: Node::new(true_, then.span),
         guard: None,
         value: then,
     };
-    let false_ = t::Pattern::Literal(Literal::Bool(false), bool_type.clone());
+    let false_ = t::Pattern::Literal(Literal::Bool(false));
     let false_ = t::CaseBranch {
         pattern: Node::new(false_, else_.span),
         guard: None,

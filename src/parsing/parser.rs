@@ -413,6 +413,10 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
 
         if self.eat(Token::OpenParen) {
             let start_span = self.previous_span();
+            if self.eat(Token::CloseParen) {
+                let span = start_span.merge(self.previous_span());
+                return Some(Ok(Node::new(Expr::Tuple(Vec::new()), span)));
+            }
 
             let expr = match self.eat_operator() {
                 Some(operator) => {
@@ -581,6 +585,10 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
 
         if self.eat(Token::OpenParen) {
             let start_span = self.previous_span();
+            if self.eat(Token::CloseParen) {
+                let span = start_span.merge(self.previous_span());
+                return Some(Ok(Node::new(Pattern::Tuple(Vec::new()), span)));
+            }
             
             let pattern = match self.pattern() {
                 Ok(pattern) => pattern,
@@ -978,6 +986,11 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
             Some(Ok(Node::new(Type::SelfType, span)))
         } else if self.eat(Token::OpenParen) {
             let start_span = self.previous_span();
+            if self.eat(Token::CloseParen) {
+                let span = start_span.merge(self.previous_span());
+                return Some(Ok(Node::new(Type::Tuple(Vec::new()), span)));
+            }
+
             let type_ = match self.type_() {
                 Ok(type_) => type_,
                 Err(()) => return Some(Err(())),

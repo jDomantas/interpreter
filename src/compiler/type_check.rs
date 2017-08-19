@@ -402,9 +402,9 @@ impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
                 );
                 self.add_constraint(&Type::Var(right_var), &rtype, source);
                 let expr = if op.value == Symbol::Known(builtins::values::AND) {
-                    t::Expr::And(Box::new(typed_lhs), Box::new(typed_rhs))
+                    make_and(typed_lhs, typed_rhs, op.span)
                 } else if op.value == Symbol::Known(builtins::values::OR) {
-                    t::Expr::Or(Box::new(typed_lhs), Box::new(typed_rhs))
+                    make_or(typed_lhs, typed_rhs, op.span)
                 } else {
                     let op_expr = t::Expr::Var(op.value, op_type, Impls::empty());
                     let op = Node::new(op_expr, op.span);
@@ -766,6 +766,16 @@ fn make_if(cond: Node<t::Expr>, then: Node<t::Expr>, else_: Node<t::Expr>) -> t:
         Node::new(true_, then_span),
         Node::new(false_, else_span),
     ])
+}
+
+fn make_and(lhs: Node<t::Expr>, rhs: Node<t::Expr>, op_span: Span) -> t::Expr {
+    let f = Node::new(t::Expr::Literal(Literal::Bool(false)), op_span);
+    make_if(lhs, rhs, f)
+}
+
+fn make_or(lhs: Node<t::Expr>, rhs: Node<t::Expr>, op_span: Span) -> t::Expr {
+    let t = Node::new(t::Expr::Literal(Literal::Bool(true)), op_span);
+    make_if(lhs, t, rhs)
 }
 
 fn function_name(expr: &r::Expr) -> (FunctionName, usize) {

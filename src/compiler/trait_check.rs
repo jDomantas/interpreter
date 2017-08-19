@@ -193,9 +193,7 @@ impl<'a, 'b> SolverCtx<'a, 'b> {
 
     fn check_expr(&mut self, expr: &mut Node<Expr>) {
         match expr.value {
-            Expr::And(ref mut a, ref mut b) |
-            Expr::Apply(ref mut a, ref mut b) |
-            Expr::Or(ref mut a, ref mut b) => {
+            Expr::Apply(ref mut a, ref mut b) => {
                 self.check_expr(&mut **a);
                 self.check_expr(&mut **b);
             }

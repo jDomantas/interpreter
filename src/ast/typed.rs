@@ -154,8 +154,6 @@ pub enum Expr {
     Literal(Literal),
     Var(Symbol, Type, Impls),
     Apply(Box<Node<Expr>>, Box<Node<Expr>>),
-    And(Box<Node<Expr>>, Box<Node<Expr>>),
-    Or(Box<Node<Expr>>, Box<Node<Expr>>),
     Lambda(Node<Sym>, Box<Node<Expr>>),
     Let(Vec<Node<Def>>, Box<Node<Expr>>),
     Tuple(Vec<Node<Expr>>),
@@ -170,9 +168,7 @@ impl Expr {
                 // TODO: also substitute in impl params?
                 *typ = typ.map_vars(substitution);
             }
-            Expr::Apply(ref mut a, ref mut b) |
-            Expr::And(ref mut a, ref mut b) |
-            Expr::Or(ref mut a, ref mut b) => {
+            Expr::Apply(ref mut a, ref mut b) => {
                 a.value.substitute_inner(substitution);
                 b.value.substitute_inner(substitution);
             }
@@ -512,16 +508,6 @@ pub mod printer {
                         need_comma = true;
                     }
                     print!(")");
-                }
-                Expr::And(ref a, ref b) => {
-                    self.print_expr(&a.value);
-                    print!(" && ");
-                    self.print_expr(&b.value);
-                }
-                Expr::Or(ref a, ref b) => {
-                    self.print_expr(&a.value);
-                    print!(" || ");
-                    self.print_expr(&b.value);
                 }
             }
         }

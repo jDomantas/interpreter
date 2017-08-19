@@ -193,6 +193,7 @@ impl<'a> Resolver<'a> {
         let mut result = r::Items::new();
         // TODO: fix this horrible horrible hack?
         result.symbol_names.insert(Sym(0), "self".into());
+        result.symbol_names.insert(Sym(1), "Tuple".into());
 
         result.symbol_names.insert(types::FRAC, "Frac".into());
         result.symbol_names.insert(types::BOOL, "Bool".into());

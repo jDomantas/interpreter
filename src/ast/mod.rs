@@ -5,6 +5,7 @@ use position::Span;
 pub mod parsed;
 pub mod resolved;
 pub mod typed;
+pub mod monomorphised;
 
 
 #[derive(PartialEq, Eq, Debug, Hash, Clone)]

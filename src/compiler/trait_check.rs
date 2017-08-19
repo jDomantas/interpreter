@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, BTreeMap};
 use ast::{Name, Node};
 use ast::typed::{
     Expr, Impl, Impls, Sym, Symbol, Items, Scheme, ImplSource, Type, Def,
@@ -156,7 +156,7 @@ impl<'a, 'b> SolverCtx<'a, 'b> {
                         continue;
                     }
                     if let Some(bounds) = get_trait_bounds(&impl_.scheme.value, t) {
-                        let mut impls = HashMap::new();
+                        let mut impls = BTreeMap::new();
                         let mut all_ok = true;
                         for bound in bounds {
                             if let Some(source) = self.solve_constraint(
@@ -208,11 +208,9 @@ impl<'a, 'b> SolverCtx<'a, 'b> {
             }
             Expr::Var(Symbol::Unknown, _, _) => {}
             Expr::Var(Symbol::Known(sym), ref type_, ref mut required_impls) => {
-                // println!("names: {:?}", self.symbol_names);
-                // println!("types: {:?}", self.symbol_types);
                 let principal = &self.symbol_types[&sym];
                 if let Some(bounds) = get_trait_bounds(&principal, type_) {
-                    let mut impls = HashMap::new();
+                    let mut impls = BTreeMap::new();
                     for bound in bounds {
                         if let Some(source) = self.solve_constraint(
                             bound.instantiated_to,

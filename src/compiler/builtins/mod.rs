@@ -1,12 +1,12 @@
 pub mod types {
     use ast::resolved::Sym;
     
-    pub const FRAC: Sym = Sym(1);
-    pub const BOOL: Sym = Sym(2);
-    pub const LIST: Sym = Sym(3);
-    pub const CHAR: Sym = Sym(4);
-    pub const STRING: Sym = Sym(5);
-    pub const INT: Sym = Sym(6);
+    pub const FRAC: Sym = Sym(10);
+    pub const BOOL: Sym = Sym(11);
+    pub const LIST: Sym = Sym(12);
+    pub const CHAR: Sym = Sym(13);
+    pub const STRING: Sym = Sym(14);
+    pub const INT: Sym = Sym(15);
 }
 
 pub mod traits {

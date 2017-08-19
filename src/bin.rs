@@ -23,6 +23,7 @@ fn run(source: &str) {
     use interpreter::compiler::def_grouping::group_items;
     use interpreter::compiler::type_check::infer_types;
     use interpreter::compiler::trait_check::check_items;
+    use interpreter::compiler::monomorphisation::monomorphise;
 
     let modules = interpreter::parsing::HashMapProvider::new(HashMap::new());
     let mut errors = interpreter::errors::Errors::new();
@@ -86,7 +87,11 @@ fn run(source: &str) {
         return;
     }
 
-    interpreter::ast::typed::printer::print_items(&items);
+    // interpreter::ast::typed::printer::print_items(&items);
+
+    let items = monomorphise(items);
+
+    interpreter::ast::monomorphised::printer::print_items(&items);
 
     println!("OK");
 }

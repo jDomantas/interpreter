@@ -939,8 +939,8 @@ impl<'a, 'b, 'c> Solver<'a, 'b, 'c> {
                 let msg = format!(
                     "Remaining statements have type `{}`, \
                     while expected type was `{}`.",
-                    type2,
-                    type1);
+                    type1,
+                    type2);
                 self.errors
                     .type_error(module)
                     .note(msg, span)
@@ -948,8 +948,8 @@ impl<'a, 'b, 'c> Solver<'a, 'b, 'c> {
             }
             ConstraintSource::BindSource(span) => {
                 let msg = format!(
-                    "Unwraped value has type `{}`, while it \
-                    should be `m a` for some `m` and `a`.",
+                    "Value that is being unwrapped has type `{}`, while it \
+                    should be `m a`",
                     type1);
                 self.errors
                     .type_error(module)
@@ -1153,7 +1153,7 @@ fn convert_resolved_type(type_: &r::Type, self_to: &Type) -> Type {
     }
 }
 
-fn convert_resolved_scheme(scheme: &r::Scheme) -> Scheme {
+fn convert_resolved_scheme(scheme: &r::Scheme, self_to: &Type) -> Scheme {
     fn collect_vars<T: Default>(ty: &r::Type, to: &mut HashMap<u64, T>) {
         match *ty {
             r::Type::Any |
@@ -1174,7 +1174,7 @@ fn convert_resolved_scheme(scheme: &r::Scheme) -> Scheme {
             }
         }
     }
-    let type_ = convert_resolved_type(&scheme.type_.value, &Type::Any);
+    let type_ = convert_resolved_type(&scheme.type_.value, self_to);
     let mut vars = HashMap::new();
     for &(ref var, ref trait_) in &scheme.bounds {
         if let Symbol::Known(sym) = trait_.value {
@@ -1266,7 +1266,9 @@ fn convert_resolved_trait(trait_: r::Trait) -> t::Trait {
     let items = values
         .into_iter()
         .map(|t| {
-            let scheme = convert_resolved_scheme(&t.value.type_.value);
+            // TODO: `self` becoming `Type::Any` does not really make sense,
+            // figure it out
+            let scheme = convert_resolved_scheme(&t.value.type_.value, &Type::Any);
             (t.value.value.value, scheme)
         })
         .collect();
@@ -1391,33 +1393,12 @@ fn collect_trait_item_types(items: &r::GroupedItems) -> HashMap<Sym, (Scheme, Sp
     let mut result = HashMap::new();
     for trait_ in &items.traits {
         for value in &trait_.values {
-            let type_ = convert_resolved_type(
-                &value.value.type_.value.type_.value,
-                &Type::Var(0));
-            let mut vars = HashMap::new();
-            for &(ref var, ref bound) in &value.value.type_.value.bounds {
-                if let Symbol::Known(sym) = bound.value {
-                    vars.entry(var.value.0)
-                        .or_insert_with(HashSet::new)
-                        .insert(sym);
-                }
-            }
-            let mut vars = vars
-                .into_iter()
-                .map(|(var, bounds)| SchemeVar {
-                    id: var,
-                    bounds: bounds.into_iter().collect(),
-                })
-                .collect::<Vec<_>>();
+            let mut scheme = convert_resolved_scheme(&value.value.type_.value, &Type::Var(0));
             // add constraint for what used to be `self`
-            vars.push(SchemeVar {
+            scheme.vars.push(SchemeVar {
                 id: 0,
                 bounds: vec![trait_.name.value],
             });
-            let scheme = Scheme {
-                vars,
-                type_,
-            };
             result.insert(value.value.value.value, (scheme, value.span));
         }
     }
@@ -1502,10 +1483,7 @@ fn make_impl_annotations(
                             trait_item_types: &HashMap<Sym, (Scheme, Span)>) -> HashMap<Sym, (Scheme, Span)> {
     let mut types = HashMap::new();
     for impl_ in &items.impls {
-        //let mut new_vars = HashSet::new();
-        //collect_resolved_type_vars(&impl_.scheme.value.type_.value, &mut new_vars);
-        //let impl_type = convert_resolved_type(&impl_.scheme.value.type_.value, &Type::Any);
-        let impl_scheme = convert_resolved_scheme(&impl_.scheme.value);
+        let impl_scheme = convert_resolved_scheme(&impl_.scheme.value, &Type::Any);
         for def in impl_.values.iter().flat_map(|group| group.iter()) {
             let def_sym = def.value.sym.value;
             let trait_item_sym = if let Some(sym) = impl_.trait_items.get(&def_sym) {
@@ -1555,7 +1533,7 @@ fn infer_impl(
             });
         }
     }
-    let scheme = Node::new(convert_resolved_scheme(&scheme.value), scheme.span);
+    let scheme = Node::new(convert_resolved_scheme(&scheme.value, &Type::Any), scheme.span);
     t::Impl {
         symbol: ImplSym(0),
         scheme,
@@ -1576,7 +1554,7 @@ pub fn infer_types(mut items: r::GroupedItems, errors: &mut Errors) -> t::Items 
     known_types.extend(items.annotations
         .iter()
         .map(|(&sym, annot)| {
-            let scheme = convert_resolved_scheme(&annot.value.type_.value);
+            let scheme = convert_resolved_scheme(&annot.value.type_.value, &Type::Any);
             (sym, (scheme, annot.span))
         }));
     
@@ -1619,7 +1597,7 @@ pub fn infer_types(mut items: r::GroupedItems, errors: &mut Errors) -> t::Items 
 
     for def in &defs {
         if let Some(annot) = items.annotations.get(&def.sym.value) {
-            let scheme = convert_resolved_scheme(&annot.value.type_.value);
+            let scheme = convert_resolved_scheme(&annot.value.type_.value, &Type::Any);
             if !are_schemes_equal(&def.scheme, &scheme) {
                 let msg1 = format!(
                     "Infered type of `{}` is less general than annotated. Infered type `{}`,",

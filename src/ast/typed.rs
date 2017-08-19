@@ -1,4 +1,4 @@
-use std::collections::{HashSet, HashMap};
+use std::collections::{HashSet, HashMap, BTreeMap};
 use std::fmt;
 use std::rc::Rc;
 use ast::{Node, Name, Literal};
@@ -197,22 +197,107 @@ impl Expr {
     }
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct Impls(pub HashMap<(u64, Sym), ImplSource>);
+#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Hash, Clone, Default)]
+pub struct Impls(pub BTreeMap<(u64, Sym), ImplSource>);
 
 impl Impls {
     pub fn empty() -> Impls {
         Default::default()
     }
+
+    pub fn merge(&mut self, other: Impls) {
+        self.0.extend(other.0);
+    }
+
+    pub fn with_context(&self, ctx: &Impls) -> Impls {
+        let mapping = self.0
+            .iter()
+            .map(|(k, v)| (k.clone(), v.with_context(ctx)))
+            .collect();
+        Impls(mapping)
+    }
+
+    pub fn map_vars(&self, mapping: &HashMap<u64, u64>) -> Impls {
+        let impls = self.0
+            .iter()
+            .map(|(&(var, sym), src)| {
+                let var = mapping.get(&var).cloned().unwrap_or(var);
+                ((var, sym), src.map_vars(mapping))
+            })
+            .collect();
+        Impls(impls)
+    }
 }
 
-#[derive(Debug, Clone)]
+#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Hash, Clone)]
 pub enum ImplSource {
     FromContext(u64, Sym),
     Apply(ImplSym, Impls),
     TupleEq(Vec<ImplSource>),
     TupleOrd(Vec<ImplSource>),
     TupleToString(Vec<ImplSource>),
+}
+
+impl ImplSource {
+    fn with_context(&self, ctx: &Impls) -> ImplSource {
+        match *self {
+            ImplSource::FromContext(var, trait_) => {
+                ctx.0[&(var, trait_)].clone()
+            }
+            ImplSource::Apply(sym, ref impls) => {
+                let impls = impls.with_context(ctx);
+                ImplSource::Apply(sym, impls)
+            }
+            ImplSource::TupleEq(ref items) => {
+                let items = items.iter().map(|i|
+                    i.with_context(ctx)
+                ).collect();
+                ImplSource::TupleEq(items)
+            }
+            ImplSource::TupleOrd(ref items) => {
+                let items = items.iter().map(|i|
+                    i.with_context(ctx)
+                ).collect();
+                ImplSource::TupleOrd(items)
+            }
+            ImplSource::TupleToString(ref items) => {
+                let items = items.iter().map(|i|
+                    i.with_context(ctx)
+                ).collect();
+                ImplSource::TupleToString(items)
+            }
+        }
+    }
+
+    fn map_vars(&self, var_mapping: &HashMap<u64, u64>) -> ImplSource {
+        match *self {
+            ImplSource::FromContext(var, trait_) => {
+                ImplSource::FromContext(var, trait_)
+            }
+            ImplSource::Apply(sym, ref impls) => {
+                let impls = impls.map_vars(var_mapping);
+                ImplSource::Apply(sym, impls)
+            }
+            ImplSource::TupleEq(ref items) => {
+                let items = items.iter().map(|i|
+                    i.map_vars(var_mapping)
+                ).collect();
+                ImplSource::TupleEq(items)
+            }
+            ImplSource::TupleOrd(ref items) => {
+                let items = items.iter().map(|i|
+                    i.map_vars(var_mapping)
+                ).collect();
+                ImplSource::TupleOrd(items)
+            }
+            ImplSource::TupleToString(ref items) => {
+                let items = items.iter().map(|i|
+                    i.map_vars(var_mapping)
+                ).collect();
+                ImplSource::TupleToString(items)
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -378,6 +463,17 @@ pub struct Impl {
     pub module: Name,
 }
 
+impl Impl {
+    pub fn get_impl_of(&self, trait_sym: Sym) -> Option<&ImplDef> {
+        self.trait_items
+            .iter()
+            .find(|&(_, v)| *v == trait_sym)
+            .and_then(|(sym, _)| {
+                self.items.iter().find(|d| d.def.sym.value == *sym)
+            })
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Items {
     pub types: Vec<TypeDecl>,
@@ -394,7 +490,7 @@ impl Items {
     }
 }
 
-#[derive(PartialEq, Eq, Debug, Copy, Clone)]
+#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Hash, Copy, Clone)]
 pub struct ImplSym(pub u64);
 
 
@@ -433,6 +529,11 @@ pub mod printer {
                 println!("");
             }
         }
+        /*for (sym, ref typ) in &items.symbol_types {
+            println!("symbol type:  {} : {}",
+                items.symbol_names[&sym],
+                typ.display(&items.symbol_names));
+        }*/
     }
 
     struct Printer<'a> {
@@ -636,6 +737,7 @@ pub mod printer {
             self.indent += 1;
             for def in &impl_.items {
                 self.print_indent();
+                print!("(var map: {:?}) ", def.var_mapping);
                 self.print_def(&def.def);
                 println!("");
             }

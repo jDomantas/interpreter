@@ -416,15 +416,7 @@ pub fn optimise(items: &mut Items) {
     SimplifyMatching.rewrite_items(items);
     JoinLambdas.rewrite_items(items);
     SimplifyRenames::default().rewrite_items(items);
-
-    println!("pre stuff");
-    ::ast::monomorphised::printer::print_items(items);
-
     Unclosure::new().rewrite_items(items);
-    
-    println!("post stuff");
-    ::ast::monomorphised::printer::print_items(items);
-
     JoinApplications.rewrite_items(items);
     RemoveEmptyApplications.rewrite_items(items);
 }

@@ -532,11 +532,12 @@ pub mod printer {
                 println!("");
             }
         }
-        /*for (sym, ref typ) in &items.symbol_types {
-            println!("symbol type:  {} : {}",
+        for (sym, ref typ) in &items.symbol_types {
+            println!("symbol type:  {} ({:?}) : {}",
                 items.symbol_names[&sym],
+                sym,
                 typ.display(&items.symbol_names));
-        }*/
+        }
     }
 
     struct Printer<'a> {

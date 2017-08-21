@@ -54,4 +54,5 @@ pub mod modules {
     pub const OPTION: &'static str = include_str!("Option.txt");
     pub const LIST: &'static str = include_str!("List.txt");
     pub const STRING: &'static str = include_str!("String.txt");
+    pub const MONAD: &'static str = include_str!("Monad.txt");
 }

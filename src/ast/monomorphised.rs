@@ -55,6 +55,14 @@ pub mod printer {
         }
     }
 
+    pub fn print_expr(symbol_names: &HashMap<Sym, String>, expr: &Expr) {
+        let mut printer = Printer {
+            indent: 0,
+            symbol_names: &symbol_names,
+        };
+        printer.print_expr(expr);
+    }
+
     struct Printer<'a> {
         indent: usize,
         symbol_names: &'a HashMap<Sym, String>,

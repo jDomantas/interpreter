@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashSet, HashMap};
 use ast::monomorphised::{Expr, Pattern, CaseBranch, Sym, Items};
 
 
@@ -21,6 +21,10 @@ mod rewriter {
 
         fn rewrite_pattern(&mut self, pattern: &mut Pattern) {
             walk_pattern(self, pattern);
+        }
+
+        fn rewrite_items(&mut self, items: &mut Items) {
+            walk_items(self, items);
         }
     }
 
@@ -86,6 +90,8 @@ mod rewriter {
         }
     }
 }
+
+use self::rewriter::Rewriter;
 
 fn replace_with_inner<T, F>(value: &mut T, dummy: T, select: F)
     where F: FnOnce(&mut T) -> Option<&mut T>
@@ -167,7 +173,7 @@ impl SimplifyRenames {
     }
 }
 
-impl rewriter::Rewriter for SimplifyRenames {
+impl Rewriter for SimplifyRenames {
     fn rewrite_expr(&mut self, expr: &mut Expr) {
         replace_with_inner(expr, Expr::Var(Sym(0)), |e| match *e {
             Expr::Var(ref mut sym) => {
@@ -180,6 +186,8 @@ impl rewriter::Rewriter for SimplifyRenames {
                     if let Some(renamed_to) = pattern_symbol(&branches[0].pattern) {
                         self.add_rename(renamed_to, matched);
                         self.rewrite_expr(&mut branches[0].value);
+                        Some(&mut branches[0].value)
+                    } else if let Pattern::Wildcard = branches[0].pattern {
                         Some(&mut branches[0].value)
                     } else {
                         None
@@ -210,7 +218,7 @@ impl JoinLambdas {
     }
 }
 
-impl rewriter::Rewriter for JoinLambdas {
+impl Rewriter for JoinLambdas {
     fn rewrite_expr(&mut self, expr: &mut Expr) {
         match *expr {
             Expr::Lambda(ref mut params, ref mut value) => {
@@ -247,7 +255,7 @@ impl JoinApplications {
     }
 }
 
-impl rewriter::Rewriter for JoinApplications {
+impl Rewriter for JoinApplications {
     fn rewrite_expr(&mut self, expr: &mut Expr) {
         self.add_args(expr, Vec::new());
         rewriter::walk_expr(self, expr);
@@ -269,7 +277,7 @@ impl RemoveEmptyApplications {
     }
 }
 
-impl rewriter::Rewriter for RemoveEmptyApplications {
+impl Rewriter for RemoveEmptyApplications {
     fn rewrite_expr(&mut self, expr: &mut Expr) {
         replace_with_inner(expr, Expr::Var(Sym(0)), |e| {
             Some(Self::get_next_inner(e))
@@ -278,14 +286,145 @@ impl rewriter::Rewriter for RemoveEmptyApplications {
     }
 }
 
-fn rewrite<R: rewriter::Rewriter>(items: &mut Items, mut r: R) {
-    rewriter::walk_items(&mut r, items);
+struct Unclosure {
+    next_sym: u64,
+    symbol_names: HashMap<Sym, String>,
+    globals: HashSet<Sym>,
+}
+
+impl Unclosure {
+    fn new() -> Self {
+        Unclosure {
+            next_sym: 2000000000,
+            symbol_names: HashMap::new(),
+            globals: HashSet::new(),
+        }
+    }
+
+    fn fresh_sym(&mut self) -> Sym {
+        self.next_sym += 1;
+        let sym = Sym(self.next_sym);
+        self.symbol_names.insert(sym, format!("$unc_{}", sym.0 - 2000000000));
+        sym
+    }
+}
+
+impl Rewriter for Unclosure {
+    fn rewrite_expr(&mut self, expr: &mut Expr) {
+        let extra_args = match *expr {
+            Expr::Lambda(ref mut params, ref mut value) => {
+                self.rewrite_expr(value);
+                let mut free_vars = FreeVars::in_expr(value);
+                for param in &*params {
+                    free_vars.remove(param);
+                }
+                for global in &self.globals {
+                    free_vars.remove(global);
+                }
+                if !free_vars.is_empty() {
+                    let rename = free_vars
+                        .into_iter()
+                        .map(|sym| (sym, self.fresh_sym()))
+                        .collect::<HashMap<_, _>>();
+                    Renamer(&rename).rewrite_expr(value);
+                    let rename = rename.into_iter().collect::<Vec<_>>();
+                    let new_params = rename
+                        .iter()
+                        .map(|&(_, x)| x)
+                        .chain(params.drain(..))
+                        .collect::<Vec<_>>();
+                    ::std::mem::replace(params, new_params);
+                    rename.iter().map(|&(x, _)| Expr::Var(x)).collect::<Vec<_>>()
+                } else {
+                    return;
+                }
+            }
+            _ => {
+                rewriter::walk_expr(self, expr);
+                return;
+            }
+        };
+        *expr = Expr::Apply(Box::new(::std::mem::replace(expr, Expr::Var(Sym(0)))), extra_args);
+    }
+
+    fn rewrite_items(&mut self, items: &mut Items) {
+        for def in &items.items {
+            self.globals.insert(def.sym);
+        }
+        rewriter::walk_items(self, items);
+        items.symbol_names.extend(self.symbol_names.drain());
+    }
+}
+
+#[derive(Default)]
+struct FreeVars {
+    vars: HashSet<Sym>,
+    bound_in_patterns: HashSet<Sym>,
+}
+
+impl FreeVars {
+    fn in_expr(expr: &mut Expr) -> HashSet<Sym> {
+        let mut free_vars = Self::default();
+        free_vars.rewrite_expr(expr);
+        free_vars.vars
+    }
+}
+
+impl Rewriter for FreeVars {
+    fn rewrite_expr(&mut self, expr: &mut Expr) {
+        match *expr {
+            Expr::Lambda(_, _) => {}
+            Expr::Var(var) => {
+                if !self.bound_in_patterns.contains(&var) {
+                    self.vars.insert(var);
+                }
+            }
+            ref mut e => {
+                rewriter::walk_expr(self, e);
+            }
+        }
+    }
+
+    fn rewrite_pattern(&mut self, pattern: &mut Pattern) {
+        rewriter::walk_pattern(self, pattern);
+        match *pattern {
+            Pattern::As(_, var) => {
+                self.vars.remove(&var);
+                self.bound_in_patterns.insert(var);
+            }
+            _ => {}
+        }
+    }
+}
+
+struct Renamer<'a>(&'a HashMap<Sym, Sym>);
+
+impl<'a> Rewriter for Renamer<'a> {
+    fn rewrite_expr(&mut self, expr: &mut Expr) {
+        match *expr {
+            Expr::Var(ref mut sym) => {
+                *sym = self.0.get(sym).cloned().unwrap_or(*sym);
+            }
+            ref mut e => {
+                rewriter::walk_expr(self, e);
+            }
+        }
+    }
 }
 
 pub fn optimise(items: &mut Items) {
-    rewrite(items, SimplifyMatching);
-    rewrite(items, JoinLambdas);
-    rewrite(items, SimplifyRenames::default());
-    rewrite(items, JoinApplications);
-    rewrite(items, RemoveEmptyApplications);
+    SimplifyMatching.rewrite_items(items);
+    JoinLambdas.rewrite_items(items);
+    SimplifyRenames::default().rewrite_items(items);
+
+    println!("pre stuff");
+    ::ast::monomorphised::printer::print_items(items);
+
+    Unclosure::new().rewrite_items(items);
+    
+    println!("post stuff");
+    ::ast::monomorphised::printer::print_items(items);
+
+    JoinApplications.rewrite_items(items);
+    RemoveEmptyApplications.rewrite_items(items);
 }

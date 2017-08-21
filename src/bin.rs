@@ -79,6 +79,8 @@ fn run(source: &str) {
         return;
     }
 
+    // interpreter::ast::typed::printer::print_items(&items);
+
     check_items(&mut items, &mut errors);
     if errors.have_errors() {
         for err in errors.into_error_list() {

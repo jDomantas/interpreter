@@ -62,12 +62,13 @@ struct InferCtx<'a, 'b, 'c, 'd> {
     env: HashMap<Sym, Scheme>,
     new_env: HashMap<Sym, Scheme>,
     next_var: u64,
+    next_sym: u64,
     var_bounds: HashMap<u64, HashSet<Sym>>,
     errors: &'b mut Errors,
     constraints: Vec<Constraint>,
     current_module: Option<Name>,
     annotations: &'a HashMap<Sym, (Scheme, Span)>,
-    symbol_names: &'c HashMap<Sym, String>,
+    symbol_names: &'c mut HashMap<Sym, String>,
 }
 
 impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
@@ -75,12 +76,13 @@ impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
             pattern_types: &'d HashMap<Sym, PatternTy>,
             annotations: &'a HashMap<Sym, (Scheme, Span)>,
             errors: &'b mut Errors,
-            symbol_names: &'c HashMap<Sym, String>) -> Self {
+            symbol_names: &'c mut HashMap<Sym, String>) -> Self {
         InferCtx {
             pattern_types,
             env: HashMap::new(),
             new_env: HashMap::new(),
             next_var: 1,
+            next_sym: 500000000,
             var_bounds: HashMap::new(),
             errors,
             constraints: Vec::new(),
@@ -94,6 +96,13 @@ impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
         let var = self.next_var;
         self.next_var += 1;
         var
+    }
+
+    fn fresh_sym(&mut self) -> Sym {
+        self.next_sym += 1;
+        let sym = Sym(self.next_sym);
+        self.symbol_names.insert(sym, format!("$typeck_{}", self.next_sym - 500000000));
+        sym
     }
 
     fn add_var_bound(&mut self, var: u64, trait_: Sym) {
@@ -530,7 +539,8 @@ impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
                 self.add_constraint(&rest_type, &rest_expected, source);
                 // build case expr for pattern
                 let pat_span = pat.span;
-                let param_sym = Sym(0);
+                let param_sym = self.fresh_sym();
+                self.add_symbol(param_sym, empty_scheme((*a).clone()));
                 let param = t::Expr::Var(Symbol::Known(param_sym), pat_type, Impls::empty());
                 let param = Node::new(param, pat.span);
                 let span = pat.span.merge(rest.span);
@@ -1563,7 +1573,7 @@ pub fn infer_types(mut items: r::GroupedItems, errors: &mut Errors) -> t::Items 
             &pattern_types,
             &known_types,
             errors,
-            &items.symbol_names);
+            &mut items.symbol_names);
         
         let mut typed_defs = Vec::new();
         for def_group in &items.items {

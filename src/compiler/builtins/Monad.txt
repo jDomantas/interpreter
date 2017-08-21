@@ -1,0 +1,5 @@
+module Monad exposing (Monad, bind, unit)
+
+trait Monad where
+    unit : a -> self a
+    bind : self a -> (a -> self b) -> self b

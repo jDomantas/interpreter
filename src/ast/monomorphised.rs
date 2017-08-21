@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use ast::Literal;
-use ast::resolved::Sym;
+pub use ast::resolved::Sym;
 
 
 #[derive(Debug, Clone)]

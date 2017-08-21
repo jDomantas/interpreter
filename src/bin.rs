@@ -87,9 +87,9 @@ fn run(source: &str) {
         return;
     }
 
-    // interpreter::ast::typed::printer::print_items(&items);
+    let mut items = monomorphise(items);
 
-    let items = monomorphise(items);
+    interpreter::compiler::closure_fix::optimise(&mut items);
 
     interpreter::ast::monomorphised::printer::print_items(&items);
 

@@ -111,6 +111,9 @@ impl<'a, 'b> fmt::Display for TypeFormatter<'a, 'b> {
             Type::Any => write!(f, "?"),
             Type::Var(index) => write!(f, "t{}", index),
             Type::Concrete(sym) => write!(f, "{}", self.symbol_names[&sym]),
+            Type::Tuple(ref items) if items.len() == 0 => {
+                write!(f, "()")
+            }
             Type::Tuple(ref items) => {
                 try!(write!(f, "({}", items[0].display(self.symbol_names)));
                 for item in items.iter().skip(1) {

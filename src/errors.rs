@@ -137,7 +137,7 @@ impl<'a> ErrorBuilder<'a> {
         self
     }
 
-    pub fn done(mut self) {
+    pub fn done(self) {
         if self.error.notes.len() == 0 {
             panic!("Built an error message without any notes.");
         }

@@ -1,5 +1,5 @@
 use std::collections::{HashSet, HashMap};
-use ast::monomorphised::{Expr, Pattern, CaseBranch, Sym, Items};
+use ast::monomorphised::{Expr, Pattern, CaseBranch, Sym, Def, Items};
 
 
 mod rewriter {
@@ -290,6 +290,7 @@ struct Unclosure {
     next_sym: u64,
     symbol_names: HashMap<Sym, String>,
     globals: HashSet<Sym>,
+    new_globals: Vec<Def>,
 }
 
 impl Unclosure {
@@ -298,6 +299,7 @@ impl Unclosure {
             next_sym: 2000000000,
             symbol_names: HashMap::new(),
             globals: HashSet::new(),
+            new_globals: Vec::new(),
         }
     }
 
@@ -339,6 +341,47 @@ impl Rewriter for Unclosure {
                     return;
                 }
             }
+            Expr::Let(ref mut defs, ref mut value) => {
+                self.rewrite_expr(value);
+                let mut free_vars = FreeVars::default();
+                for def in defs.iter_mut() {
+                    free_vars.rewrite_def(def);
+                }
+                let mut free_vars = free_vars.vars;
+                for def in defs.iter() {
+                    free_vars.remove(&def.sym);
+                }
+                let base_renames = defs
+                    .iter()
+                    .map(|def| (def.sym, self.fresh_sym()))
+                    .collect::<HashMap<_, _>>();
+                for def in defs.iter_mut() {
+                    Renamer(&base_renames).rewrite_expr(&mut def.value);
+                    self.globals.insert(base_renames[&def.sym]);
+                }
+                for def in defs.iter_mut() {
+                    self.rewrite_def(def);
+                }
+                let mut new_let_defs = Vec::new();
+                for mut def in defs.drain(..) {
+                    let rename = free_vars
+                        .iter()
+                        .map(|&sym| (sym, self.fresh_sym()))
+                        .collect::<HashMap<_, _>>();
+                    new_let_defs.push(Def {
+                        sym: def.sym,
+                        value: Expr::Apply(
+                            Box::new(Expr::Var(base_renames[&def.sym])),
+                            free_vars.iter().map(|&v| Expr::Var(v)).collect()),
+                    });
+                    def.sym = base_renames[&def.sym];
+                    Renamer(&rename).rewrite_expr(&mut def.value);
+                    self.globals.insert(def.sym);
+                    self.new_globals.push(def);
+                }
+                *defs = new_let_defs;
+                return;
+            }
             _ => {
                 rewriter::walk_expr(self, expr);
                 return;
@@ -353,6 +396,7 @@ impl Rewriter for Unclosure {
         }
         rewriter::walk_items(self, items);
         items.symbol_names.extend(self.symbol_names.drain());
+        items.items.extend(self.new_globals.drain(..));
     }
 }
 
@@ -373,16 +417,23 @@ impl FreeVars {
 impl Rewriter for FreeVars {
     fn rewrite_expr(&mut self, expr: &mut Expr) {
         match *expr {
-            Expr::Lambda(_, _) => {}
+            Expr::Lambda(_, _) => {
+                return;
+            }
             Expr::Var(var) => {
                 if !self.bound_in_patterns.contains(&var) {
                     self.vars.insert(var);
                 }
             }
-            ref mut e => {
-                rewriter::walk_expr(self, e);
+            Expr::Let(ref defs, _) => {
+                for def in defs {
+                    self.vars.remove(&def.sym);
+                    self.bound_in_patterns.insert(def.sym);
+                }
             }
+            _ => {}
         }
+        rewriter::walk_expr(self, expr);
     }
 
     fn rewrite_pattern(&mut self, pattern: &mut Pattern) {

@@ -12,9 +12,9 @@ pub mod types {
 pub mod traits {
     use ast::resolved::Sym;
     
-    pub const MONAD: Sym = Sym(20);
+    pub const COMPUTATION: Sym = Sym(20);
     pub const DEFAULT: Sym = Sym(21);
-    pub const NUMBER: Sym = Sym(22);
+    pub const FAILABLE: Sym = Sym(22);
     pub const EQ: Sym = Sym(23);
     pub const ORD: Sym = Sym(24);
     pub const TO_STRING: Sym = Sym(25);
@@ -26,11 +26,14 @@ pub mod values {
     pub const NIL: Sym = Sym(40);
     pub const CONS: Sym = Sym(41);
 
-    pub const BIND: Sym = Sym(42);
+    pub const AND_THEN: Sym = Sym(42);
     pub const DEFAULT: Sym = Sym(43);
+    pub const FAIL: Sym = Sym(44);
 
-    pub const AND: Sym = Sym(44);
-    pub const OR: Sym = Sym(45);
+    pub const AND: Sym = Sym(45);
+    pub const OR: Sym = Sym(46);
+
+    pub const MAIN: Sym = Sym(47);
 
     pub const INT_ADD: Sym = Sym(50);
     pub const INT_SUB: Sym = Sym(51);
@@ -54,5 +57,5 @@ pub mod modules {
     pub const OPTION: &'static str = include_str!("Option.txt");
     pub const LIST: &'static str = include_str!("List.txt");
     pub const STRING: &'static str = include_str!("String.txt");
-    pub const MONAD: &'static str = include_str!("Monad.txt");
+    pub const COMPUTATION: &'static str = include_str!("Computation.txt");
 }

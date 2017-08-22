@@ -1,0 +1,13 @@
+module Computation exposing
+    ( Computation, Failable
+    , succeed, andThen, fail
+    )
+
+
+trait Computation where
+    succeed : a -> self a
+    andThen : self a -> (a -> self b) -> self b
+
+
+trait Failable where
+    fail : self a

@@ -202,13 +202,14 @@ impl<'a> Resolver<'a> {
         result.symbol_names.insert(types::LIST, "List".into());
         result.symbol_names.insert(types::INT, "Int".into());
 
-        result.symbol_names.insert(traits::MONAD, "Monad".into());
+        result.symbol_names.insert(traits::COMPUTATION, "Computation".into());
+        result.symbol_names.insert(traits::FAILABLE, "Failable".into());
         result.symbol_names.insert(traits::DEFAULT, "Default".into());
-        result.symbol_names.insert(traits::NUMBER, "Number".into());
 
         result.symbol_names.insert(values::NIL, "Nil".into());
         result.symbol_names.insert(values::CONS, "::".into());
-        result.symbol_names.insert(values::BIND, "bind".into());
+        result.symbol_names.insert(values::AND_THEN, "andThen".into());
+        result.symbol_names.insert(values::FAIL, "fail".into());
         result.symbol_names.insert(values::DEFAULT, "default".into());
         result.symbol_names.insert(values::AND, "&&".into());
         result.symbol_names.insert(values::OR, "||".into());
@@ -226,6 +227,8 @@ impl<'a> Resolver<'a> {
         result.symbol_names.insert(values::FRAC_LE, "fracLe".into());
         result.symbol_names.insert(values::FRAC_EQ, "fracEq".into());
         result.symbol_names.insert(values::FRAC_GR, "fracGr".into());
+
+        result.symbol_names.insert(values::MAIN, "main".into());
         
         Resolver {
             errors: errors,
@@ -261,9 +264,9 @@ impl<'a> Resolver<'a> {
     fn fresh_trait_sym(&mut self, module: &Name, name: &str) -> r::Sym {
         use compiler::builtins::traits;
         match (module.as_str(), name) {
-            ("Monad", "Monad") => traits::MONAD,
+            ("Computation", "Computation") => traits::COMPUTATION,
+            ("Computation", "Failable") => traits::FAILABLE,
             ("Basics", "Default") => traits::DEFAULT,
-            ("Basics", "Number") => traits::NUMBER,
             ("Basics", "Eq") => traits::EQ,
             ("Basics", "Ord") => traits::ORD,
             ("Basics", "ToString") => traits::TO_STRING,
@@ -279,7 +282,8 @@ impl<'a> Resolver<'a> {
         match (module.as_str(), parent, name) {
             ("List", Some("List"), "Nil") => values::NIL,
             ("List", Some("List"), "::") => values::CONS,
-            ("Monad", None, "bind") => values::BIND,
+            ("Computation", None, "andThen") => values::AND_THEN,
+            ("Computation", None, "fail") => values::FAIL,
             ("Basics", None, "default") => values::DEFAULT,
             ("Basics", None, "&&") => values::AND,
             ("Basics", None, "||") => values::OR,
@@ -297,6 +301,7 @@ impl<'a> Resolver<'a> {
             ("Basics", None, "fracLe") => values::FRAC_LE,
             ("Basics", None, "fracEq") => values::FRAC_EQ,
             ("Basics", None, "fracGr") => values::FRAC_GR,
+            ("Main", None, "main") => values::MAIN,
             _ => {
                 //let name = name.into();
                 self.fresh_sym(name)

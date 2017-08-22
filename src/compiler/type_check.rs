@@ -501,24 +501,28 @@ impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
             r::Expr::DoIf(ref cond, ref rest) => {
                 let (cond, cond_type) = self.infer_expr(cond);
                 let (rest, rest_type) = self.infer_expr(rest);
+                // expect `cond : Bool`
                 let bool_type = Type::Concrete(builtins::types::BOOL);
                 let cond_source = ConstraintSource::IfCondition(cond.span);
                 self.add_constraint(&cond_type, &bool_type, cond_source);
-                let default = self.fresh_var();
-                self.add_var_bound(default, builtins::traits::DEFAULT);
-                let default_type = Type::Var(default);
+                // expect `rest : m a`, where `m : Failable`
+                let m = self.fresh_var();
+                let a = self.fresh_var();
+                self.add_var_bound(m, builtins::traits::FAILABLE);
+                let expected = Type::Apply(Rc::new(Type::Var(m)), Rc::new(Type::Var(a)));
                 let source = ConstraintSource::DoIf(rest.span);
-                self.add_constraint(&rest_type, &default_type, source);
-                let default = Symbol::Known(builtins::values::DEFAULT);
-                let default = t::Expr::Var(default, default_type, Impls::empty());
-                let default = Node::new(default, cond.span);
-                let if_ = make_if(cond, rest, default);
+                self.add_constraint(&rest_type, &expected, source);
+                // make `if cond then rest else fail`
+                let fail = Symbol::Known(builtins::values::FAIL);
+                let fail = t::Expr::Var(fail, expected, Impls::empty());
+                let fail = Node::new(fail, cond.span);
+                let if_ = make_if(cond, rest, fail);
                 (if_, rest_type)
             }
             r::Expr::Bind(ref pat, ref expr, ref rest) => {
                 let m = self.fresh_var();
                 let matched = self.fresh_var();
-                self.add_var_bound(m, builtins::traits::MONAD);
+                self.add_var_bound(m, builtins::traits::COMPUTATION);
                 let m = Rc::new(Type::Var(m));
                 let a = Rc::new(Type::Var(matched));
                 let (pat, pat_type) = self.infer_pattern(pat);
@@ -568,7 +572,7 @@ impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
                         Rc::new(Type::Function(
                             Rc::new(Type::Function(a, mb.clone())),
                             mb)));
-                let bind_symbol = Symbol::Known(builtins::values::BIND);
+                let bind_symbol = Symbol::Known(builtins::values::AND_THEN);
                 let bind = t::Expr::Var(bind_symbol, bind_type, Impls::empty());
                 let bind = Node::new(bind, expr.span);
                 let span = expr.span;
@@ -922,14 +926,19 @@ impl<'a, 'b, 'c> Solver<'a, 'b, 'c> {
         let type2 = type2.display(self.symbol_names);
         let module = &constraint.3;
         match constraint.2 {
-            ConstraintSource::AlwaysStatisfied |
-            ConstraintSource::DoIf(_) => {
-                // `DoIf` constraints just unify with a fresh var that has a
-                // `Default` trait bound, to capture the type for trait
-                // instantiation. Therefore, the constraint itself should never
-                // fail.
+            ConstraintSource::AlwaysStatisfied => {
                 panic!("failed to solve constraint \
                         that should not have failed");
+            }
+            ConstraintSource::DoIf(span) => {
+                let msg = format!(
+                    "Remaining statements have type `{}`, \
+                    while it should be `m a`.",
+                    type1);
+                self.errors
+                    .type_error(module)
+                    .note(msg, span)
+                    .done();
             }
             ConstraintSource::Annotated(sym, def_span, annot_span) => {
                 let msg1 = format!(

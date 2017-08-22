@@ -42,6 +42,96 @@ pub struct Items {
 }
 
 
+pub mod rewriter {
+    use super::{Expr, Pattern, CaseBranch, Def, Items};
+
+    
+    pub trait Rewriter {
+        fn rewrite_def(&mut self, def: &mut Def) {
+            walk_def(self, def);
+        }
+
+        fn rewrite_expr(&mut self, expr: &mut Expr) {
+            walk_expr(self, expr);
+        }
+
+        fn rewrite_branch(&mut self, branch: &mut CaseBranch) {
+            walk_branch(self, branch);
+        }
+
+        fn rewrite_pattern(&mut self, pattern: &mut Pattern) {
+            walk_pattern(self, pattern);
+        }
+
+        fn rewrite_items(&mut self, items: &mut Items) {
+            walk_items(self, items);
+        }
+    }
+
+    pub fn walk_def<R: Rewriter + ?Sized>(r: &mut R, def: &mut Def) {
+        r.rewrite_expr(&mut def.value);
+    }
+
+    pub fn walk_expr<R: Rewriter + ?Sized>(r: &mut R, expr: &mut Expr) {
+        match *expr {
+            Expr::Literal(_) |
+            Expr::Var(_) |
+            Expr::Constructor(_, _) => {}
+            Expr::Apply(ref mut f, ref mut args) => {
+                r.rewrite_expr(&mut **f);
+                for arg in args {
+                    r.rewrite_expr(arg);
+                }
+            }
+            Expr::Lambda(_, ref mut expr) => {
+                r.rewrite_expr(&mut **expr);
+            }
+            Expr::Let(ref mut defs, ref mut value) => {
+                for def in defs {
+                    r.rewrite_def(def);
+                }
+                r.rewrite_expr(&mut **value);
+            }
+            Expr::Case(ref mut value, ref mut branches) => {
+                r.rewrite_expr(&mut **value);
+                for branch in branches {
+                    r.rewrite_branch(branch);
+                }
+            }
+        }
+    }
+
+    pub fn walk_branch<R: Rewriter + ?Sized>(r: &mut R, branch: &mut CaseBranch) {
+        r.rewrite_pattern(&mut branch.pattern);
+        if let Some(ref mut guard) = branch.guard {
+            r.rewrite_expr(guard);
+        }
+        r.rewrite_expr(&mut branch.value);
+    }
+
+    pub fn walk_pattern<R: Rewriter + ?Sized>(r: &mut R, pattern: &mut Pattern) {
+        match *pattern {
+            Pattern::Wildcard |
+            Pattern::Literal(_) => {}
+            Pattern::Deconstruct(_, ref mut items) => {
+                for item in items {
+                    r.rewrite_pattern(item);
+                }
+            }
+            Pattern::As(ref mut pat, _) => {
+                r.rewrite_pattern(&mut **pat);
+            }
+        }
+    }
+
+    pub fn walk_items<R: Rewriter + ?Sized>(r: &mut R, items: &mut Items) {
+        for def in &mut items.items {
+            r.rewrite_def(def);
+        }
+    }
+}
+
+
 pub mod printer {
     use super::*;
     pub fn print_items(items: &Items) {

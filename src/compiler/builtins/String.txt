@@ -1,34 +1,31 @@
-module String exposing (String)
+module String exposing
+    ( String
+    , append, charAt, subString, length
+    )
 
 import Basics exposing (..)
+import Option exposing (Option)
 
 
 type String = InternalString
 
-
-{-
 append : String -> String -> String
 append = append
-
 
 charAt : Int -> String -> Option Char
 charAt = charAt
 
-
 subString : Int -> Int -> String -> String
 subString = subString
 
-
 length : String -> Int
 length = length
--}
-
 
 impl String : ToString where
     toString = id
 
+impl String : Appendable where
+    (++) = append
 
-{-
-impl String : Default where
-    default = ""
--}
+-- impl String : Default where
+--    default = ""

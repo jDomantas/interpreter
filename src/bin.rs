@@ -93,9 +93,21 @@ fn run(source: &str) {
 
     interpreter::compiler::closure_fix::optimise(&mut items);
 
-    interpreter::ast::monomorphised::printer::print_items(&items);
-
     println!("OK");
+
+    //println!(">>> POST OPT");
+    //interpreter::ast::monomorphised::printer::print_items(&items);
+
+    //println!(">>> BYTECODE");
+
+    let (fns, globals) = interpreter::compiler::compilation::compile(items);
+
+    //println!("globals: {:#?}", globals);
+    //println!("fns: {:#?}", fns);
+
+    let mut vm = interpreter::vm::Vm::new(globals, &fns);
+    let res = vm.eval_globals();
+    println!("res: {:#?}", res);
 }
 
 fn format_error(source: &str, error: &Error) {

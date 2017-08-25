@@ -35,6 +35,9 @@ pub mod values {
 
     pub const MAIN: Sym = Sym(47);
 
+    pub const SOME: Sym = Sym(48);
+    pub const NONE: Sym = Sym(49);
+
     pub const INT_ADD: Sym = Sym(50);
     pub const INT_SUB: Sym = Sym(51);
     pub const INT_MUL: Sym = Sym(52);
@@ -42,6 +45,7 @@ pub mod values {
     pub const INT_LE: Sym = Sym(54);
     pub const INT_EQ: Sym = Sym(55);
     pub const INT_GR: Sym = Sym(56);
+    pub const INT_TO_STR: Sym = Sym(57);
     
     pub const FRAC_ADD: Sym = Sym(60);
     pub const FRAC_SUB: Sym = Sym(61);
@@ -50,6 +54,17 @@ pub mod values {
     pub const FRAC_LE: Sym = Sym(64);
     pub const FRAC_EQ: Sym = Sym(65);
     pub const FRAC_GR: Sym = Sym(66);
+    pub const FRAC_TO_STR: Sym = Sym(67);
+
+    pub const CHAR_TO_STR: Sym = Sym(70);
+    pub const CHAR_LE: Sym = Sym(71);
+    pub const CHAR_EQ: Sym = Sym(72);
+    pub const CHAR_GR: Sym = Sym(73);
+
+    pub const STR_LENGTH: Sym = Sym(80);
+    pub const STR_CHAR_AT: Sym = Sym(81);
+    pub const STR_APPEND: Sym = Sym(82);
+    pub const STR_SUBSTRING: Sym = Sym(83);
 }
 
 pub mod modules {

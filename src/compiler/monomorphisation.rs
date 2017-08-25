@@ -76,7 +76,14 @@ impl Solver {
         if !self.owner_trait.contains_key(&def) && !self.defs.contains_key(&(def, ctx)) {
             return def;
         }
-        let sym = self.fresh_sym(def);
+        // don't rename the symbol for defs without var bounds -
+        // we will have only one instantiation anyways
+        // (also this does not fuck with builtin symbols)
+        let sym = if impls.0.len() == 0 {
+            def
+        } else {
+            self.fresh_sym(def)
+        };
         let temp_def = m::Def {
             sym,
             value: m::Expr::Constructor(Sym(0), 0),

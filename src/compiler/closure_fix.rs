@@ -98,6 +98,7 @@ impl Rewriter for SimplifyRenames {
                         self.rewrite_expr(&mut branches[0].value);
                         Some(&mut branches[0].value)
                     } else if let Pattern::Wildcard = branches[0].pattern {
+                        self.rewrite_expr(&mut branches[0].value);
                         Some(&mut branches[0].value)
                     } else {
                         None

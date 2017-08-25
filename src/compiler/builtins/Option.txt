@@ -8,42 +8,34 @@ import Basics exposing (..)
 
 type Option a = None | Some a
 
-
 map : (a -> b) -> Option a -> Option b
 map f opt = case opt of
     Some x -> Some (f x)
     None -> None
-
 
 isSome : Option a -> Bool
 isSome opt = case opt of
     Some _ -> true
     None -> false
 
-
 isNone : Option a -> Bool
 isNone = isSome >> not
-
 
 flatMap : (a -> Option b) -> Option a -> Option b
 flatMap f opt = case opt of
     Some x -> f x
     None -> None
 
-
 getOrElse : a -> Option a -> a
 getOrElse a opt = case opt of
     Some x -> x
     None -> a
 
-
 flatten : Option (Option a) -> Option a
 flatten = flatMap id
 
-
 impl Option a : Default where
     default = None
-
 
 impl [a : Eq] Option a : Eq where
     a == b = case (a, b) of

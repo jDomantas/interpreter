@@ -9,63 +9,51 @@ import Option exposing (Option(Some, None))
 
 type List a = Nil | (::) a (List a)
 
-
 infixr 5 ::
-
 
 map : (a -> b) -> List a -> List b
 map f list = case list of
     [] -> []
     x :: xs -> f x :: map f xs
 
-
 head : List a -> Option a
 head list = case list of
     [] -> None
     x :: _ -> Some x
-
 
 tail : List a -> Option (List a)
 tail list = case list of
     [] -> None
     _ :: xs -> Some xs
 
-
 length : List a -> Int
 length list = case list of
     [] -> 0
     _ :: xs -> 1 + length xs
-
 
 foldl : a -> (a -> b -> a) -> List b -> a
 foldl init f list = case list of
     [] -> init
     x :: xs -> foldl (f init x) f xs
 
-
 foldr : a -> (b -> a -> a) -> List b -> a
 foldr init f list = case list of
     [] -> init
     x :: xs -> f x (foldr init f xs)
 
-
 fold : [a : Appendable, a : Default] List a -> a
 fold = foldl default (++)
 
-
 reverse : List a -> List a
 reverse list = foldl [] (flip (::)) list
-
 
 append : List a -> List a -> List a
 append a b = case a of
     [] -> b
     x :: xs -> x :: append xs b
 
-
 impl List a : Appendable where
     (++) = append
-
 
 {- impl [a : ToString] List a : ToString where
     toString list = 

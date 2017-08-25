@@ -208,6 +208,8 @@ impl<'a> Resolver<'a> {
 
         result.symbol_names.insert(values::NIL, "Nil".into());
         result.symbol_names.insert(values::CONS, "::".into());
+        result.symbol_names.insert(values::SOME, "Some".into());
+        result.symbol_names.insert(values::NONE, "None".into());
         result.symbol_names.insert(values::AND_THEN, "andThen".into());
         result.symbol_names.insert(values::FAIL, "fail".into());
         result.symbol_names.insert(values::DEFAULT, "default".into());
@@ -220,6 +222,7 @@ impl<'a> Resolver<'a> {
         result.symbol_names.insert(values::INT_LE, "intLe".into()); 
         result.symbol_names.insert(values::INT_EQ, "intEq".into()); 
         result.symbol_names.insert(values::INT_GR, "intGr".into()); 
+        result.symbol_names.insert(values::INT_TO_STR, "intToString".into());
         result.symbol_names.insert(values::FRAC_ADD, "fracAdd".into());
         result.symbol_names.insert(values::FRAC_SUB, "fracSub".into());
         result.symbol_names.insert(values::FRAC_MUL, "fracMul".into());
@@ -227,6 +230,15 @@ impl<'a> Resolver<'a> {
         result.symbol_names.insert(values::FRAC_LE, "fracLe".into());
         result.symbol_names.insert(values::FRAC_EQ, "fracEq".into());
         result.symbol_names.insert(values::FRAC_GR, "fracGr".into());
+        result.symbol_names.insert(values::FRAC_TO_STR, "fracToString".into());
+        result.symbol_names.insert(values::CHAR_TO_STR, "charToString".into());
+        result.symbol_names.insert(values::CHAR_LE, "charLe".into());
+        result.symbol_names.insert(values::CHAR_EQ, "charEq".into());
+        result.symbol_names.insert(values::CHAR_GR, "charGr".into());
+        result.symbol_names.insert(values::STR_APPEND, "append".into());
+        result.symbol_names.insert(values::STR_CHAR_AT, "charAt".into());
+        result.symbol_names.insert(values::STR_LENGTH, "length".into());
+        result.symbol_names.insert(values::STR_SUBSTRING, "substring".into());
 
         result.symbol_names.insert(values::MAIN, "main".into());
         
@@ -282,6 +294,8 @@ impl<'a> Resolver<'a> {
         match (module.as_str(), parent, name) {
             ("List", Some("List"), "Nil") => values::NIL,
             ("List", Some("List"), "::") => values::CONS,
+            ("Basics", Some("Option"), "Some") => values::SOME,
+            ("Basics", Some("Option"), "None") => values::NONE,
             ("Computation", None, "andThen") => values::AND_THEN,
             ("Computation", None, "fail") => values::FAIL,
             ("Basics", None, "default") => values::DEFAULT,
@@ -294,6 +308,7 @@ impl<'a> Resolver<'a> {
             ("Basics", None, "intLe") => values::INT_LE,
             ("Basics", None, "intEq") => values::INT_EQ,
             ("Basics", None, "intGr") => values::INT_GR,
+            ("Basics", None, "intToString") => values::INT_TO_STR,
             ("Basics", None, "fracAdd") => values::FRAC_ADD,
             ("Basics", None, "fracSub") => values::FRAC_SUB,
             ("Basics", None, "fracMul") => values::FRAC_MUL,
@@ -301,6 +316,15 @@ impl<'a> Resolver<'a> {
             ("Basics", None, "fracLe") => values::FRAC_LE,
             ("Basics", None, "fracEq") => values::FRAC_EQ,
             ("Basics", None, "fracGr") => values::FRAC_GR,
+            ("Basics", None, "fracToString") => values::FRAC_TO_STR,
+            ("Basics", None, "charToString") => values::CHAR_TO_STR,
+            ("Basics", None, "charLe") => values::CHAR_LE,
+            ("Basics", None, "charEq") => values::CHAR_EQ,
+            ("Basics", None, "charGr") => values::CHAR_GR,
+            ("String", None, "append") => values::STR_APPEND,
+            ("String", None, "charAt") => values::STR_CHAR_AT,
+            ("String", None, "length") => values::STR_LENGTH,
+            ("String", None, "substring") => values::STR_SUBSTRING,
             ("Main", None, "main") => values::MAIN,
             _ => {
                 //let name = name.into();

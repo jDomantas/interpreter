@@ -1602,7 +1602,9 @@ pub fn infer_types(mut items: r::GroupedItems, errors: &mut Errors) -> t::Items 
         (typed_defs, typed_impls, inferer.env)
     };
 
-    symbol_types.extend(known_types.into_iter().map(|(s, (t, _))| (s, t)));
+    for (sym, (typ, _)) in known_types {
+        symbol_types.entry(sym).or_insert(typ);
+    }
 
     let traits = items.traits
         .drain(..)

@@ -74,14 +74,14 @@ pub enum Value {
 
 // TODO: fields should not be pub?
 // pub(crate) at worst
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Object {
     pub tag: Sym,
     pub items: Vec<Value>,
 }
 
 // TODO: same as above
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Closure {
     pub function: u64,
     pub partial_args: Vec<Value>,
@@ -292,18 +292,26 @@ impl<'a> Vm<'a> {
                     let f = &self.functions[&closure.function];
                     let args_missing = f.arg_count as usize - closure.partial_args.len();
                     debug_assert!(args_missing > 0);
-                    debug_assert!(args_missing <= arg_count);
-                    /*if args_missing == arg_count && tail_call {
-                        self.call_stack.pop();
-                    }*/
-                    for arg in closure.partial_args.iter().rev().cloned() {
-                        self.stack.push(arg);
-                    }
-                    self.call_stack.push((f, 0));
-                    arg_count -= args_missing;
-                    let cur_size = self.call_stack.len();
-                    while self.call_stack.len() >= cur_size {
-                        self.step()?;
+                    if arg_count < args_missing {
+                        let mut closure = closure;
+                        {
+                            let args = &mut Rc::make_mut(&mut closure).partial_args;
+                            for _ in 0..arg_count {
+                                args.push(self.stack.pop().unwrap());
+                            }
+                        }
+                        self.stack.push(Value::Closure(closure));
+                        break;
+                    } else {
+                        for arg in closure.partial_args.iter().rev().cloned() {
+                            self.stack.push(arg);
+                        }
+                        self.call_stack.push((f, 0));
+                        arg_count -= args_missing;
+                        let cur_size = self.call_stack.len();
+                        while self.call_stack.len() >= cur_size {
+                            self.step()?;
+                        }
                     }
                 }
             }

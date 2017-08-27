@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use ast::typed::{self as t, Sym, ImplSym, ImplSource, Impls};
 use ast::monomorphised as m;
 
@@ -8,24 +8,24 @@ struct Context(u64);
 const GLOBAL: Context = Context(0);
 
 struct Solver {
-    impls: HashMap<ImplSym, t::Impl>,
-    defs: HashMap<(Sym, Context), (t::Def, Impls)>,
-    instantiations: HashMap<(Sym, Context), HashMap<Impls, m::Def>>,
-    current_context: HashMap<Sym, Context>,
-    owner_trait: HashMap<Sym, Sym>,
+    impls: BTreeMap<ImplSym, t::Impl>,
+    defs: BTreeMap<(Sym, Context), (t::Def, Impls)>,
+    instantiations: BTreeMap<(Sym, Context), BTreeMap<Impls, m::Def>>,
+    current_context: BTreeMap<Sym, Context>,
+    owner_trait: BTreeMap<Sym, Sym>,
     next_sym: u64,
     simple_defs: Vec<Sym>,
     next_context: u64,
-    symbol_names: HashMap<Sym, String>,
+    symbol_names: BTreeMap<Sym, String>,
 }
 
 impl Solver {
     fn from_items(items: t::Items) -> Solver {
-        let mut impls = HashMap::new();
+        let mut impls = BTreeMap::new();
         for impl_ in items.impls {
             impls.insert(impl_.symbol, impl_);
         }
-        let mut defs = HashMap::new();
+        let mut defs = BTreeMap::new();
         let mut simple_defs = Vec::new();
         for def in items.items {
             if !is_parametrised(&def) {
@@ -33,7 +33,7 @@ impl Solver {
             }
             defs.insert((def.sym.value, GLOBAL), (def, Default::default()));
         }
-        let mut owner_trait = HashMap::new();
+        let mut owner_trait = BTreeMap::new();
         for trait_ in items.traits {
             for (sym, _) in trait_.items {
                 owner_trait.insert(sym, trait_.name.value);
@@ -42,12 +42,12 @@ impl Solver {
         Solver {
             impls,
             defs,
-            instantiations: HashMap::new(),
+            instantiations: BTreeMap::new(),
             owner_trait,
             next_sym: 0,
             simple_defs,
             next_context: 0,
-            current_context: HashMap::new(),
+            current_context: BTreeMap::new(),
             symbol_names: items.symbol_names,
         }
     }
@@ -69,7 +69,7 @@ impl Solver {
         let ctx = *self.current_context.get(&def).unwrap_or(&GLOBAL);
         if let Some(def) = self.instantiations
                 .entry((def, ctx))
-                .or_insert_with(HashMap::new)
+                .or_insert_with(BTreeMap::new)
                 .get(&impls) {
             return def.sym;
         }
@@ -163,7 +163,7 @@ impl Solver {
             }
             t::Expr::Let(ref defs, ref value) => {
                 let mut simple_defs = Vec::new();
-                let mut prev_context = HashMap::new();
+                let mut prev_context = BTreeMap::new();
                 let context = self.create_context();
                 for def in defs {
                     if !is_parametrised(&def.value) {
@@ -261,7 +261,7 @@ impl Solver {
         }
     }
 
-    fn run(mut self) -> (Vec<m::Def>, HashMap<Sym, String>) {
+    fn run(mut self) -> (Vec<m::Def>, BTreeMap<Sym, String>) {
         let mut simple_defs = Vec::new();
         ::std::mem::swap(&mut simple_defs, &mut self.simple_defs);
         for def in simple_defs {

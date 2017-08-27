@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use ast::{Node, NodeView};
 use ast::resolved::{Def, Expr, Sym, Symbol, Items, GroupedItems, Impl, GroupedImpl};
 use compiler::util::Graph;
@@ -75,7 +75,7 @@ fn group_defs<T: NodeView<Def>>(defs: Vec<T>) -> Vec<Vec<T>> {
     let mut by_name = defs
         .into_iter()
         .map(|def| (def.inner().sym.value, def))
-        .collect::<HashMap<_, _>>();
+        .collect::<BTreeMap<_, _>>();
     let mut grouped = Vec::new();
     for scc in sccs {
         let mut defs = Vec::new();

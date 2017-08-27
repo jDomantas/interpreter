@@ -2,7 +2,7 @@ mod tokens;
 mod lexer;
 mod parser;
 
-use std::collections::{HashSet, HashMap};
+use std::collections::{BTreeSet, BTreeMap};
 use ast::Name;
 use ast::parsed::Module;
 use errors::Errors;
@@ -11,15 +11,15 @@ pub trait SourceProvider {
     fn get_module_source(&self, name: &str) -> Result<&str, String>;
 }
 
-pub struct HashMapProvider(HashMap<String, String>);
+pub struct BTreeMapProvider(BTreeMap<String, String>);
 
-impl HashMapProvider {
-    pub fn new(modules: HashMap<String, String>) -> Self {
-        HashMapProvider(modules)
+impl BTreeMapProvider {
+    pub fn new(modules: BTreeMap<String, String>) -> Self {
+        BTreeMapProvider(modules)
     }
 }
 
-impl SourceProvider for HashMapProvider {
+impl SourceProvider for BTreeMapProvider {
     fn get_module_source(&self, name: &str) -> Result<&str, String> {
         match self.0.get(name) {
             Some(source) => Ok(source),
@@ -54,15 +54,15 @@ pub fn parse_module(source: &str, module: Name, require_def: bool, errors: &mut 
     module
 }
 
-pub fn parse_modules<T: SourceProvider>(main: &str, provider: &T, errors: &mut Errors) -> HashMap<Name, Module> {
+pub fn parse_modules<T: SourceProvider>(main: &str, provider: &T, errors: &mut Errors) -> BTreeMap<Name, Module> {
     let provider = WrappingProvider {
         inner: provider,
         main: main,
     };
     
-    let mut modules = HashMap::<Name, Module>::new();
+    let mut modules = BTreeMap::<Name, Module>::new();
     let mut to_walk = Vec::new();
-    let mut checked = HashSet::new();
+    let mut checked = BTreeSet::new();
 
     let main_name = Name::from_string("Main".into());
     let main_module = parse_module(main, main_name, false, errors);

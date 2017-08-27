@@ -1,5 +1,5 @@
-use std::collections::{HashSet, HashMap};
-use std::collections::hash_map::Entry;
+use std::collections::{BTreeSet, BTreeMap};
+use std::collections::btree_map::Entry;
 use std::fmt;
 use ast::{Node, Name};
 use ast::resolved::{TypeDecl, Type, Items, Trait, TypeAnnot, Scheme, Impl, Sym, Symbol};
@@ -91,29 +91,29 @@ enum ConstraintSource<'a> {
 struct Constraint<'a>(Kind, Kind, ConstraintSource<'a>);
 
 struct InferCtx<'a, 'b> {
-    kinds: HashMap<Sym, Kind>,
-    trait_kinds: HashMap<Sym, Kind>,
+    kinds: BTreeMap<Sym, Kind>,
+    trait_kinds: BTreeMap<Sym, Kind>,
     next_var: u64,
     errors: &'b mut Errors,
     constraints: Vec<Constraint<'a>>,
-    new_kinds: HashMap<Sym, Kind>,
-    var_kinds: HashMap<Sym, Kind>,
-    substitutions: HashMap<u64, Kind>,
-    symbol_names: &'b HashMap<Sym, String>,
+    new_kinds: BTreeMap<Sym, Kind>,
+    var_kinds: BTreeMap<Sym, Kind>,
+    substitutions: BTreeMap<u64, Kind>,
+    symbol_names: &'b BTreeMap<Sym, String>,
 }
 
 impl<'a, 'b> InferCtx<'a, 'b> {
-    fn new(errors: &'b mut Errors, symbol_names: &'b HashMap<Sym, String>) -> Self {
+    fn new(errors: &'b mut Errors, symbol_names: &'b BTreeMap<Sym, String>) -> Self {
         InferCtx {
-            kinds: HashMap::new(),
-            trait_kinds: HashMap::new(),
+            kinds: BTreeMap::new(),
+            trait_kinds: BTreeMap::new(),
             // start from 1 because 0 is used as id for `self`
             next_var: 1,
             errors,
             constraints: Vec::new(),
-            new_kinds: HashMap::new(),
-            var_kinds: HashMap::new(),
-            substitutions: HashMap::new(),
+            new_kinds: BTreeMap::new(),
+            var_kinds: BTreeMap::new(),
+            substitutions: BTreeMap::new(),
             symbol_names,
         }
     }
@@ -209,9 +209,9 @@ impl<'a, 'b> InferCtx<'a, 'b> {
         }
 
         let ok = self.solve_constraints();
-        let mut new_kinds = HashMap::new();
+        let mut new_kinds = BTreeMap::new();
         ::std::mem::swap(&mut self.new_kinds, &mut new_kinds);
-        for (name, kind) in new_kinds.drain() {
+        for (name, kind) in new_kinds {
             let mut kind = self.do_substitutions(kind);
             kind.default_vars();
             let kind = if ok { kind } else { Kind::Any };
@@ -475,7 +475,7 @@ impl<'a, 'b> InferCtx<'a, 'b> {
         debug_assert!(self.var_kinds.is_empty());
         debug_assert!(self.substitutions.is_empty());
         self.add_trait_bounds(&impl_.scheme.value.bounds, &impl_.module);
-        let mut checked_vars = HashSet::new();
+        let mut checked_vars = BTreeSet::new();
         for &(ref var, _) in &impl_.scheme.value.bounds {
             if !checked_vars.contains(&var.value) {
                 checked_vars.insert(&var.value);
@@ -509,7 +509,7 @@ impl<'a, 'b> InferCtx<'a, 'b> {
 }
 
 fn rename_vars(kinds: &mut [Kind]) {
-    fn add_vars(kind: &Kind, result: &mut HashMap<u64, u64>, next: &mut u64) {
+    fn add_vars(kind: &Kind, result: &mut BTreeMap<u64, u64>, next: &mut u64) {
         match *kind {
             Kind::Any | Kind::Star => { }
             Kind::Var(var) => {
@@ -524,7 +524,7 @@ fn rename_vars(kinds: &mut [Kind]) {
             }
         }
     }
-    let mut mapping = HashMap::new();
+    let mut mapping = BTreeMap::new();
     let mut next = 1;
     for kind in kinds.iter() {
         add_vars(kind, &mut mapping, &mut next);
@@ -589,7 +589,7 @@ pub fn find_kind_errors(items: &Items, errors: &mut Errors) -> Result<(), ()> {
     let errors_before = errors.error_count();
     let graph = make_graph(items.types.iter());
     let components = graph.to_strongly_connected_components();
-    let table = items.types.iter().map(|decl| (decl.name(), decl)).collect::<HashMap<_, _>>();
+    let table = items.types.iter().map(|decl| (decl.name(), decl)).collect::<BTreeMap<_, _>>();
     
     {
         let mut inferer = InferCtx::new(errors, &items.symbol_names);

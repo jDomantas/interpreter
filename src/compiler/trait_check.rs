@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet, BTreeMap};
+use std::collections::{BTreeMap, BTreeSet};
 use ast::{Name, Node};
 use ast::typed::{
     Expr, Impl, Impls, Sym, Symbol, Items, Scheme, ImplSource, Type, Def,
@@ -9,8 +9,8 @@ use position::Span;
 
 
 /// Make mapping from variables in principal type to types in concrete type.
-fn get_instantiation<'a>(principal: &Type, concrete: &'a Type) -> Option<HashMap<u64, &'a Type>> {
-    fn walk<'a>(a: &Type, b: &'a Type, mapping: &mut HashMap<u64, &'a Type>) -> bool {
+fn get_instantiation<'a>(principal: &Type, concrete: &'a Type) -> Option<BTreeMap<u64, &'a Type>> {
+    fn walk<'a>(a: &Type, b: &'a Type, mapping: &mut BTreeMap<u64, &'a Type>) -> bool {
         match (a, b) {
             (&Type::Any, _) => true,
             (_, &Type::Any) => true,
@@ -37,7 +37,7 @@ fn get_instantiation<'a>(principal: &Type, concrete: &'a Type) -> Option<HashMap
             _ => false,
         }
     }
-    let mut mapping = HashMap::new();
+    let mut mapping = BTreeMap::new();
     if walk(principal, concrete, &mut mapping) {
         Some(mapping)
     } else {
@@ -80,9 +80,9 @@ fn get_trait_bounds<'a>(principal: &Scheme, concrete: &'a Type) -> Option<Vec<Bo
 struct SolverCtx<'a, 'b> {
     impls: &'a [Impl],
     errors: &'b mut Errors,
-    known_impls: &'a HashSet<(u64, Sym)>,
-    symbol_names: &'a HashMap<Sym, String>,
-    symbol_types: &'a HashMap<Sym, Scheme>,
+    known_impls: &'a BTreeSet<(u64, Sym)>,
+    symbol_names: &'a BTreeMap<Sym, String>,
+    symbol_types: &'a BTreeMap<Sym, Scheme>,
     module: Name,
 }
 
@@ -90,9 +90,9 @@ impl<'a, 'b> SolverCtx<'a, 'b> {
     fn new(
             impls: &'a [Impl],
             errors: &'b mut Errors,
-            known_impls: &'a HashSet<(u64, Sym)>,
-            symbol_names: &'a HashMap<Sym, String>,
-            symbol_types: &'a HashMap<Sym, Scheme>,
+            known_impls: &'a BTreeSet<(u64, Sym)>,
+            symbol_names: &'a BTreeMap<Sym, String>,
+            symbol_types: &'a BTreeMap<Sym, Scheme>,
             module: Name) -> Self {
         SolverCtx {
             impls,
@@ -265,16 +265,16 @@ impl<'a, 'b> SolverCtx<'a, 'b> {
 struct GlobalSolver<'a, 'b> {
     impls: &'a [Impl],
     errors: &'b mut Errors,
-    symbol_names: &'a HashMap<Sym, String>,
-    symbol_types: &'a HashMap<Sym, Scheme>,
+    symbol_names: &'a BTreeMap<Sym, String>,
+    symbol_types: &'a BTreeMap<Sym, Scheme>,
 }
 
 impl<'a, 'b> GlobalSolver<'a, 'b> {
     fn new(
             impls: &'a [Impl],
             errors: &'b mut Errors,
-            symbol_names: &'a HashMap<Sym, String>,
-            symbol_types: &'a HashMap<Sym, Scheme>) -> Self {
+            symbol_names: &'a BTreeMap<Sym, String>,
+            symbol_types: &'a BTreeMap<Sym, Scheme>) -> Self {
         GlobalSolver {
             impls,
             errors,
@@ -289,7 +289,7 @@ impl<'a, 'b> GlobalSolver<'a, 'b> {
             errors: self.errors,
             symbol_names: self.symbol_names,
             symbol_types: self.symbol_types,
-            known_impls: &HashSet::new(),
+            known_impls: &BTreeSet::new(),
             module: def.module.clone(),
         };
 
@@ -297,7 +297,7 @@ impl<'a, 'b> GlobalSolver<'a, 'b> {
     }
 
     fn check_impl(&mut self, impl_: &mut Impl) {
-        let mut impl_bound = HashSet::new();
+        let mut impl_bound = BTreeSet::new();
         for var in &impl_.scheme.value.vars {
             for &bound in &var.bounds {
                 impl_bound.insert((var.id, bound));
@@ -311,7 +311,7 @@ impl<'a, 'b> GlobalSolver<'a, 'b> {
                     let var = def.var_mapping[&var];
                     (var, trait_)
                 })
-                .collect::<HashSet<_>>();
+                .collect::<BTreeSet<_>>();
             let mut solver = SolverCtx {
                 impls: self.impls,
                 errors: self.errors,

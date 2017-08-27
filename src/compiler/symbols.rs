@@ -1,5 +1,5 @@
-use std::collections::HashMap;
-use std::collections::hash_map::Entry;
+use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 use std::fmt;
 use ast::{Node, Name};
 use ast::parsed as p;
@@ -14,12 +14,12 @@ use position::Span;
 
 #[derive(Debug, Clone, Default)]
 struct Exports<'a> {
-    types: HashMap<&'a str, Sym>,
-    traits: HashMap<&'a str, Sym>,
-    patterns: HashMap<&'a str, Sym>,
-    values: HashMap<&'a str, Sym>,
-    pattern_parents: HashMap<&'a str, &'a str>,
-    value_parents: HashMap<&'a str, &'a str>,
+    types: BTreeMap<&'a str, Sym>,
+    traits: BTreeMap<&'a str, Sym>,
+    patterns: BTreeMap<&'a str, Sym>,
+    values: BTreeMap<&'a str, Sym>,
+    pattern_parents: BTreeMap<&'a str, &'a str>,
+    value_parents: BTreeMap<&'a str, &'a str>,
 }
 
 impl<'a> Exports<'a> {
@@ -79,11 +79,11 @@ impl<'a> Exports<'a> {
 
 #[derive(Debug, Default)]
 struct Imports<'a> {
-    modules: HashMap<&'a str, &'a str>,
-    types: HashMap<&'a str, &'a str>,
-    traits: HashMap<&'a str, &'a str>,
-    patterns: HashMap<&'a str, &'a str>,
-    values: HashMap<&'a str, &'a str>,
+    modules: BTreeMap<&'a str, &'a str>,
+    types: BTreeMap<&'a str, &'a str>,
+    traits: BTreeMap<&'a str, &'a str>,
+    patterns: BTreeMap<&'a str, &'a str>,
+    values: BTreeMap<&'a str, &'a str>,
 }
 
 impl<'a> Imports<'a> {
@@ -122,12 +122,12 @@ struct Context<'a> {
     module: Name,
     locals: &'a Exports<'a>,
     imports: &'a Imports<'a>,
-    exports: &'a HashMap<String, Exports<'a>>,
+    exports: &'a BTreeMap<String, Exports<'a>>,
 }
 
 #[derive(Default)]
 struct TraitInfo {
-    item_symbols: HashMap<String, Sym>,
+    item_symbols: BTreeMap<String, Sym>,
 }
 
 impl TraitInfo {
@@ -136,7 +136,7 @@ impl TraitInfo {
     }
 }
 
-#[derive(PartialEq, Eq, Debug, Copy, Hash, Clone)]
+#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Copy, Hash, Clone)]
 enum Kind {
     LocalValue,
     Value,
@@ -158,10 +158,10 @@ impl fmt::Display for Kind {
     }
 }
 
-pub fn resolve_symbols(modules: &HashMap<Name, Module>, errors: &mut Errors) -> r::Items {
+pub fn resolve_symbols(modules: &BTreeMap<Name, Module>, errors: &mut Errors) -> r::Items {
     let mut resolver = Resolver::new(errors);
-    let mut items = HashMap::new();
-    let mut exports = HashMap::new();
+    let mut items = BTreeMap::new();
+    let mut exports = BTreeMap::new();
     for (name, module) in modules {
         let module_items = resolver.collect_items(module);
         let module_exports = resolver.collect_exports(module, &module_items);
@@ -183,7 +183,7 @@ pub fn resolve_symbols(modules: &HashMap<Name, Module>, errors: &mut Errors) -> 
 struct Resolver<'a> {
     errors: &'a mut Errors,
     result: r::Items,
-    traits: HashMap<Sym, TraitInfo>,
+    traits: BTreeMap<Sym, TraitInfo>,
     next_sym: u64,
 }
 
@@ -245,7 +245,7 @@ impl<'a> Resolver<'a> {
         Resolver {
             errors: errors,
             result: result,
-            traits: HashMap::new(),
+            traits: BTreeMap::new(),
             next_sym: 100,
         }
     }
@@ -476,10 +476,10 @@ impl<'a> Resolver<'a> {
     }
     
     fn collect_items<'b>(&mut self, module: &'b Module) -> Exports<'b> {
-        let mut values: HashMap<&'b str, (Option<&'b str>, Span, Sym)> = HashMap::new();
-        let mut patterns: HashMap<&'b str, (Option<&'b str>, Span, Sym)> = HashMap::new();
-        let mut traits: HashMap<&'b str, (Span, Sym)> = HashMap::new();
-        let mut types: HashMap<&'b str, (Span, Sym)> = HashMap::new();
+        let mut values: BTreeMap<&'b str, (Option<&'b str>, Span, Sym)> = BTreeMap::new();
+        let mut patterns: BTreeMap<&'b str, (Option<&'b str>, Span, Sym)> = BTreeMap::new();
+        let mut traits: BTreeMap<&'b str, (Span, Sym)> = BTreeMap::new();
+        let mut types: BTreeMap<&'b str, (Span, Sym)> = BTreeMap::new();
 
         let module_name = &Name::from_string(module.name().into());
         for item in &module.items {
@@ -743,7 +743,7 @@ impl<'a> Resolver<'a> {
         };
 
         let mut result = Exports::empty();
-        let mut export_pos = HashMap::new();
+        let mut export_pos = BTreeMap::new();
         for item in exposed {
             let name = &item.value.name.value;
             let span = item.value.name.span;
@@ -882,8 +882,8 @@ impl<'a> Resolver<'a> {
 
     fn collect_imports<'b>(&mut self, module: &'b Module, ctx: &Context<'b>) -> Imports<'b> {
         let mut imports = Imports::empty();
-        let mut import_span = HashMap::new();
-        let mut first_import = HashMap::new();
+        let mut import_span = BTreeMap::new();
+        let mut first_import = BTreeMap::new();
 
         let module_name = &Name::from_string(module.name().into());
 
@@ -1160,8 +1160,8 @@ impl<'a> Resolver<'a> {
             module: ctx.module.clone(),
         };
 
-        let mut fixity_decl = HashMap::new();
-        let mut type_annotation = HashMap::new();
+        let mut fixity_decl = BTreeMap::new();
+        let mut type_annotation = BTreeMap::new();
         for decl in &module.items {
             match decl.value {
                 Decl::Impl(ref impl_) => {
@@ -1274,12 +1274,12 @@ impl<'a> Resolver<'a> {
             .iter()
             .cloned()
             .map(|(name, sym)| (name.value, sym))
-            .collect::<HashMap<_, _>>();
+            .collect::<BTreeMap<_, _>>();
 
         let trait_items = match trait_.value {
             r::Symbol::Known(sym) => {
                 if let Some(info) = self.traits.get(&sym) {
-                    let mut items = HashMap::new();
+                    let mut items = BTreeMap::new();
                     for (&name, &sym) in &symbols {
                         if let Some(&s) = info.item_symbols.get(name) {
                             items.insert(sym, s);
@@ -1297,10 +1297,10 @@ impl<'a> Resolver<'a> {
                     }
                     items
                 } else {
-                    HashMap::new()
+                    BTreeMap::new()
                 }
             }
-            r::Symbol::Unknown => HashMap::new(),
+            r::Symbol::Unknown => BTreeMap::new(),
         };
 
         // remove locals that are trait items, so that trait items used in
@@ -1344,7 +1344,7 @@ impl<'a> Resolver<'a> {
                     def: &Def,
                     ctx: &Context) -> Vec<r::Def> {
         let vars = def.pattern.value.bound_vars(def.pattern.span);
-        let mut var_symbols = HashMap::new();
+        let mut var_symbols = BTreeMap::new();
         for var in &vars {
             let sym = ctx.locals.get_value(&var.value).unwrap();
             var_symbols.insert(var.value, sym);
@@ -1465,7 +1465,7 @@ impl<'a> Resolver<'a> {
                         record: &RecordType,
                         ctx: &Context) -> r::RecordType {
         let mut vars = Vec::new();
-        let mut var_symbols = HashMap::new();
+        let mut var_symbols = BTreeMap::new();
         for var in &record.vars {
             let sym = self.fresh_var_sym(&var.value);
             vars.push(Node::new(sym, var.span));
@@ -1527,7 +1527,7 @@ impl<'a> Resolver<'a> {
                             alias: &TypeAlias,
                             ctx: &Context) -> r::TypeAlias {
         let mut vars = Vec::new();
-        let mut var_symbols = HashMap::new();
+        let mut var_symbols = BTreeMap::new();
         for var in &alias.vars {
             let sym = self.fresh_var_sym(&var.value);
             vars.push(Node::new(sym, var.span));
@@ -1552,7 +1552,7 @@ impl<'a> Resolver<'a> {
                         union: &UnionType,
                         ctx: &Context) -> r::UnionType {
         let mut vars = Vec::new();
-        let mut var_symbols = HashMap::new();
+        let mut var_symbols = BTreeMap::new();
         for var in &union.vars {
             let sym = self.fresh_var_sym(&var.value);
             vars.push(Node::new(sym, var.span));
@@ -1585,7 +1585,7 @@ impl<'a> Resolver<'a> {
     fn resolve_type<'b>(
                     &mut self,
                     type_: &'b Node<Type>,
-                    vars: &mut HashMap<&'b str, r::Sym>,
+                    vars: &mut BTreeMap<&'b str, r::Sym>,
                     ctx: &Context,
                     allow_new_vars: bool) -> Node<r::Type> {
         let resolved = match type_.value {
@@ -1634,7 +1634,7 @@ impl<'a> Resolver<'a> {
                     type_: &Node<Scheme>,
                     ctx: &Context) -> Node<r::Scheme> {
         let mut bounds = Vec::new();
-        let mut vars = HashMap::new();
+        let mut vars = BTreeMap::new();
         for &(ref var, ref bound) in &type_.value.bounds {
             let bound = self.resolve_trait_bound(bound, ctx);
             let v = vars
@@ -1661,7 +1661,7 @@ impl<'a> Resolver<'a> {
     fn resolve_pattern(
                         &mut self,
                         pattern: &Node<Pattern>,
-                        var_symbols: &HashMap<&str, Sym>,
+                        var_symbols: &BTreeMap<&str, Sym>,
                         ctx: &Context) -> Node<r::Pattern> {
         let resolved = match pattern.value {
             Pattern::Wildcard => r::Pattern::Wildcard,
@@ -1733,7 +1733,7 @@ impl<'a> Resolver<'a> {
                 let mut resolved_arms = Vec::new();
                 let locals_before = locals.len();
                 for arm in arms {
-                    let mut symbols = HashMap::new();
+                    let mut symbols = BTreeMap::new();
                     for var in arm.value.pattern.value.bound_vars(arm.value.pattern.span) {
                         let sym = self.fresh_sym(var.value);
                         symbols.insert(var.value, sym);
@@ -1785,7 +1785,7 @@ impl<'a> Resolver<'a> {
                 //         pattern1(..) -> case fresh2 of
                 //           pattern2(..) -> value
                 let locals_before = locals.len();
-                let mut symbols = HashMap::new();
+                let mut symbols = BTreeMap::new();
                 let mut fresh_symbols = Vec::new();
                 let mut resolved = Vec::new();
                 for param in params {
@@ -1865,7 +1865,7 @@ impl<'a> Resolver<'a> {
             DoExpr::Bind(ref pat, ref expr, ref rest) => {
                 let expr = self.resolve_expr_with_locals(expr, ctx, locals);
                 let locals_before = locals.len();
-                let mut symbols = HashMap::new();
+                let mut symbols = BTreeMap::new();
                 for var in pat.value.bound_vars(pat.span) {
                     let sym = self.fresh_sym(var.value);
                     symbols.insert(var.value, sym);
@@ -1917,7 +1917,7 @@ impl<'a> Resolver<'a> {
                         locals: &mut Vec<(Node<&'b str>, Sym)>) -> r::Expr {
         let mut defined_symbols = Vec::new();
         let mut resolved_defs = Vec::new();
-        let mut annotation_pos = HashMap::new();
+        let mut annotation_pos = BTreeMap::new();
         for decl in decls {
             if let LetDecl::Def(ref def) = decl.value {
                 def.pattern.value.collect_vars(&mut defined_symbols, def.pattern.span);
@@ -1974,7 +1974,7 @@ impl<'a> Resolver<'a> {
             .iter()
             .cloned()
             .map(|(name, sym)| (name.value, sym))
-            .collect::<HashMap<_, _>>();
+            .collect::<BTreeMap<_, _>>();
         locals.extend(defined_symbols);
         for decl in decls {
             if let LetDecl::Def(ref def) = decl.value {

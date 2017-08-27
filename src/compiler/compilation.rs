@@ -1,4 +1,4 @@
-use std::collections::{HashSet, HashMap};
+use std::collections::{BTreeSet, BTreeMap};
 use std::rc::Rc;
 use ast::Literal;
 use ast::monomorphised::{Sym, Expr, Pattern, Def, Items};
@@ -8,7 +8,7 @@ use vm::{Instruction, Function, Value, Object, Closure, GlobalValue};
 struct FunctionCtx {
     function: Function,
     id: u64,
-    locals: HashMap<Sym, usize>,
+    locals: BTreeMap<Sym, usize>,
     current_size: usize,
     frames: usize,
 }
@@ -59,22 +59,22 @@ impl FunctionCtx {
 }
 
 struct Compiler {
-    functions: HashMap<u64, Function>,
+    functions: BTreeMap<u64, Function>,
     next_function: u64,
     next_address: usize,
-    globals: HashMap<Sym, GlobalValue>,
-    string_cache: HashSet<Rc<String>>,
-    global_symbols: HashSet<Sym>,
+    globals: BTreeMap<Sym, GlobalValue>,
+    string_cache: BTreeSet<Rc<String>>,
+    global_symbols: BTreeSet<Sym>,
 }
 
 impl Compiler {
-    fn new(global_symbols: HashSet<Sym>) -> Compiler {
+    fn new(global_symbols: BTreeSet<Sym>) -> Compiler {
         Compiler {
-            functions: HashMap::new(),
+            functions: BTreeMap::new(),
             next_function: 0,
             next_address: 0,
-            globals: HashMap::new(),
-            string_cache: HashSet::new(),
+            globals: BTreeMap::new(),
+            string_cache: BTreeSet::new(),
             global_symbols,
         }
     }
@@ -308,7 +308,7 @@ impl Compiler {
     }
 }
 
-pub fn compile(items: Items) -> (HashMap<u64, Function>, HashMap<Sym, GlobalValue>) {
+pub fn compile(items: Items) -> (BTreeMap<u64, Function>, BTreeMap<Sym, GlobalValue>) {
     let globals = items.items.iter().map(|d| d.sym).collect();
     let mut compiler = Compiler::new(globals);
     for def in items.items {

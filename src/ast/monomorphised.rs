@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use ast::Literal;
 pub use ast::resolved::Sym;
 
@@ -38,7 +38,7 @@ pub struct Def {
 #[derive(Debug, Clone)]
 pub struct Items {
     pub items: Vec<Def>,
-    pub symbol_names: HashMap<Sym, String>,
+    pub symbol_names: BTreeMap<Sym, String>,
 }
 
 
@@ -145,7 +145,7 @@ pub mod printer {
         }
     }
 
-    pub fn print_expr(symbol_names: &HashMap<Sym, String>, expr: &Expr) {
+    pub fn print_expr(symbol_names: &BTreeMap<Sym, String>, expr: &Expr) {
         let mut printer = Printer {
             indent: 0,
             symbol_names: &symbol_names,
@@ -155,7 +155,7 @@ pub mod printer {
 
     struct Printer<'a> {
         indent: usize,
-        symbol_names: &'a HashMap<Sym, String>,
+        symbol_names: &'a BTreeMap<Sym, String>,
     }
 
     impl<'a> Printer<'a> {

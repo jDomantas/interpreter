@@ -1,4 +1,4 @@
-use std::collections::{HashSet, HashMap};
+use std::collections::{BTreeSet, BTreeMap};
 use ast::monomorphised::{Expr, Pattern, CaseBranch, Sym, Def, Items};
 use ast::monomorphised::rewriter::{self, Rewriter};
 
@@ -66,7 +66,7 @@ impl rewriter::Rewriter for SimplifyMatching {
 
 #[derive(Default)]
 struct SimplifyRenames {
-    renames: HashMap<Sym, Sym>,
+    renames: BTreeMap<Sym, Sym>,
 }
 
 impl SimplifyRenames {
@@ -199,8 +199,8 @@ impl Rewriter for RemoveEmptyApplications {
 
 struct Unclosure {
     next_sym: u64,
-    symbol_names: HashMap<Sym, String>,
-    globals: HashSet<Sym>,
+    symbol_names: BTreeMap<Sym, String>,
+    globals: BTreeSet<Sym>,
     new_globals: Vec<Def>,
 }
 
@@ -208,8 +208,8 @@ impl Unclosure {
     fn new() -> Self {
         Unclosure {
             next_sym: 2000000000,
-            symbol_names: HashMap::new(),
-            globals: HashSet::new(),
+            symbol_names: BTreeMap::new(),
+            globals: BTreeSet::new(),
             new_globals: Vec::new(),
         }
     }
@@ -238,7 +238,7 @@ impl Rewriter for Unclosure {
                     let rename = free_vars
                         .into_iter()
                         .map(|sym| (sym, self.fresh_sym()))
-                        .collect::<HashMap<_, _>>();
+                        .collect::<BTreeMap<_, _>>();
                     Renamer(&rename).rewrite_expr(value);
                     let rename = rename.into_iter().collect::<Vec<_>>();
                     let new_params = rename
@@ -265,7 +265,7 @@ impl Rewriter for Unclosure {
                 let base_renames = defs
                     .iter()
                     .map(|def| (def.sym, self.fresh_sym()))
-                    .collect::<HashMap<_, _>>();
+                    .collect::<BTreeMap<_, _>>();
                 for def in defs.iter_mut() {
                     Renamer(&base_renames).rewrite_expr(&mut def.value);
                     self.globals.insert(base_renames[&def.sym]);
@@ -278,7 +278,7 @@ impl Rewriter for Unclosure {
                     let rename = free_vars
                         .iter()
                         .map(|&sym| (sym, self.fresh_sym()))
-                        .collect::<HashMap<_, _>>();
+                        .collect::<BTreeMap<_, _>>();
                     new_let_defs.push(Def {
                         sym: def.sym,
                         value: Expr::Apply(
@@ -306,19 +306,19 @@ impl Rewriter for Unclosure {
             self.globals.insert(def.sym);
         }
         rewriter::walk_items(self, items);
-        items.symbol_names.extend(self.symbol_names.drain());
+        items.symbol_names.extend(::std::mem::replace(&mut self.symbol_names, BTreeMap::new()));
         items.items.extend(self.new_globals.drain(..));
     }
 }
 
 #[derive(Default)]
 struct FreeVars {
-    vars: HashSet<Sym>,
-    bound_in_patterns: HashSet<Sym>,
+    vars: BTreeSet<Sym>,
+    bound_in_patterns: BTreeSet<Sym>,
 }
 
 impl FreeVars {
-    fn in_expr(expr: &mut Expr) -> HashSet<Sym> {
+    fn in_expr(expr: &mut Expr) -> BTreeSet<Sym> {
         let mut free_vars = Self::default();
         free_vars.rewrite_expr(expr);
         free_vars.vars
@@ -359,7 +359,7 @@ impl Rewriter for FreeVars {
     }
 }
 
-struct Renamer<'a>(&'a HashMap<Sym, Sym>);
+struct Renamer<'a>(&'a BTreeMap<Sym, Sym>);
 
 impl<'a> Rewriter for Renamer<'a> {
     fn rewrite_expr(&mut self, expr: &mut Expr) {

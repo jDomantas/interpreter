@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::rc::Rc;
 use ast::resolved::Sym;
 
@@ -96,8 +96,8 @@ pub type EvalResult = Result<Value, EvalError>;
 
 #[derive(Debug)]
 pub struct Vm<'a> {
-    globals: HashMap<Sym, GlobalValue>,
-    functions: &'a HashMap<u64, Function>,
+    globals: BTreeMap<Sym, GlobalValue>,
+    functions: &'a BTreeMap<u64, Function>,
     stack: Vec<Value>,
     frames: Vec<usize>,
     call_stack: Vec<(&'a Function, usize)>,
@@ -105,8 +105,8 @@ pub struct Vm<'a> {
 
 impl<'a> Vm<'a> {
     pub fn new(
-            globals: HashMap<Sym, GlobalValue>,
-            functions: &'a HashMap<u64, Function>) -> Vm {
+            globals: BTreeMap<Sym, GlobalValue>,
+            functions: &'a BTreeMap<u64, Function>) -> Vm {
         Vm {
             globals,
             functions,

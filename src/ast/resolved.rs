@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use ast::{Node, Name, Literal, Associativity};
 
 
@@ -256,7 +256,7 @@ pub struct Impl {
     pub trait_: Node<Symbol>,
     pub values: Vec<Node<Def>>,
     // mapping from impl symbols to trait symbols
-    pub trait_items: HashMap<Sym, Sym>,
+    pub trait_items: BTreeMap<Sym, Sym>,
     pub module: Name,
 }
 
@@ -266,7 +266,7 @@ pub struct GroupedImpl {
     pub trait_: Node<Symbol>,
     pub values: Vec<Vec<Node<Def>>>,
     // mapping from impl symbols to trait symbols
-    pub trait_items: HashMap<Sym, Sym>,
+    pub trait_items: BTreeMap<Sym, Sym>,
     pub module: Name,
 }
 
@@ -291,9 +291,9 @@ pub struct Items {
     pub items: Vec<Def>,
     pub traits: Vec<Trait>,
     pub impls: Vec<Impl>,
-    pub annotations: HashMap<Sym, Node<TypeAnnot>>,
-    pub fixities: HashMap<Sym, (Associativity, u64)>,
-    pub symbol_names: HashMap<Sym, String>,
+    pub annotations: BTreeMap<Sym, Node<TypeAnnot>>,
+    pub fixities: BTreeMap<Sym, (Associativity, u64)>,
+    pub symbol_names: BTreeMap<Sym, String>,
 }
 
 impl Items {
@@ -308,9 +308,9 @@ pub struct GroupedItems {
     pub items: Vec<Vec<Def>>,
     pub traits: Vec<Trait>,
     pub impls: Vec<GroupedImpl>,
-    pub annotations: HashMap<Sym, Node<TypeAnnot>>,
-    pub fixities: HashMap<Sym, (Associativity, u64)>,
-    pub symbol_names: HashMap<Sym, String>,
+    pub annotations: BTreeMap<Sym, Node<TypeAnnot>>,
+    pub fixities: BTreeMap<Sym, (Associativity, u64)>,
+    pub symbol_names: BTreeMap<Sym, String>,
 }
 
 impl GroupedItems {
@@ -343,7 +343,7 @@ pub mod printer {
 
     struct Printer<'a> {
         indent: usize,
-        symbol_names: &'a HashMap<Sym, String>,
+        symbol_names: &'a BTreeMap<Sym, String>,
     }
 
     impl<'a> Printer<'a> {

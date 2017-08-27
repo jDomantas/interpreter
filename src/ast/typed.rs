@@ -1,4 +1,4 @@
-use std::collections::{HashSet, HashMap, BTreeMap};
+use std::collections::{BTreeSet, BTreeMap};
 use std::fmt;
 use std::rc::Rc;
 use ast::{Node, Name, Literal};
@@ -26,7 +26,7 @@ impl Type {
         }
     }
 
-    pub fn map_vars(&self, substitution: &HashMap<u64, Type>) -> Type {
+    pub fn map_vars(&self, substitution: &BTreeMap<u64, Type>) -> Type {
         match *self {
             Type::Any => Type::Any,
             Type::Var(v) => {
@@ -57,7 +57,7 @@ impl Type {
         }
     }
 
-    pub fn display<'a, 'b>(&'a self, symbol_names: &'b HashMap<Sym, String>) -> TypeFormatter<'a, 'b> {
+    pub fn display<'a, 'b>(&'a self, symbol_names: &'b BTreeMap<Sym, String>) -> TypeFormatter<'a, 'b> {
         TypeFormatter {
             type_: self,
             symbol_names,
@@ -79,7 +79,7 @@ impl Type {
         }
     }
 
-    pub fn collect_vars(&self, to: &mut HashSet<u64>) {
+    pub fn collect_vars(&self, to: &mut BTreeSet<u64>) {
         match *self {
             Type::Any |
             Type::Concrete(_) => { }
@@ -102,7 +102,7 @@ impl Type {
 
 pub struct TypeFormatter<'a, 'b> {
     type_: &'a Type,
-    symbol_names: &'b HashMap<Sym, String>,
+    symbol_names: &'b BTreeMap<Sym, String>,
 }
 
 impl<'a, 'b> fmt::Display for TypeFormatter<'a, 'b> {
@@ -164,7 +164,7 @@ pub enum Expr {
 }
 
 impl Expr {
-    pub fn substitute_inner(&mut self, substitution: &HashMap<u64, Type>) {
+    pub fn substitute_inner(&mut self, substitution: &BTreeMap<u64, Type>) {
         match *self {
             Expr::Literal(_) => {}
             Expr::Var(_, ref mut typ, _) => {
@@ -220,7 +220,7 @@ impl Impls {
         Impls(mapping)
     }
 
-    pub fn map_vars(&self, mapping: &HashMap<u64, u64>) -> Impls {
+    pub fn map_vars(&self, mapping: &BTreeMap<u64, u64>) -> Impls {
         let impls = self.0
             .iter()
             .map(|(&(var, sym), src)| {
@@ -272,7 +272,7 @@ impl ImplSource {
         }
     }
 
-    fn map_vars(&self, var_mapping: &HashMap<u64, u64>) -> ImplSource {
+    fn map_vars(&self, var_mapping: &BTreeMap<u64, u64>) -> ImplSource {
         match *self {
             ImplSource::FromContext(var, trait_) => {
                 ImplSource::FromContext(var, trait_)
@@ -311,7 +311,7 @@ pub struct CaseBranch {
 }
 
 impl CaseBranch {
-    fn substitute_inner(&mut self, substitution: &HashMap<u64, Type>) {
+    fn substitute_inner(&mut self, substitution: &BTreeMap<u64, Type>) {
         self.pattern.value.substitute_inner(substitution);
         self.value.value.substitute_inner(substitution);
         if let Some(ref mut guard) = self.guard {
@@ -330,7 +330,7 @@ pub enum Pattern {
 }
 
 impl Pattern {
-    fn substitute_inner(&mut self, substitution: &HashMap<u64, Type>) {
+    fn substitute_inner(&mut self, substitution: &BTreeMap<u64, Type>) {
         match *self {
             Pattern::Wildcard => { }
             Pattern::Deconstruct(_, ref mut items) |
@@ -356,7 +356,7 @@ pub struct Def {
 }
 
 impl Def {
-    pub fn substitute_inner(&mut self, substitution: &HashMap<u64, Type>) {
+    pub fn substitute_inner(&mut self, substitution: &BTreeMap<u64, Type>) {
         self.scheme.type_ = self.scheme.type_.map_vars(substitution);
         self.value.value.substitute_inner(substitution);
     }
@@ -377,7 +377,7 @@ pub struct Scheme {
 impl Scheme {
     pub fn display<'a, 'b>(
                         &'a self,
-                        symbol_names: &'b HashMap<Sym, String>) -> SchemeFormatter<'a, 'b> {
+                        symbol_names: &'b BTreeMap<Sym, String>) -> SchemeFormatter<'a, 'b> {
         SchemeFormatter {
             scheme: self,
             symbol_names,
@@ -387,7 +387,7 @@ impl Scheme {
 
 pub struct SchemeFormatter<'a, 'b> {
     scheme: &'a Scheme,
-    symbol_names: &'b HashMap<Sym, String>,
+    symbol_names: &'b BTreeMap<Sym, String>,
 }
 
 impl<'a, 'b> fmt::Display for SchemeFormatter<'a, 'b> {
@@ -452,7 +452,7 @@ pub struct Trait {
 pub struct ImplDef {
     pub def: Def,
     // mapping from impl vars to def vars
-    pub var_mapping: HashMap<u64, u64>,
+    pub var_mapping: BTreeMap<u64, u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -462,7 +462,7 @@ pub struct Impl {
     pub trait_: Node<Symbol>,
     pub items: Vec<ImplDef>,
     // mapping from impl symbols to trait symbols
-    pub trait_items: HashMap<Sym, Sym>,
+    pub trait_items: BTreeMap<Sym, Sym>,
     pub module: Name,
 }
 
@@ -483,8 +483,8 @@ pub struct Items {
     pub items: Vec<Def>,
     pub traits: Vec<Trait>,
     pub impls: Vec<Impl>,
-    pub symbol_names: HashMap<Sym, String>,
-    pub symbol_types: HashMap<Sym, Scheme>,
+    pub symbol_names: BTreeMap<Sym, String>,
+    pub symbol_types: BTreeMap<Sym, Scheme>,
 }
 
 impl Items {
@@ -542,7 +542,7 @@ pub mod printer {
 
     struct Printer<'a> {
         indent: usize,
-        symbol_names: &'a HashMap<Sym, String>,
+        symbol_names: &'a BTreeMap<Sym, String>,
     }
 
     impl<'a> Printer<'a> {

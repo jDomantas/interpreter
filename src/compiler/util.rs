@@ -1,14 +1,13 @@
-use std::collections::{HashSet, HashMap};
-use std::hash::Hash;
+use std::collections::{BTreeSet, BTreeMap};
 use ast::Node;
 use ast::resolved::{Type, Sym, Symbol};
 
 
 pub struct Graph<'a, T: 'a + ?Sized> {
-    nodes: HashMap<&'a T, Vec<&'a T>>,
+    nodes: BTreeMap<&'a T, Vec<&'a T>>,
 }
 
-impl<'a, T: Eq + Hash + ?Sized> Graph<'a, T> {
+impl<'a, T: Ord + ?Sized> Graph<'a, T> {
     pub fn new<I>(nodes: I) -> Self where I: Iterator<Item=(&'a T, Vec<&'a T>)> {
         Graph {
             nodes: nodes.collect()
@@ -17,8 +16,8 @@ impl<'a, T: Eq + Hash + ?Sized> Graph<'a, T> {
 
     fn find_cycle(&self) -> Option<Vec<&'a T>> {
         let mut stack = Vec::new();
-        let mut in_stack = HashSet::new();
-        let mut visited = HashSet::new();
+        let mut in_stack = BTreeSet::new();
+        let mut visited = BTreeSet::new();
         for &node in self.nodes.keys() {
             let cycle = self.dfs_walk(node, &mut stack, &mut in_stack, &mut visited);
             if cycle.is_some() {
@@ -32,8 +31,8 @@ impl<'a, T: Eq + Hash + ?Sized> Graph<'a, T> {
                 &self,
                 current: &'a T,
                 stack: &mut Vec<&'a T>,
-                in_stack: &mut HashSet<&'a T>,
-                visited: &mut HashSet<&'a T>) -> Option<Vec<&'a T>> {
+                in_stack: &mut BTreeSet<&'a T>,
+                visited: &mut BTreeSet<&'a T>) -> Option<Vec<&'a T>> {
         if in_stack.contains(current) {
             let mut cycle = vec![current];
             loop {
@@ -86,25 +85,25 @@ impl<'a, T: Eq + Hash + ?Sized> Graph<'a, T> {
 }
 
 struct TarjanCtx<'a: 'b, 'b, T: 'a + ?Sized> {
-    neighbours: &'b HashMap<&'a T, Vec<&'a T>>,
+    neighbours: &'b BTreeMap<&'a T, Vec<&'a T>>,
     stack: Vec<&'a T>,
-    on_stack: HashSet<&'a T>,
+    on_stack: BTreeSet<&'a T>,
     next_index: usize,
-    index: HashMap<&'a T, usize>,
+    index: BTreeMap<&'a T, usize>,
     components: Vec<Vec<&'a T>>,
-    lowlink: HashMap<&'a T, usize>,
+    lowlink: BTreeMap<&'a T, usize>,
 }
 
-impl<'a, 'b, T: Hash + Eq + ?Sized> TarjanCtx<'a, 'b, T> {
-    fn new(neighbours: &'b HashMap<&'a T, Vec<&'a T>>) -> Self {
+impl<'a, 'b, T: Ord + ?Sized> TarjanCtx<'a, 'b, T> {
+    fn new(neighbours: &'b BTreeMap<&'a T, Vec<&'a T>>) -> Self {
         TarjanCtx {
             neighbours: neighbours,
             stack: Vec::new(),
-            on_stack: HashSet::new(),
+            on_stack: BTreeSet::new(),
             next_index: 0,
-            index: HashMap::new(),
+            index: BTreeMap::new(),
             components: Vec::new(),
-            lowlink: HashMap::new(),
+            lowlink: BTreeMap::new(),
         }
     }
 

@@ -90,7 +90,7 @@ impl Associativity {
     }
 }
 
-#[derive(PartialEq, Eq, Debug, Hash, Clone)]
+#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Hash, Clone)]
 pub struct Name {
     name: Rc<String>,
 }

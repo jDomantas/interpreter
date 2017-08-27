@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use ast::{Node, Associativity, Name};
 use ast::resolved::{Expr, Pattern, Def, Impl, Sym, Symbol, Items, CaseBranch};
 use errors::Errors;
@@ -7,15 +7,15 @@ use errors::Errors;
 struct Context<'a, 'b> {
     errors: &'b mut Errors,
     current_module: Option<Name>,
-    symbol_names: &'a HashMap<Sym, String>,
-    operators: &'a HashMap<Sym, (Associativity, u64)>, 
+    symbol_names: &'a BTreeMap<Sym, String>,
+    operators: &'a BTreeMap<Sym, (Associativity, u64)>, 
 }
 
 impl<'a, 'b> Context<'a, 'b> {
     fn new(
-            operators: &'a HashMap<Sym, (Associativity, u64)>,
+            operators: &'a BTreeMap<Sym, (Associativity, u64)>,
             errors: &'b mut Errors,
-            symbol_names: &'a HashMap<Sym, String>) -> Self {
+            symbol_names: &'a BTreeMap<Sym, String>) -> Self {
         Context {
             errors,
             operators,

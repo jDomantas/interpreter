@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use ast::{Node, Name};
 use ast::resolved::{Items, TypeDecl, Type, TypeAnnot, Sym, Symbol};
 use compiler::util::{self, Graph};
@@ -22,7 +22,7 @@ fn make_graph<'a, I: Iterator<Item=&'a TypeDecl>>(decls: I) -> Graph<'a, Sym> {
 }
 
 fn find_alias_cycles(items: &Items, errors: &mut Errors) -> Result<(), ()> {
-    let mut positions = HashMap::new();
+    let mut positions = BTreeMap::new();
     for decl in &items.types {
         if let TypeDecl::TypeAlias(ref alias) = *decl {
             positions.insert(alias.name.value, (alias.name.span, alias.module.clone()));
@@ -67,13 +67,13 @@ struct Replacement {
     type_: Type,
 }
 
-type Replacements = HashMap<Sym, Replacement>;
+type Replacements = BTreeMap<Sym, Replacement>;
 
 fn check_args(
                 module: &Name,
                 span: Span,
                 name: Sym,
-                symbol_names: &HashMap<Sym, String>,
+                symbol_names: &BTreeMap<Sym, String>,
                 args_count: usize,
                 replacements: &Replacements,
                 errors: &mut Errors) -> bool {
@@ -96,7 +96,7 @@ fn check_args(
 fn check_in_type(
                     type_: &Node<Type>,
                     replacements: &Replacements,
-                    symbol_names: &HashMap<Sym, String>,
+                    symbol_names: &BTreeMap<Sym, String>,
                     module: &Name,
                     errors: &mut Errors) -> bool {
     match type_.value {
@@ -234,7 +234,7 @@ fn check_arg_count(
     if ok { Ok(()) } else { Err(()) }
 }
 
-fn replace_vars(type_: &Type, vars: &HashMap<Sym, &Type>, span: Span) -> Type {
+fn replace_vars(type_: &Type, vars: &BTreeMap<Sym, &Type>, span: Span) -> Type {
     match *type_ {
         Type::Any => Type::Any,
         Type::Apply(ref a, ref b) => {
@@ -269,13 +269,13 @@ fn make_result(
                 module: &Name,
                 span: Span,
                 name: Sym,
-                symbol_names: &HashMap<Sym, String>,
+                symbol_names: &BTreeMap<Sym, String>,
                 args: &[Node<Type>],
                 replacements: &Replacements,
                 errors: &mut Errors) -> Type {
     if let Some(replacement) = replacements.get(&name) {
         debug_assert_eq!(args.len(), replacement.vars.len());
-        let mut vars = HashMap::new();
+        let mut vars = BTreeMap::new();
         for i in 0..args.len() {
             vars.insert(replacement.vars[i], &args[i].value);
         }
@@ -294,7 +294,7 @@ fn make_result(
 fn expand_in_type(
                     type_: &Node<Type>,
                     replacements: &Replacements,
-                    symbol_names: &HashMap<Sym, String>,
+                    symbol_names: &BTreeMap<Sym, String>,
                     module: &Name,
                     errors: &mut Errors) -> Node<Type> {
     let replaced = match type_.value {
@@ -375,7 +375,7 @@ fn expand_in_type(
 fn expand_in_annotation(
                         annot: &mut TypeAnnot,
                         replacements: &Replacements,
-                        symbol_names: &HashMap<Sym, String>,
+                        symbol_names: &BTreeMap<Sym, String>,
                         errors: &mut Errors) {
     let expanded = expand_in_type(
         &annot.type_.value.type_,
@@ -390,7 +390,7 @@ pub fn expand_aliases(mut items: Items, errors: &mut Errors) -> Items {
     if find_alias_cycles(&items, errors).is_err() {
         return items;
     }
-    let mut replacements = HashMap::new();
+    let mut replacements = BTreeMap::new();
     for type_ in &items.types {
         if let TypeDecl::TypeAlias(ref alias) = *type_ {
             let replacement = Replacement {

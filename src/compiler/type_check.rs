@@ -1,4 +1,4 @@
-use std::collections::{HashSet, HashMap};
+use std::collections::{BTreeSet, BTreeMap};
 use std::mem;
 use std::rc::Rc;
 use ast::typed::{self as t, Type, Scheme, SchemeVar, Symbol, Sym, ImplSym, ImplDef, Impls};
@@ -23,7 +23,7 @@ impl FunctionName {
         }
     }
 
-    fn name<'a>(self, symbol_names: &'a HashMap<Sym, String>) -> &'a str {
+    fn name<'a>(self, symbol_names: &'a BTreeMap<Sym, String>) -> &'a str {
         match self {
             FunctionName::Sym(sym) => &symbol_names[&sym],
             FunctionName::Str(name) => name,
@@ -58,32 +58,32 @@ enum ConstraintSource {
 struct Constraint(Type, Type, ConstraintSource, Name);
 
 struct InferCtx<'a, 'b, 'c, 'd> {
-    pattern_types: &'d HashMap<Sym, PatternTy>,
-    env: HashMap<Sym, Scheme>,
-    new_env: HashMap<Sym, Scheme>,
+    pattern_types: &'d BTreeMap<Sym, PatternTy>,
+    env: BTreeMap<Sym, Scheme>,
+    new_env: BTreeMap<Sym, Scheme>,
     next_var: u64,
     next_sym: u64,
-    var_bounds: HashMap<u64, HashSet<Sym>>,
+    var_bounds: BTreeMap<u64, BTreeSet<Sym>>,
     errors: &'b mut Errors,
     constraints: Vec<Constraint>,
     current_module: Option<Name>,
-    annotations: &'a HashMap<Sym, (Scheme, Span)>,
-    symbol_names: &'c mut HashMap<Sym, String>,
+    annotations: &'a BTreeMap<Sym, (Scheme, Span)>,
+    symbol_names: &'c mut BTreeMap<Sym, String>,
 }
 
 impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
     fn new(
-            pattern_types: &'d HashMap<Sym, PatternTy>,
-            annotations: &'a HashMap<Sym, (Scheme, Span)>,
+            pattern_types: &'d BTreeMap<Sym, PatternTy>,
+            annotations: &'a BTreeMap<Sym, (Scheme, Span)>,
             errors: &'b mut Errors,
-            symbol_names: &'c mut HashMap<Sym, String>) -> Self {
+            symbol_names: &'c mut BTreeMap<Sym, String>) -> Self {
         InferCtx {
             pattern_types,
-            env: HashMap::new(),
-            new_env: HashMap::new(),
+            env: BTreeMap::new(),
+            new_env: BTreeMap::new(),
             next_var: 1,
             next_sym: 500000000,
-            var_bounds: HashMap::new(),
+            var_bounds: BTreeMap::new(),
             errors,
             constraints: Vec::new(),
             current_module: None,
@@ -108,7 +108,7 @@ impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
     fn add_var_bound(&mut self, var: u64, trait_: Sym) {
         self.var_bounds
             .entry(var)
-            .or_insert_with(HashSet::new)
+            .or_insert_with(BTreeSet::new)
             .insert(trait_);
     }
 
@@ -129,7 +129,7 @@ impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
     }
 
     fn instantiate_scheme(&mut self, scheme: &Scheme) -> Type {
-        let mut substitution = HashMap::new();
+        let mut substitution = BTreeMap::new();
         for var in &scheme.vars {
             let to = self.fresh_var();
             for &bound in &var.bounds {
@@ -142,7 +142,7 @@ impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
 
     fn instantiate_pattern_ty(&mut self, pattern: Sym) -> (Type, Vec<Type>) {
         let ty = self.pattern_types[&pattern].clone();
-        let mut substitution = HashMap::new();
+        let mut substitution = BTreeMap::new();
         for &var in &ty.vars {
             substitution.insert(var, Type::Var(self.fresh_var()));
         }
@@ -155,8 +155,8 @@ impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
         (whole_type, items)
     }
 
-    fn free_env_vars(&self) -> HashSet<u64> {
-        let mut vars = HashSet::new();
+    fn free_env_vars(&self) -> BTreeSet<u64> {
+        let mut vars = BTreeSet::new();
         for scheme in self.new_env.values() {
             scheme.type_.collect_vars(&mut vars);
             for var in &scheme.vars {
@@ -595,7 +595,7 @@ impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
         };
         self.var_bounds
             .entry(into)
-            .or_insert_with(HashSet::new)
+            .or_insert_with(BTreeSet::new)
             .extend(bounds);
     }
 
@@ -654,7 +654,7 @@ impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
         }
         // get free variables after substitution
         let free_vars = {
-            let mut result = HashSet::new();
+            let mut result = BTreeSet::new();
             for &var in &free_vars {
                 if let Some(type_) = substitution.get(&var) {
                     type_.collect_vars(&mut result);
@@ -668,7 +668,7 @@ impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
         for def in &mut result {
             let mut scheme = def.value.scheme.clone();
             scheme.type_ = scheme.type_.map_vars(&substitution);
-            let mut vars = HashSet::new();
+            let mut vars = BTreeSet::new();
             scheme.type_.collect_vars(&mut vars);
             let mut scheme_vars = Vec::new();
             for &v in &vars {
@@ -678,7 +678,7 @@ impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
                         bounds: self.var_bounds
                             .get(&v)
                             .cloned()
-                            .unwrap_or_else(HashSet::new)
+                            .unwrap_or_else(BTreeSet::new)
                             .into_iter()
                             .collect(),
                     };
@@ -708,7 +708,7 @@ impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
             }
         }
         debug_assert_eq!(defs.len(), typed_defs.len());
-        for (k, v) in self.new_env.drain() {
+        for (k, v) in ::std::mem::replace(&mut self.new_env, BTreeMap::new()) {
             if !self.env.contains_key(&k) {
                 self.env.insert(k, v);
             }
@@ -827,8 +827,8 @@ fn empty_scheme(type_: Type) -> Scheme {
 struct Solver<'a, 'b, 'c> {
     constraints: &'a [Constraint],
     errors: &'b mut Errors,
-    symbol_names: &'c HashMap<Sym, String>,
-    substitution: HashMap<u64, Type>,
+    symbol_names: &'c BTreeMap<Sym, String>,
+    substitution: BTreeMap<u64, Type>,
     var_unifications: Vec<(u64, u64)>,
 }
 
@@ -836,12 +836,12 @@ impl<'a, 'b, 'c> Solver<'a, 'b, 'c> {
     fn new(
             constraints: &'a [Constraint],
             errors: &'b mut Errors,
-            symbol_names: &'c HashMap<Sym, String>) -> Self {
+            symbol_names: &'c BTreeMap<Sym, String>) -> Self {
         Solver {
             constraints,
             errors,
             symbol_names,
-            substitution: HashMap::new(),
+            substitution: BTreeMap::new(),
             var_unifications: Vec::new(),
         }
     }
@@ -1090,7 +1090,7 @@ impl<'a, 'b, 'c> Solver<'a, 'b, 'c> {
         }
     }
 
-    fn solve_constraints(mut self) -> (HashMap<u64, Type>, Vec<(u64, u64)>) {
+    fn solve_constraints(mut self) -> (BTreeMap<u64, Type>, Vec<(u64, u64)>) {
         for constraint in self.constraints {
             let type1 = self.do_substitutions(&constraint.0);
             let type2 = self.do_substitutions(&constraint.1);
@@ -1173,7 +1173,7 @@ fn convert_resolved_type(type_: &r::Type, self_to: &Type) -> Type {
 }
 
 fn convert_resolved_scheme(scheme: &r::Scheme, self_to: &Type) -> Scheme {
-    fn collect_vars<T: Default>(ty: &r::Type, to: &mut HashMap<u64, T>) {
+    fn collect_vars<T: Default>(ty: &r::Type, to: &mut BTreeMap<u64, T>) {
         match *ty {
             r::Type::Any |
             r::Type::Concrete(_) |
@@ -1194,10 +1194,10 @@ fn convert_resolved_scheme(scheme: &r::Scheme, self_to: &Type) -> Scheme {
         }
     }
     let type_ = convert_resolved_type(&scheme.type_.value, self_to);
-    let mut vars = HashMap::new();
+    let mut vars = BTreeMap::new();
     for &(ref var, ref trait_) in &scheme.bounds {
         if let Symbol::Known(sym) = trait_.value {
-            vars.entry(var.value.0).or_insert_with(HashSet::new).insert(sym);
+            vars.entry(var.value.0).or_insert_with(BTreeSet::new).insert(sym);
         }
     }
     collect_vars(&scheme.type_.value, &mut vars);
@@ -1207,7 +1207,7 @@ fn convert_resolved_scheme(scheme: &r::Scheme, self_to: &Type) -> Scheme {
             id: v,
             bounds: bounds
                 .into_iter()
-                .collect::<HashSet<_>>()
+                .collect::<BTreeSet<_>>()
                 .into_iter()
                 .collect::<Vec<_>>(),
         })
@@ -1294,8 +1294,8 @@ fn convert_resolved_trait(trait_: r::Trait) -> t::Trait {
     t::Trait { name, base_traits, items, module }
 }
 
-fn collect_pattern_types(items: &r::GroupedItems) -> HashMap<Sym, PatternTy> {
-    let mut types = HashMap::new();
+fn collect_pattern_types(items: &r::GroupedItems) -> BTreeMap<Sym, PatternTy> {
+    let mut types = BTreeMap::new();
     for type_ in &items.types {
         match *type_ {
             r::TypeDecl::Union(ref union) => {
@@ -1340,8 +1340,8 @@ fn collect_pattern_types(items: &r::GroupedItems) -> HashMap<Sym, PatternTy> {
     types
 }
 
-fn collect_constructor_types(items: &r::GroupedItems) -> HashMap<Sym, (Scheme, Span)> {
-    let mut types = HashMap::new();
+fn collect_constructor_types(items: &r::GroupedItems) -> BTreeMap<Sym, (Scheme, Span)> {
+    let mut types = BTreeMap::new();
     for type_ in &items.types {
         match *type_ {
             r::TypeDecl::Union(ref union) => {
@@ -1408,8 +1408,8 @@ fn collect_constructor_types(items: &r::GroupedItems) -> HashMap<Sym, (Scheme, S
     types
 }
 
-fn collect_trait_item_types(items: &r::GroupedItems) -> HashMap<Sym, (Scheme, Span)> {
-    let mut result = HashMap::new();
+fn collect_trait_item_types(items: &r::GroupedItems) -> BTreeMap<Sym, (Scheme, Span)> {
+    let mut result = BTreeMap::new();
     for trait_ in &items.traits {
         for value in &trait_.values {
             let mut scheme = convert_resolved_scheme(&value.value.type_.value, &Type::Var(0));
@@ -1424,7 +1424,7 @@ fn collect_trait_item_types(items: &r::GroupedItems) -> HashMap<Sym, (Scheme, Sp
     result
 }
 
-fn collect_resolved_type_vars(type_: &r::Type, vars: &mut HashSet<u64>) {
+fn collect_resolved_type_vars(type_: &r::Type, vars: &mut BTreeSet<u64>) {
     match *type_ {
         r::Type::Any |
         r::Type::SelfType |
@@ -1445,8 +1445,8 @@ fn collect_resolved_type_vars(type_: &r::Type, vars: &mut HashSet<u64>) {
     }
 }
 
-fn make_var_mapping(a: &Scheme, b: &Scheme) -> Option<HashMap<u64, u64>> {
-    fn unify(a: &Type, b: &Type, mapping: &mut HashMap<u64, u64>) -> bool {
+fn make_var_mapping(a: &Scheme, b: &Scheme) -> Option<BTreeMap<u64, u64>> {
+    fn unify(a: &Type, b: &Type, mapping: &mut BTreeMap<u64, u64>) -> bool {
         match (a, b) {
             (&Type::Any, &Type::Any) => true,
             (&Type::Concrete(a), &Type::Concrete(b)) => a == b,
@@ -1475,14 +1475,14 @@ fn make_var_mapping(a: &Scheme, b: &Scheme) -> Option<HashMap<u64, u64>> {
         v.sort();
         v
     }
-    let mut var_mapping = HashMap::new();
+    let mut var_mapping = BTreeMap::new();
     if !unify(&a.type_, &b.type_, &mut var_mapping) {
         return None;
     }
-    if var_mapping.values().cloned().collect::<HashSet<_>>().len() != var_mapping.len() {
+    if var_mapping.values().cloned().collect::<BTreeSet<_>>().len() != var_mapping.len() {
         return None;
     }
-    let b_bounds = b.vars.iter().map(|v| (v.id, sorted(&v.bounds))).collect::<HashMap<_, _>>();
+    let b_bounds = b.vars.iter().map(|v| (v.id, sorted(&v.bounds))).collect::<BTreeMap<_, _>>();
     for a_var in &a.vars {
         let b_var = var_mapping[&a_var.id];
         let expected_bounds = sorted(&a_var.bounds);
@@ -1499,8 +1499,8 @@ fn are_schemes_equal(a: &Scheme, b: &Scheme) -> bool {
 
 fn make_impl_annotations(
                             items: &r::GroupedItems,
-                            trait_item_types: &HashMap<Sym, (Scheme, Span)>) -> HashMap<Sym, (Scheme, Span)> {
-    let mut types = HashMap::new();
+                            trait_item_types: &BTreeMap<Sym, (Scheme, Span)>) -> BTreeMap<Sym, (Scheme, Span)> {
+    let mut types = BTreeMap::new();
     for impl_ in &items.impls {
         let impl_scheme = convert_resolved_scheme(&impl_.scheme.value, &Type::Any);
         for def in impl_.values.iter().flat_map(|group| group.iter()) {
@@ -1515,7 +1515,7 @@ fn make_impl_annotations(
             } else {
                 continue;
             };
-            let mut mapping = HashMap::new();
+            let mut mapping = BTreeMap::new();
             mapping.insert(0, impl_scheme.type_.clone());
             let type_ = scheme.type_.map_vars(&mapping);
             let mut vars = scheme.vars.clone();
@@ -1533,7 +1533,7 @@ fn make_impl_annotations(
 
 fn infer_impl(
                 impl_: r::GroupedImpl,
-                impl_item_types: &HashMap<Sym, (Scheme, Span)>,
+                impl_item_types: &BTreeMap<Sym, (Scheme, Span)>,
                 inferer: &mut InferCtx) -> t::Impl {
     let r::GroupedImpl { scheme, trait_, values, trait_items, module } = impl_;
     let mut typed_values = Vec::new();
@@ -1544,7 +1544,7 @@ fn infer_impl(
                     make_var_mapping(scheme, &def.scheme)
                         .unwrap_or_default()
                 }
-                None => HashMap::new(),
+                None => BTreeMap::new(),
             };
             typed_values.push(ImplDef {
                 def,

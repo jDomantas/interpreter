@@ -1,6 +1,6 @@
 module List exposing
     ( List((::)) -- don't export Nil, as it can be refered to as `[]`
-    , map, head, tail
+    , map, head, tail, length, foldl, foldr, fold, reverse, append
     )
 
 import Basics exposing (..)

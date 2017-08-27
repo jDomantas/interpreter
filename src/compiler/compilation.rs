@@ -102,16 +102,19 @@ impl Compiler {
     fn compile_expr(&mut self, expr: Expr, f: &mut FunctionCtx) {
         match expr {
             Expr::Apply(fun, args) => {
+                let previous_stack = f.current_size;
                 let arg_count = args.len();
                 for arg in args.into_iter().rev() {
                     self.compile_expr(arg, f);
                 }
                 self.compile_expr(*fun, f);
                 f.emit(Instruction::Apply(arg_count));
+                f.current_size = previous_stack + 1;
             }
             Expr::Case(value, branches) => {
                 f.emit(Instruction::CreateFrame);
                 f.frames += 1;
+                let previous_stack = f.current_size;
                 self.compile_expr(*value, f);
                 let end_address = self.get_dummy_address();
                 f.frames += 1;
@@ -135,6 +138,7 @@ impl Compiler {
                 let fixed_address = f.function.instructions.len();
                 f.fix_jumps(end_address, fixed_address);
                 f.emit(Instruction::FrameReturn);
+                f.current_size = previous_stack + 1;
                 f.frames -= 2;
             }
             Expr::Constructor(sym, args) => {

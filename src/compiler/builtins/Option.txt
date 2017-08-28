@@ -49,7 +49,7 @@ impl Option a : Default where
 
 impl Option : Computation where
     succeed = Some
-    andThen = flip flatMap
+    andThen = flatMap
 
 impl Option : Failable where
     fail = None

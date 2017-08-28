@@ -568,17 +568,15 @@ impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
                 let a = pat_type_rc;
                 let bind_type =
                     Type::Function(
-                        ma,
-                        Rc::new(Type::Function(
-                            Rc::new(Type::Function(a, mb.clone())),
-                            mb)));
+                        Rc::new(Type::Function(a, mb.clone())),
+                        Rc::new(Type::Function(ma, mb)));
                 let bind_symbol = Symbol::Known(builtins::values::AND_THEN);
                 let bind = t::Expr::Var(bind_symbol, bind_type, Impls::empty());
                 let bind = Node::new(bind, expr.span);
                 let span = expr.span;
-                let result = t::Expr::Apply(Box::new(bind), Box::new(expr));
+                let result = t::Expr::Apply(Box::new(bind), Box::new(lambda));
                 let result = Node::new(result, span);
-                let result = t::Expr::Apply(Box::new(result), Box::new(lambda));
+                let result = t::Expr::Apply(Box::new(result), Box::new(expr));
                 (result, rest_expected)
             }
         };

@@ -6,7 +6,7 @@ module Computation exposing
 
 trait Computation where
     succeed : a -> self a
-    andThen : self a -> (a -> self b) -> self b
+    andThen : (a -> self b) -> self a -> self b
 
 trait Failable where
     fail : self a

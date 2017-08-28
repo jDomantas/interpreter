@@ -81,7 +81,7 @@ impl List a : Appendable where
 
 impl List : Computation where
     succeed x = [x]
-    andThen = flip flatMap
+    andThen = flatMap
 
 impl List : Failable where
     fail = []

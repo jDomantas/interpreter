@@ -41,7 +41,7 @@ mapError f result = case result of
 
 impl Result e : Computation where
     succeed = Ok
-    andThen = flip andThen
+    andThen = andThen
 
 impl Result e : Mappable where
     map = map

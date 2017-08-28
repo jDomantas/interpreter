@@ -90,7 +90,7 @@ impl Compiler {
         Compiler {
             functions: BTreeMap::new(),
             next_function_id: 0,
-            next_temp_address: 0,
+            next_temp_address: ::std::usize::MAX / 2,
             globals: BTreeMap::new(),
             string_cache: BTreeSet::new(),
             object_cache: BTreeMap::new(),

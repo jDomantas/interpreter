@@ -240,6 +240,10 @@ impl<'a, 'b> Lexer<'a, 'b> {
     fn lex_string_literal(&mut self) -> Node<Token> {
         let start = self.current_position();
         assert_eq!(self.consume(), Some('"'));
+        let span = start.span_to(self.current_position());
+        if self.check('"') {
+            return Node::new(Token::Str(String::new()), span);
+        }
         let (string, _) = self.collect_chars(|c| c != '"');
         let span = start.span_to(self.current_position());
         match self.consume() {
@@ -588,10 +592,11 @@ mod tests {
     
     #[test]
     fn string_literal() {
-        let tokens = lex_no_positions(r#" "abc" "012" "#);
+        let tokens = lex_no_positions(r#" "abc" "012" "" "#);
         assert_eq!(tokens, vec![
             Token::Str("abc".into()),
             Token::Str("012".into()),
+            Token::Str("".into()),
             Token::EndOfInput,
         ]);
     }

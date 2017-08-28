@@ -85,7 +85,7 @@ impl [a : Ord] List a : Ord where
                 EQ -> compare xs ys
                 other -> other
 
-{- impl [a : ToString] List a : ToString where
+impl [a : ToString] List a : ToString where
     toString list = 
         let
             items acc list = case list of
@@ -95,5 +95,4 @@ impl [a : Ord] List a : Ord where
             case list of
                 [] -> "[]"
                 [x] -> "[" ++ toString x ++ "]"
-                x :: xs -> "[" ++ toString x ++ items xs ++ "]"
--}
+                x :: xs -> "[" ++ toString x ++ items "" xs ++ "]"

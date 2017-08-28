@@ -243,8 +243,8 @@ impl Frac : ToString where
 impl Char : ToString where
     toString = charToString
 
-{- impl Bool : ToString where
-    toString b = if b then "true" else "false" -}
+impl Bool : ToString where
+    toString b = if b then "true" else "false"
 
 trait Appendable where
     (++) : self -> self -> self

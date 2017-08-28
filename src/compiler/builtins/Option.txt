@@ -64,9 +64,7 @@ impl [a : Ord] Option a : Ord where
         (Some _, None) -> GR
         (Some a, Some b) -> compare a b
 
-{-
 impl [a : ToString] Option a : ToString where
     toString opt = case opt of
         Some x -> "Some(" ++ toString x ++ ")"
         None -> "None"
--}

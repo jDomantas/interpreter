@@ -45,5 +45,5 @@ impl String : ToString where
 impl String : Appendable where
     (++) = append
 
--- impl String : Default where
---    default = ""
+impl String : Default where
+   default = ""

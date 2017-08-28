@@ -391,6 +391,8 @@ impl Compiler {
         self.make_builtin(values::STR_CHAR_AT, 2, Instruction::StrCharAt);
         self.make_builtin(values::STR_LENGTH, 1, Instruction::StrLength);
         self.make_builtin(values::STR_SUBSTRING, 3, Instruction::StrSubstring);
+        self.make_builtin(values::STR_EQ, 2, Instruction::StrEq);
+        self.make_builtin(values::STR_LE, 2, Instruction::StrLe);
     }
 
     fn make_builtin(&mut self, sym: Sym, arg_count: usize, instr: Instruction) {

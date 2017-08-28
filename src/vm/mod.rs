@@ -52,6 +52,8 @@ pub enum Instruction {
     StrCharAt,
     StrAppend,
     StrSubstring,
+    StrLe,
+    StrEq,
 }
 
 #[derive(Debug)]
@@ -527,6 +529,16 @@ impl<'a> Vm<'a> {
                 let length = self.pop_int() as usize;
                 let s = s.chars().skip(index).take(length).collect();
                 self.stack.push(Value::Str(Rc::new(s)));
+            }
+            StrLe => {
+                let a = self.pop_string();
+                let b = self.pop_string();
+                self.stack.push(Value::Bool(a < b));
+            }
+            StrEq => {
+                let a = self.pop_string();
+                let b = self.pop_string();
+                self.stack.push(Value::Bool(a == b));
             }
         }
         Ok(())

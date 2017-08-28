@@ -21,6 +21,24 @@ subString = subString
 length : String -> Int
 length = length
 
+equals : String -> String -> Bool
+equals = equals
+
+less : String -> String -> Bool
+less = less
+
+impl String : Eq where
+    (==) = equals
+
+impl String : Ord where
+    compare a b =
+        if less a b then
+            LT
+        else if equals a b then
+            EQ
+        else
+            GR
+
 impl String : ToString where
     toString = id
 

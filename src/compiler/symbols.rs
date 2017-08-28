@@ -205,6 +205,9 @@ impl<'a> Resolver<'a> {
         result.symbol_names.insert(traits::COMPUTATION, "Computation".into());
         result.symbol_names.insert(traits::FAILABLE, "Failable".into());
         result.symbol_names.insert(traits::DEFAULT, "Default".into());
+        result.symbol_names.insert(traits::EQ, "Eq".into());
+        result.symbol_names.insert(traits::ORD, "Ord".into());
+        result.symbol_names.insert(traits::TO_STRING, "ToString".into());
 
         result.symbol_names.insert(values::NIL, "Nil".into());
         result.symbol_names.insert(values::CONS, "::".into());
@@ -239,6 +242,8 @@ impl<'a> Resolver<'a> {
         result.symbol_names.insert(values::STR_CHAR_AT, "charAt".into());
         result.symbol_names.insert(values::STR_LENGTH, "length".into());
         result.symbol_names.insert(values::STR_SUBSTRING, "substring".into());
+        result.symbol_names.insert(values::STR_LE, "less".into());
+        result.symbol_names.insert(values::STR_EQ, "equals".into());
 
         result.symbol_names.insert(values::MAIN, "main".into());
         
@@ -325,6 +330,8 @@ impl<'a> Resolver<'a> {
             ("String", None, "charAt") => values::STR_CHAR_AT,
             ("String", None, "length") => values::STR_LENGTH,
             ("String", None, "substring") => values::STR_SUBSTRING,
+            ("String", None, "equals") => values::STR_EQ,
+            ("String", None, "less") => values::STR_LE,
             ("Main", None, "main") => values::MAIN,
             _ => {
                 //let name = name.into();

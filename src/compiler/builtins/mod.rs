@@ -65,6 +65,8 @@ pub mod values {
     pub const STR_CHAR_AT: Sym = Sym(81);
     pub const STR_APPEND: Sym = Sym(82);
     pub const STR_SUBSTRING: Sym = Sym(83);
+    pub const STR_LE: Sym = Sym(84);
+    pub const STR_EQ: Sym = Sym(85);
 }
 
 pub mod modules {

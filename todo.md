@@ -1,10 +1,17 @@
-* (Done) Collect pattern and constructor types from type definitions
-* (Done) Collect trait item types
-* (Done) Group definitions by strongly connected components of their dependency graph
-* (Done) Also split up let definitions the same way
-* (Done) Also group impl definitions
-* (Done) Infer types for all normal definitions
-* (Done) Make type annotations for impl items
-* (Done) Infer types for all impl items
-* Verify that infered types match type annotations
-* Ta-da!
+To-do:
+* Pattern matching exaustiveness checking
+* Type checker rewrite to get rid of duplicate error messages
+* Fix trait checker errors like `Type t5 does not implement trait Foo`
+* Check for overlaping impls
+* Make functions and tuples usable as type constructors (`a -> b` to `Basics.Func a b`)
+* Add autoimports
+
+
+Autoimports:
+```
+import Basics exposing (..)
+import Option exposing (Option(Some, None))
+import List exposing (List((::)))
+import Result exposing (Result(Ok, Err))
+import String exposing (String)
+```

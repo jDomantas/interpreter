@@ -1,6 +1,7 @@
 module List exposing
     ( List((::)) -- don't export Nil, as it can be refered to as `[]`
-    , map, head, tail, length, foldl, foldr, fold, reverse, append
+    , map, flatMap, head, tail, length, foldl, foldr, fold, reverse, append
+    , repeat, range, contains
     )
 
 import Basics exposing (..)
@@ -56,6 +57,25 @@ append a b = case a of
     [] -> b
     x :: xs -> x :: append xs b
 
+repeat : Int -> a -> List a
+repeat amount value =
+    if amount <= 0 then
+        []
+    else
+        value :: repeat (amount - 1) value
+
+range : Int -> Int -> List Int
+range from to =
+    if from > to then
+        []
+    else
+        from :: range (from + 1) to
+
+contains : [a : Eq] a -> List a -> Bool
+contains value list = case list of
+    [] -> false
+    x :: xs -> x == value || contains value xs
+
 impl List a : Appendable where
     (++) = append
 
@@ -69,6 +89,9 @@ impl List : Failable where
 impl List a : Default where
     default = []
 
+impl List : Mappable where
+    map = map
+
 impl [a : Eq] List a : Eq where
     a == b = case (a, b) of
         ([], []) -> true
@@ -78,7 +101,7 @@ impl [a : Eq] List a : Eq where
 impl [a : Ord] List a : Ord where
     compare a b = case (a, b) of
         ([], []) -> EQ
-        (_ :: _, []) -> GR
+        (_ :: _, []) -> GT
         ([], _ :: _) -> LT
         (x :: xs, y :: ys) ->
             case compare x y of

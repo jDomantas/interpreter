@@ -75,4 +75,5 @@ pub mod modules {
     pub const LIST: &'static str = include_str!("List.txt");
     pub const STRING: &'static str = include_str!("String.txt");
     pub const COMPUTATION: &'static str = include_str!("Computation.txt");
+    pub const RESULT: &'static str = include_str!("Result.txt");
 }

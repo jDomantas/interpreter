@@ -1,6 +1,6 @@
 module Option exposing
     ( Option(None, Some)
-    , isSome, isNone, map, flatMap, flatten, getOrElse
+    , isSome, isNone, map, flatMap, flatten, getOrElse, getOrDefault
     )
 
 import Basics exposing (..)
@@ -38,6 +38,9 @@ getOrElse a opt = case opt of
     Some x -> x
     None -> a
 
+getOrDefault : [a : Default] Option a -> a
+getOrDefault = getOrElse default
+
 flatten : Option (Option a) -> Option a
 flatten = flatMap id
 
@@ -51,6 +54,9 @@ impl Option : Computation where
 impl Option : Failable where
     fail = None
 
+impl Option : Mappable where
+    map = map
+
 impl [a : Eq] Option a : Eq where
     a == b = case (a, b) of
         (Some a, Some b) -> a == b
@@ -61,7 +67,7 @@ impl [a : Ord] Option a : Ord where
     compare a b = case (a, b) of
         (None, None) -> EQ
         (None, Some _) -> LT
-        (Some _, None) -> GR
+        (Some _, None) -> GT
         (Some a, Some b) -> compare a b
 
 impl [a : ToString] Option a : ToString where

@@ -1,11 +1,11 @@
 module Basics exposing
-    ( Int, Bool, Frac, Char, Ordering(LT, EQ, GR), Never
-    , Number, Eq, Ord, Default, ToString, Appendable
+    ( Int, Bool, Frac, Char, Ordering(LT, EQ, GT), Never
+    , Number, Eq, Ord, Default, ToString, Appendable, Mappable
     , (+), (-), (*), (/), (//), negate
     , (==), (!=), compare, (<), (>), (<=), (>=)
     , not, (&&), (||)
     , id, always, flip, (>>), (<<), (|>), (<|)
-    , default, never, toString, (++)
+    , default, never, map, toString, (++)
     )
 
 import String exposing (String)
@@ -124,13 +124,13 @@ impl Bool : Eq where
 infix 4 ==
 infix 4 !=
 
-type Ordering = LT | EQ | GR
+type Ordering = LT | EQ | GT
 
 impl Ordering : Eq where
     a == b = case (a, b) of
         (LT, LT) -> true
         (EQ, EQ) -> true
-        (GR, GR) -> true
+        (GT, GT) -> true
         _        -> false
 
 trait Ord : Eq where
@@ -138,7 +138,7 @@ trait Ord : Eq where
 
 (>) : [a : Ord] a -> a -> Bool
 a > b = case compare a b of
-    GR -> true
+    GT -> true
     _ -> false
 
 (>=) : [a : Ord] a -> a -> Bool
@@ -153,7 +153,7 @@ a < b = case compare a b of
 
 (<=) : [a : Ord] a -> a -> Bool
 a <= b = case compare a b of
-    GR -> false
+    GT -> false
     _ -> true
 
 infix 4 <
@@ -168,7 +168,7 @@ impl Int : Ord where
         else if intEq a b then
             EQ
         else
-            GR
+            GT
 
 impl Frac : Ord where
     compare a b =
@@ -177,7 +177,37 @@ impl Frac : Ord where
         else if fracEq a b then
             EQ
         else
-            GR
+            GT
+
+impl Bool : Ord where
+    compare a b =
+        if a then
+            if b then
+                EQ
+            else
+                GT
+        else if b then
+            LT
+        else
+            EQ
+
+impl Char : Ord where
+    compare a b =
+        if charLe a b then
+            LT
+        else if charEq a b then
+            EQ
+        else
+            GT
+
+impl Ordering : Ord where
+    compare a b =
+        case (a, b) of
+            (LT, LT) -> EQ
+            (_, LT) -> GT
+            (a, EQ) -> a
+            (GT, GT) -> EQ
+            (_, GT) -> LT
 
 not : Bool -> Bool
 not b = if b then false else true
@@ -248,5 +278,8 @@ impl Bool : ToString where
 
 trait Appendable where
     (++) : self -> self -> self
+
+trait Mappable where
+    map : (a -> b) -> self a -> self b
 
 infixr 5 ++

@@ -43,6 +43,7 @@ impl<'a, 'b, T: 'a + SourceProvider> SourceProvider for WrappingProvider<'a, 'b,
             "List" => Ok(modules::LIST),
             "String" => Ok(modules::STRING),
             "Computation" => Ok(modules::COMPUTATION),
+            "Result" => Ok(modules::RESULT),
             _ => self.inner.get_module_source(name),
         }
     }

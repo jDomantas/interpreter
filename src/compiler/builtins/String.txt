@@ -37,7 +37,7 @@ impl String : Ord where
         else if equals a b then
             EQ
         else
-            GR
+            GT
 
 impl String : ToString where
     toString = id

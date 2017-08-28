@@ -160,11 +160,16 @@ impl Compiler {
                     self.compile_expr(arg, false, f);
                 }
                 self.compile_expr(*func, false, f);
-                f.emit(Instruction::Call(arg_count));
-                f.stack_size -= arg_count;
-                // TODO: compile to actual tail calls
                 if is_tail {
-                    f.return_top();
+                    let nip = f.stack_size - arg_count - 1;
+                    if nip > 0 {
+                        f.emit(Instruction::Nip(nip, arg_count + 1));
+                    }
+                    f.emit(Instruction::TailCall(arg_count));
+                    f.stack_size = 1;
+                } else {
+                    f.emit(Instruction::Call(arg_count));
+                    f.stack_size -= arg_count;
                 }
             }
             Expr::Case(value, branches) => {

@@ -347,8 +347,8 @@ impl<'a> Vm<'a> {
                     }
                 }
             }
-            TailCall(_arg_count) => {
-                /*while arg_count > 0 {
+            TailCall(mut arg_count) => {
+                while arg_count > 0 {
                     let mut closure = self.pop_closure();
                     let f = &self.functions[&closure.function];
                     let args_missing = f.arg_count - closure.partial_args.len();
@@ -369,44 +369,18 @@ impl<'a> Vm<'a> {
                             self.stack.push(arg);
                         }
                         let cur_stack_size = self.call_stack.len();
+                        if arg_count == 0 {
+                            self.call_stack.pop();
+                            self.call_stack.push((f, 0));
+                            break;
+                        }
                         self.call_stack.push((f, 0));
                         while self.call_stack.len() > cur_stack_size {
                             self.step()?;
                         }
                     }
-                }*/
-                unimplemented!()
-            }
-            /*Apply(mut arg_count) => {
-                // self.pop_frames_below(pop_frames, arg_count);
-                while arg_count > 0 {
-                    let closure = self.pop_closure();
-                    let f = &self.functions[&closure.function];
-                    let args_missing = f.arg_count as usize - closure.partial_args.len();
-                    debug_assert!(args_missing > 0);
-                    if arg_count < args_missing {
-                        let mut closure = closure;
-                        {
-                            let args = &mut Rc::make_mut(&mut closure).partial_args;
-                            for _ in 0..arg_count {
-                                args.push(self.stack.pop().unwrap());
-                            }
-                        }
-                        self.stack.push(Value::Closure(closure));
-                        break;
-                    } else {
-                        for arg in closure.partial_args.iter().rev().cloned() {
-                            self.stack.push(arg);
-                        }
-                        self.call_stack.push((f, 0));
-                        arg_count -= args_missing;
-                        let cur_size = self.call_stack.len();
-                        while self.call_stack.len() >= cur_size {
-                            self.step()?;
-                        }
-                    }
                 }
-            }*/
+            }
             MakeClosure(id) => {
                 let closure = Closure {
                     function: id,

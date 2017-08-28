@@ -338,6 +338,9 @@ impl<'a> Vm<'a> {
                         }
                         let cur_stack_size = self.call_stack.len();
                         self.call_stack.push((f, 0));
+                        if arg_count == 0 {
+                            break;
+                        }
                         while self.call_stack.len() > cur_stack_size {
                             self.step()?;
                         }

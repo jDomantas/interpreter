@@ -95,15 +95,15 @@ fn run(source: &str) {
 
     println!("OK");
 
-    //println!(">>> POST OPT");
-    //interpreter::ast::monomorphised::printer::print_items(&items);
+    println!(">>> POST OPT");
+    interpreter::ast::monomorphised::printer::print_items(&items);
 
-    //println!(">>> BYTECODE");
+    println!(">>> BYTECODE");
 
     let (fns, globals) = interpreter::compiler::compilation::compile(items);
 
-    //println!("globals: {:#?}", globals);
-    //println!("fns: {:#?}", fns);
+    println!("globals: {:#?}", globals);
+    println!("fns: {:#?}", fns);
 
     let mut vm = interpreter::vm::Vm::new(globals, &fns);
     let res = vm.eval_globals();

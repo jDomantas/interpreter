@@ -198,7 +198,7 @@ impl Solver {
                 let items = items.iter().map(|item| {
                     self.instantiate_expr(&item.value, impls)
                 }).collect::<Vec<_>>();
-                let constructor = m::Expr::Constructor(Sym(1), items.len() as u64);
+                let constructor = m::Expr::Constructor(Sym(1), items.len());
                 m::Expr::Apply(Box::new(constructor), items)
             }
             t::Expr::Case(ref value, ref branches) => {
@@ -292,7 +292,7 @@ fn make_constructors(types: &[t::TypeDecl]) -> Vec<m::Def> {
             t::TypeDecl::Record(ref record) => {
                 defs.push(m::Def {
                     sym: record.name.value,
-                    value: m::Expr::Constructor(record.name.value, record.fields.len() as u64),
+                    value: m::Expr::Constructor(record.name.value, record.fields.len()),
                 });
                 // TODO: make field getters
             }
@@ -300,7 +300,7 @@ fn make_constructors(types: &[t::TypeDecl]) -> Vec<m::Def> {
                 for &(ref sym, ref args) in &union.cases {
                     defs.push(m::Def {
                         sym: sym.value,
-                        value: m::Expr::Constructor(sym.value, args.len() as u64),
+                        value: m::Expr::Constructor(sym.value, args.len()),
                     });
                 }
             }

@@ -9,13 +9,12 @@ struct FunctionCtx {
     function: Function,
     id: u64,
     locals: BTreeMap<Sym, usize>,
-    current_size: usize,
-    frames: usize,
+    stack_size: usize,
 }
 
 impl FunctionCtx {
     fn new(id: u64, locals: &[Sym]) -> FunctionCtx {
-        let arg_count = locals.len() as u64;
+        let arg_count = locals.len();
         let locals = locals
             .iter()
             .rev()
@@ -29,8 +28,7 @@ impl FunctionCtx {
             },
             id,
             locals,
-            current_size: arg_count as usize,
-            frames: 0,
+            stack_size: arg_count,
         }
     }
 
@@ -56,14 +54,34 @@ impl FunctionCtx {
             }
         }
     }
+
+    fn return_top(&mut self) {
+        debug_assert!(self.stack_size > 0);
+        let nip = self.stack_size - 1;
+        if nip > 0 {
+            self.emit(Instruction::Nip(nip, 1));
+        }
+        self.emit(Instruction::Return);
+        self.stack_size = 1;
+    }
+
+    fn clear_stack(&mut self) {
+        if self.stack_size > 0 {
+            let amount = self.stack_size;
+            self.emit(Instruction::Drop(amount));
+            self.stack_size = 0;
+        }
+    }
 }
 
 struct Compiler {
     functions: BTreeMap<u64, Function>,
-    next_function: u64,
-    next_address: usize,
+    next_function_id: u64,
+    next_temp_address: usize,
     globals: BTreeMap<Sym, GlobalValue>,
     string_cache: BTreeSet<Rc<String>>,
+    object_cache: BTreeMap<Sym, Rc<Object>>,
+    ctor_cache: BTreeMap<(Sym, usize), u64>,
     global_symbols: BTreeSet<Sym>,
 }
 
@@ -71,22 +89,29 @@ impl Compiler {
     fn new(global_symbols: BTreeSet<Sym>) -> Compiler {
         Compiler {
             functions: BTreeMap::new(),
-            next_function: 0,
-            next_address: 0,
+            next_function_id: 0,
+            next_temp_address: 0,
             globals: BTreeMap::new(),
             string_cache: BTreeSet::new(),
+            object_cache: BTreeMap::new(),
+            ctor_cache: BTreeMap::new(),
             global_symbols,
         }
     }
 
     fn new_function(&mut self, args: &[Sym]) -> FunctionCtx {
-        self.next_function += 1;
-        FunctionCtx::new(self.next_function, args)
+        self.next_function_id += 1;
+        FunctionCtx::new(self.next_function_id, args)
+    }
+
+    fn add_function(&mut self, f: FunctionCtx) {
+        debug_assert!(!self.functions.contains_key(&f.id));
+        self.functions.insert(f.id, f.function);
     }
 
     fn get_dummy_address(&mut self) -> usize {
-        self.next_address += 1;
-        self.next_address
+        self.next_temp_address += 1;
+        self.next_temp_address
     }
 
     fn make_string(&mut self, string: String) -> Rc<String> {
@@ -99,103 +124,165 @@ impl Compiler {
         }
     }
 
-    fn compile_expr(&mut self, expr: Expr, f: &mut FunctionCtx) {
+    fn make_object(&mut self, sym: Sym) -> Rc<Object> {
+        self.object_cache
+            .entry(sym)
+            .or_insert_with(|| {
+                Rc::new(Object {
+                    tag: sym,
+                    items: Vec::new(),
+                })
+            })
+            .clone()
+    }
+
+    fn make_ctor(&mut self, sym: Sym, args: usize) -> u64 {
+        if self.ctor_cache.contains_key(&(sym, args)) {
+            self.ctor_cache[&(sym, args)]
+        } else {
+            let mut f = self.new_function(&[]);
+            f.function.arg_count = args;
+            f.emit(Instruction::MakeObject(sym, args));
+            f.emit(Instruction::Return);
+            let id = f.id;
+            self.ctor_cache.insert((sym, args), id);
+            self.add_function(f);
+            id
+        }
+    }
+
+    fn compile_expr(&mut self, expr: Expr, is_tail: bool, f: &mut FunctionCtx) {
+        let stack_size_before = f.stack_size;
         match expr {
-            Expr::Apply(fun, args) => {
-                let previous_stack = f.current_size;
+            Expr::Apply(func, args) => {
                 let arg_count = args.len();
                 for arg in args.into_iter().rev() {
-                    self.compile_expr(arg, f);
+                    self.compile_expr(arg, false, f);
                 }
-                self.compile_expr(*fun, f);
-                f.emit(Instruction::Apply(arg_count));
-                f.current_size = previous_stack + 1;
+                self.compile_expr(*func, false, f);
+                f.emit(Instruction::Call(arg_count));
+                f.stack_size -= arg_count;
+                // TODO: compile to actual tail calls
+                if is_tail {
+                    f.return_top();
+                }
             }
             Expr::Case(value, branches) => {
-                f.emit(Instruction::CreateFrame);
-                f.frames += 1;
-                let previous_stack = f.current_size;
-                self.compile_expr(*value, f);
+                let stack_before = f.stack_size;
+                self.compile_expr(*value, false, f);
+                debug_assert_eq!(f.stack_size, stack_before + 1);
                 let end_address = self.get_dummy_address();
-                f.frames += 1;
                 for branch in branches {
+                    f.stack_size = stack_before + 1;
                     f.emit(Instruction::CreateFrame);
-                    let current_stack = f.current_size;
                     let fail_address = self.get_dummy_address();
-                    self.compile_pattern(branch.pattern, fail_address, current_stack - 1, f);
+                    self.compile_pattern(branch.pattern, fail_address, f.stack_size - 1, f);
                     if let Some(guard) = branch.guard {
-                        self.compile_expr(guard, f);
+                        self.compile_expr(guard, false, f);
                         f.emit(Instruction::TestBool(true, fail_address));
                     }
-                    self.compile_expr(branch.value, f);
-                    f.emit(Instruction::FrameReturn);
-                    f.current_size = current_stack;
-                    f.emit(Instruction::Jump(end_address));
+                    f.emit(Instruction::DeleteFrame);
+                    self.compile_expr(branch.value, true, f);
+                    if !is_tail {
+                        let nip = f.stack_size - stack_before - 1;
+                        if nip > 0 {
+                            f.emit(Instruction::Nip(nip, 1));
+                            f.stack_size = stack_before + 1;
+                        }
+                        f.emit(Instruction::Jump(end_address));
+                    }
                     let fixed_address = f.function.instructions.len();
                     f.fix_jumps(fail_address, fixed_address);
                 }
                 f.emit(Instruction::Crash("incomplete match"));
-                let fixed_address = f.function.instructions.len();
-                f.fix_jumps(end_address, fixed_address);
-                f.emit(Instruction::FrameReturn);
-                f.current_size = previous_stack + 1;
-                f.frames -= 2;
+                if !is_tail {
+                    let fixed_address = f.function.instructions.len();
+                    f.fix_jumps(end_address, fixed_address);
+                }
             }
             Expr::Constructor(sym, args) => {
-                let mut ctor = self.new_function(&[]);
-                ctor.function.arg_count = args;
-                ctor.emit(Instruction::MakeObject(sym, args));
-                ctor.emit(Instruction::Return(0));
-                let id = ctor.id;
-                self.functions.insert(ctor.id, ctor.function);
-                f.emit(Instruction::MakeClosure(id));
-                f.current_size += 1;
+                if is_tail {
+                    f.clear_stack();
+                }
+                if args == 0 {
+                    let obj = Value::Object(self.make_object(sym));
+                    f.emit(Instruction::PushValue(obj));
+                } else {
+                    let ctor_id = self.make_ctor(sym, args);
+                    f.emit(Instruction::MakeClosure(ctor_id));
+                }
+                f.stack_size += 1;
+                if is_tail {
+                    f.return_top();
+                }
             }
             Expr::Lambda(params, value) => {
                 let mut lambda = self.new_function(&params);
-                self.compile_expr(*value, &mut lambda);
-                let instr = Instruction::Return(lambda.function.arg_count as usize);
-                lambda.emit(instr);
-                let id = lambda.id;
-                self.functions.insert(lambda.id, lambda.function);
-                f.emit(Instruction::MakeClosure(id));
-                f.current_size += 1;
+                f.emit(Instruction::MakeClosure(lambda.id));
+                f.stack_size += 1;
+                self.compile_expr(*value, true, &mut lambda);
+                self.add_function(lambda);
+                if is_tail {
+                    f.return_top();
+                }
             }
-            Expr::Let(_defs, _value) => {
-                unimplemented!()
+            Expr::Let(defs, value) => {
+                let def_count = defs.len();
+                for def in defs {
+                    f.locals.insert(def.sym, f.stack_size);
+                    self.compile_expr(def.value, false, f);
+                }
+                self.compile_expr(*value, is_tail, f);
+                if !is_tail {
+                    f.emit(Instruction::Nip(def_count, 1));
+                }
             }
-            Expr::Literal(Literal::Bool(b)) => {
-                f.emit(Instruction::PushValue(Value::Bool(b)));
-                f.current_size += 1;
-            }
-            Expr::Literal(Literal::Char(c)) => {
-                f.emit(Instruction::PushValue(Value::Char(c)));
-                f.current_size += 1;
-            }
-            Expr::Literal(Literal::Float(fr)) => {
-                f.emit(Instruction::PushValue(Value::Frac(fr)));
-                f.current_size += 1;
-            }
-            Expr::Literal(Literal::Int(i)) => {
-                // TODO: this is very (not really) wrong
-                f.emit(Instruction::PushValue(Value::Int(i as i64)));
-                f.current_size += 1;
-            }
-            Expr::Literal(Literal::Str(s)) => {
-                let s = self.make_string(s);
-                f.emit(Instruction::PushValue(Value::Str(s)));
-                f.current_size += 1;
+            Expr::Literal(lit) => {
+                if is_tail {
+                    f.clear_stack();
+                }
+                let value = match lit {
+                    Literal::Bool(b) => Value::Bool(b),
+                    Literal::Char(c) => Value::Char(c),
+                    Literal::Float(f) => Value::Frac(f),
+                    // TODO: this is very very bad
+                    Literal::Int(i) => Value::Int(i as i64),
+                    Literal::Str(s) => Value::Str(self.make_string(s)),
+                };
+                f.emit(Instruction::PushValue(value));
+                f.stack_size += 1;
+                if is_tail {
+                    f.return_top();
+                }
             }
             Expr::Var(var) => {
                 if self.global_symbols.contains(&var) {
-                    f.emit(Instruction::PushGlobal(var));
+                    if is_tail {
+                        f.clear_stack();
+                        f.emit(Instruction::PushGlobal(var));
+                        f.stack_size += 1;
+                        f.return_top();
+                    } else {
+                        f.emit(Instruction::PushGlobal(var));
+                        f.stack_size += 1;
+                    }
                 } else {
                     let index = f.locals[&var];
-                    let depth = f.current_size - index - 1;
+                    let depth = f.stack_size - index - 1;
                     f.emit(Instruction::PushLocal(depth));
+                    f.stack_size += 1;
+                    if is_tail {
+                        f.return_top();
+                    }
                 }
-                f.current_size += 1;
             }
+        }
+        if is_tail {
+            // expressions that return leave a single value on the stack
+            debug_assert_eq!(f.stack_size, 1);
+        } else {
+            // expressions that don't return evaluate to a single value
+            debug_assert_eq!(f.stack_size, stack_size_before + 1);
         }
     }
 
@@ -207,9 +294,9 @@ impl Compiler {
             }
             Pattern::Deconstruct(sym, parts) => {
                 self.extract_val(val_at, f);
-                let current_stack = f.current_size;
+                let current_stack = f.stack_size;
                 f.emit(Instruction::TagTest(sym, fail));
-                f.current_size += parts.len();
+                f.stack_size += parts.len();
                 for (index, part) in parts.into_iter().enumerate().rev() {
                     self.compile_pattern(part, fail, current_stack + index, f);
                 }
@@ -228,7 +315,7 @@ impl Compiler {
             }
             Pattern::Literal(Literal::Int(i)) => {
                 self.extract_val(val_at, f);
-                // TODO: this is wrong
+                // TODO: this very very is wrong
                 f.emit(Instruction::TestInt(i as i64, fail));
             }
             Pattern::Literal(Literal::Str(s)) => {
@@ -242,11 +329,11 @@ impl Compiler {
 
     fn extract_val(&mut self, val_at: usize, f: &mut FunctionCtx) {
         // if equal, value is already at the top of the stack
-        debug_assert!(val_at < f.current_size);
-        if val_at + 1 != f.current_size {
-            let local_at = f.current_size - 1 - val_at;
+        debug_assert!(val_at < f.stack_size);
+        if val_at + 1 != f.stack_size {
+            let local_at = f.stack_size - 1 - val_at;
             f.emit(Instruction::PushLocal(local_at));
-            f.current_size += 1;
+            f.stack_size += 1;
         }
     }
 
@@ -259,11 +346,21 @@ impl Compiler {
                 });
                 self.globals.insert(def.sym, GlobalValue::Value(Value::Object(object)));
             }
+            Expr::Lambda(params, value) => {
+                let mut lambda = self.new_function(&params);
+                self.compile_expr(*value, true, &mut lambda);
+                let closure = Value::Closure(Rc::new(Closure {
+                    function: lambda.id,
+                    partial_args: Vec::new(),
+                }));
+                self.globals.insert(def.sym, GlobalValue::Value(closure));
+                self.add_function(lambda);
+            }
             e => {
                 let mut f = self.new_function(&[]);
-                self.compile_expr(e, &mut f);
+                self.compile_expr(e, true, &mut f);
                 self.globals.insert(def.sym, GlobalValue::Thunk(f.id));
-                self.functions.insert(f.id, f.function);
+                self.add_function(f);
             }
         }
     }
@@ -296,15 +393,19 @@ impl Compiler {
         self.make_builtin(values::STR_SUBSTRING, 3, Instruction::StrSubstring);
     }
 
-    fn make_builtin(&mut self, sym: Sym, arg_count: u64, instr: Instruction) {
+    fn make_builtin(&mut self, sym: Sym, arg_count: usize, instr: Instruction) {
+        if !self.globals.contains_key(&sym) {
+            return;
+        }
         let mut f = self.new_function(&[]);
         f.function.arg_count = arg_count;
         f.emit(instr);
+        f.emit(Instruction::Return);
         self.globals.insert(sym, GlobalValue::Value(Value::Closure(Rc::new(Closure {
             function: f.id,
             partial_args: Vec::new(),
         }))));
-        self.functions.insert(f.id, f.function);
+        self.add_function(f);
     }
 }
 

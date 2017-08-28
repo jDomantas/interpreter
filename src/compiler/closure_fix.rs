@@ -376,8 +376,8 @@ impl<'a> Rewriter for Renamer<'a> {
 
 pub fn optimise(items: &mut Items) {
     SimplifyMatching.rewrite_items(items);
-    JoinLambdas.rewrite_items(items);
     SimplifyRenames::default().rewrite_items(items);
+    JoinLambdas.rewrite_items(items);
     Unclosure::new().rewrite_items(items);
     JoinApplications.rewrite_items(items);
     RemoveEmptyApplications.rewrite_items(items);

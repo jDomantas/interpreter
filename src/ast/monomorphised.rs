@@ -11,7 +11,7 @@ pub enum Expr {
     Lambda(Vec<Sym>, Box<Expr>),
     Let(Vec<Def>, Box<Expr>),
     Case(Box<Expr>, Vec<CaseBranch>),
-    Constructor(Sym, u64),
+    Constructor(Sym, usize),
 }
 
 #[derive(Debug, Clone)]

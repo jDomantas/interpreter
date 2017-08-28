@@ -237,6 +237,48 @@ impl<'a, 'b> Lexer<'a, 'b> {
         Node::new(Token::Operator(Symbol::Unqualified(op)), span)
     }
 
+    fn lex_string_literal(&mut self) -> Node<Token> {
+        let start = self.current_position();
+        assert_eq!(self.consume(), Some('"'));
+        let (string, _) = self.collect_chars(|c| c != '"');
+        let span = start.span_to(self.current_position());
+        match self.consume() {
+            Some('"') => {
+                Node::new(Token::Str(string), span)
+            }
+            None => {
+                self.error("Unterminated string literal", start.span_to(start));
+                Node::new(Token::Error, span)
+            }
+            _ => {
+                unreachable!()
+            }
+        }
+    }
+
+    fn lex_char_literal(&mut self) -> Node<Token> {
+        let start = self.current_position();
+        assert_eq!(self.consume(), Some('\''));
+        let span = start.span_to(self.current_position());
+        let ch = match self.consume() {
+            Some(c) if c != '\'' => c,
+            _ => {
+                self.error("Invalid char literal", span);
+                return Node::new(Token::Error, span);
+            }
+        };
+        let span = start.span_to(self.current_position());
+        match self.consume() {
+            Some('\'') => {
+                Node::new(Token::Char(ch), span)
+            }
+            _ => {
+                self.error("Invalid char literal", span);
+                Node::new(Token::Error, span)
+            }
+        }
+    }
+
     fn next_raw_token(&mut self) -> Option<Node<Token>> {
         loop {
             let next_char = match self.peek() {
@@ -295,6 +337,12 @@ impl<'a, 'b> Lexer<'a, 'b> {
                 }
                 ch if ch.is_whitespace() => {
                     self.advance();
+                }
+                '"' => {
+                    return Some(self.lex_string_literal());
+                }
+                '\'' => {
+                    return Some(self.lex_char_literal());
                 }
                 _ => {
                     let span = self.current_position().span_to(self.current_position());
@@ -524,6 +572,26 @@ mod tests {
         assert_eq!(tokens, vec![
             Token::Operator(Symbol::Unqualified("-".to_string())),
             Token::OpenBrace,
+            Token::EndOfInput,
+        ]);
+    }
+
+    #[test]
+    fn char_literal() {
+        let tokens = lex_no_positions("  'a' 'b' ");
+        assert_eq!(tokens, vec![
+            Token::Char('a'),
+            Token::Char('b'),
+            Token::EndOfInput,
+        ]);
+    }
+    
+    #[test]
+    fn string_literal() {
+        let tokens = lex_no_positions(r#" "abc" "012" "#);
+        assert_eq!(tokens, vec![
+            Token::Str("abc".into()),
+            Token::Str("012".into()),
             Token::EndOfInput,
         ]);
     }

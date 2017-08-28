@@ -3,8 +3,8 @@ extern crate interpreter;
 use std::fs;
 use std::io::Read;
 use std::str;
-use std::collections::HashMap;
-use interpreter::parsing::HashMapProvider;
+use std::collections::BTreeMap;
+use interpreter::parsing::BTreeMapProvider;
 use interpreter::position::Position;
 use interpreter::errors::Errors;
 
@@ -257,8 +257,8 @@ impl TestResult {
     }
 }
 
-fn parse_modules_from_source(source: &str) -> HashMapProvider {
-    let mut modules = HashMap::new();
+fn parse_modules_from_source(source: &str) -> BTreeMapProvider {
+    let mut modules = BTreeMap::new();
     let mut current_module = String::new();
     let mut module_name = "Main".to_string();
     for line in source.lines() {
@@ -272,5 +272,5 @@ fn parse_modules_from_source(source: &str) -> HashMapProvider {
         }
     }
     modules.insert(module_name, current_module);
-    HashMapProvider::new(modules)
+    BTreeMapProvider::new(modules)
 }

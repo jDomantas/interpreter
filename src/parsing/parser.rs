@@ -348,6 +348,8 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
         match self.peek() {
             Some(&Node { value: Token::Int(_), .. }) |
             Some(&Node { value: Token::Float(_), .. }) |
+            Some(&Node { value: Token::Char(_), .. }) |
+            Some(&Node { value: Token::Str(_), .. }) |
             Some(&Node { value: Token::Bool(_), .. }) => { }
             _ => return None,
         }
@@ -361,6 +363,12 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
             }
             Some(Node { value: Token::Bool(b), span }) => {
                 Some(Node::new(Literal::Bool(b), span))
+            }
+            Some(Node { value: Token::Char(c), span }) => {
+                Some(Node::new(Literal::Char(c), span))
+            }
+            Some(Node { value: Token::Str(s), span }) => {
+                Some(Node::new(Literal::Str(s), span))
             }
             _ => {
                 panic!("Parser::peek and Parser::consume returned different results");

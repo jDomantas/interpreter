@@ -8,6 +8,8 @@ pub enum Token {
     Int(u64),
     Operator(Symbol),
     Bool(bool),
+    Str(String),
+    Char(char),
     Module,
     Exposing,
     Import,
@@ -122,6 +124,8 @@ impl TokenKind {
             TokenKind::Token(Token::Int(_)) |
             TokenKind::Token(Token::Float(_)) |
             TokenKind::Token(Token::Bool(_)) |
+            TokenKind::Token(Token::Char(_)) |
+            TokenKind::Token(Token::Str(_)) |
             TokenKind::Token(Token::EndOfInput) |
             TokenKind::Token(Token::Error) => {
                 panic!("{:?} is not supposed to be constructed", self);  

@@ -310,6 +310,11 @@ impl<'a> Vm<'a> {
                 let f = &self.functions[&id];
                 self.call_stack.push((f, 0));
             }
+            TailCallFunction(id) => {
+                let f = &self.functions[&id];
+                self.call_stack.pop().expect("missing current call frame");
+                self.call_stack.push((f, 0));
+            }
             Call(mut arg_count) => {
                 while arg_count > 0 {
                     let mut closure = self.pop_closure();
@@ -339,12 +344,34 @@ impl<'a> Vm<'a> {
                     }
                 }
             }
-            TailCallFunction(id) => {
-                let f = &self.functions[&id];
-                self.call_stack.pop().expect("missing current call frame");
-                self.call_stack.push((f, 0));
-            }
             TailCall(_arg_count) => {
+                /*while arg_count > 0 {
+                    let mut closure = self.pop_closure();
+                    let f = &self.functions[&closure.function];
+                    let args_missing = f.arg_count - closure.partial_args.len();
+                    debug_assert!(args_missing > 0);
+                    if arg_count < args_missing {
+                        {
+                            let args = &mut Rc::make_mut(&mut closure).partial_args;
+                            for _ in 0..arg_count {
+                                args.push(self.stack.pop().unwrap());
+                            }
+                        }
+                        self.stack.push(Value::Closure(closure));
+                        break;
+                    } else {
+                        arg_count += closure.partial_args.len();
+                        arg_count -= f.arg_count;
+                        for arg in closure.partial_args.iter().rev().cloned() {
+                            self.stack.push(arg);
+                        }
+                        let cur_stack_size = self.call_stack.len();
+                        self.call_stack.push((f, 0));
+                        while self.call_stack.len() > cur_stack_size {
+                            self.step()?;
+                        }
+                    }
+                }*/
                 unimplemented!()
             }
             /*Apply(mut arg_count) => {

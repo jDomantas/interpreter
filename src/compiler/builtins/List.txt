@@ -5,6 +5,7 @@ module List exposing
 
 import Basics exposing (..)
 import Option exposing (Option(Some, None))
+import Computation exposing (Computation, Failable)
 
 
 type List a = Nil | (::) a (List a)
@@ -15,6 +16,9 @@ map : (a -> b) -> List a -> List b
 map f list = case list of
     [] -> []
     x :: xs -> f x :: map f xs
+
+flatMap : (a -> List b) -> List a -> List b
+flatMap f list = fold (map f list)
 
 head : List a -> Option a
 head list = case list of
@@ -54,6 +58,32 @@ append a b = case a of
 
 impl List a : Appendable where
     (++) = append
+
+impl List : Computation where
+    succeed x = [x]
+    andThen = flip flatMap
+
+impl List : Failable where
+    fail = []
+
+impl List a : Default where
+    default = []
+
+impl [a : Eq] List a : Eq where
+    a == b = case (a, b) of
+        ([], []) -> true
+        (x :: xs, y :: ys) -> x == y && xs == ys
+        _ -> false
+
+impl [a : Ord] List a : Ord where
+    compare a b = case (a, b) of
+        ([], []) -> EQ
+        (_ :: _, []) -> GR
+        ([], _ :: _) -> LT
+        (x :: xs, y :: ys) ->
+            case compare x y of
+                EQ -> compare xs ys
+                other -> other
 
 {- impl [a : ToString] List a : ToString where
     toString list = 

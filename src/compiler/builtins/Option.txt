@@ -4,6 +4,8 @@ module Option exposing
     )
 
 import Basics exposing (..)
+import List exposing (List)
+import Computation exposing (Computation, Failable)
 
 
 type Option a = None | Some a
@@ -21,6 +23,11 @@ isSome opt = case opt of
 isNone : Option a -> Bool
 isNone = isSome >> not
 
+toList : Option a -> List a
+toList opt = case opt of
+    Some x -> [x]
+    None -> []
+
 flatMap : (a -> Option b) -> Option a -> Option b
 flatMap f opt = case opt of
     Some x -> f x
@@ -37,8 +44,29 @@ flatten = flatMap id
 impl Option a : Default where
     default = None
 
+impl Option : Computation where
+    succeed = Some
+    andThen = flip flatMap
+
+impl Option : Failable where
+    fail = None
+
 impl [a : Eq] Option a : Eq where
     a == b = case (a, b) of
         (Some a, Some b) -> a == b
         (None, None) -> true
         _ -> false
+
+impl [a : Ord] Option a : Ord where
+    compare a b = case (a, b) of
+        (None, None) -> EQ
+        (None, Some _) -> LT
+        (Some _, None) -> GR
+        (Some a, Some b) -> compare a b
+
+{-
+impl [a : ToString] Option a : ToString where
+    toString opt = case opt of
+        Some x -> "Some(" ++ toString x ++ ")"
+        None -> "None"
+-}

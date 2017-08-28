@@ -13,7 +13,11 @@ fn run_test_programs() {
     let dirs = [
         "./tests/programs/bad/parse",
         "./tests/programs/bad/symbol",
-        "./tests/programs/bad/checking",
+        "./tests/programs/bad/fixity",
+        "./tests/programs/bad/type_alias",
+        "./tests/programs/bad/kind",
+        "./tests/programs/bad/type",
+        "./tests/programs/bad/trait",
     ];
     let mut failed_tests = Vec::new();
     let mut passed = 0;
@@ -66,6 +70,10 @@ fn run_program(source: &str) -> Outcome {
     use interpreter::compiler::symbols::resolve_symbols;
     use interpreter::compiler::alias_expansion::expand_aliases;
     use interpreter::compiler::precedence::fix_items;
+    use interpreter::compiler::kind_check::find_kind_errors;
+    use interpreter::compiler::def_grouping::group_items;
+    use interpreter::compiler::type_check::infer_types;
+    use interpreter::compiler::trait_check::check_items;
 
     let mut errors = Errors::new();
     let modules = parse_modules_from_source(source);
@@ -95,7 +103,7 @@ fn run_program(source: &str) -> Outcome {
         return Outcome::AliasError(err);
     }
 
-    let _items = fix_items(items, &mut errors);
+    let items = fix_items(items, &mut errors);
     if errors.have_errors() {
         let err = errors.into_error_list()[0].clone();
         let pos = err.notes[0].span.start;
@@ -103,17 +111,57 @@ fn run_program(source: &str) -> Outcome {
         return Outcome::FixityError(pos, message);
     }
 
+    let _ = find_kind_errors(&items, &mut errors);
+    if errors.have_errors() {
+        let err = errors.into_error_list()[0].clone();
+        let pos = err.notes[0].span.start;
+        let message = err.notes[0].message.clone();
+        return Outcome::KindError(pos, message);
+    };
+
+    let items = group_items(items);
+
+    let mut items = infer_types(items, &mut errors);
+    if errors.have_errors() {
+        let err = errors.into_error_list()[0].clone();
+        let pos = err.notes[0].span.start;
+        let message = err.notes[0].message.clone();
+        return Outcome::TypeError(pos, message);
+    }
+
+    check_items(&mut items, &mut errors);
+    if errors.have_errors() {
+        let err = errors.into_error_list()[0].clone();
+        let pos = err.notes[0].span.start;
+        let message = err.notes[0].message.clone();
+        return Outcome::TraitError(pos, message);
+    }
+
     Outcome::Ok
 }
 
 fn parse_expectation(source: &str) -> Expectation {
-    for line in source.lines() {
-        if line.starts_with("-- expect parse error: line ") {
+    fn single_pos_error<F>(source: &str, kind: &str, builder: F) -> Option<Expectation>
+        where F: FnOnce(Position) -> Expectation
+    {
+        for line in source.lines() {
             let parts = line.split(' ').collect::<Vec<_>>();
-            let line = str::parse::<usize>(parts[5]).unwrap();
-            let column = str::parse::<usize>(parts[7]).unwrap();
-            return Expectation::ParseError(Position::new(line, column));
+            if line.len() >= 8 &&
+                parts[0] == "--" &&
+                parts[1] == "expect" &&
+                parts[2] == kind &&
+                parts[3] == "error:"
+            {
+                let line = str::parse::<usize>(parts[5]).unwrap();
+                let column = str::parse::<usize>(parts[7]).unwrap();
+                return Some(builder(Position::new(line, column)));
+            }
         }
+        None
+    }
+
+    if let Some(e) = single_pos_error(source, "parse", Expectation::ParseError) {
+        return e;
     }
 
     for line in source.lines() {
@@ -135,13 +183,20 @@ fn parse_expectation(source: &str) -> Expectation {
         } 
     }
 
-    for line in source.lines() {
-        if line.starts_with("-- expect fixity error: line ") {
-            let parts = line.split(' ').collect::<Vec<_>>();
-            let line = str::parse::<usize>(parts[5]).unwrap();
-            let column = str::parse::<usize>(parts[7]).unwrap();
-            return Expectation::FixityError(Position::new(line, column));
-        }
+    if let Some(e) = single_pos_error(source, "fixity", Expectation::FixityError) {
+        return e;
+    }
+
+    if let Some(e) = single_pos_error(source, "kind", Expectation::KindError) {
+        return e;
+    }
+
+    if let Some(e) = single_pos_error(source, "type", Expectation::TypeError) {
+        return e;
+    }
+
+    if let Some(e) = single_pos_error(source, "trait", Expectation::TraitError) {
+        return e;
     }
 
     panic!("no expectations in program");
@@ -152,6 +207,9 @@ enum Expectation {
     SymbolError(Vec<Position>),
     RecursiveAliasError,
     FixityError(Position),
+    KindError(Position),
+    TypeError(Position),
+    TraitError(Position),
 }
 
 impl Expectation {
@@ -172,6 +230,15 @@ impl Expectation {
             Expectation::FixityError(pos) => {
                 println!("fixity error at line {}, column {}", pos.line, pos.column);
             }
+            Expectation::KindError(pos) => {
+                println!("kind error at line {}, column {}", pos.line, pos.column);
+            }
+            Expectation::TypeError(pos) => {
+                println!("type error at line {}, column {}", pos.line, pos.column);
+            }
+            Expectation::TraitError(pos) => {
+                println!("trait error at line {}, column {}", pos.line, pos.column);
+            }
         }
     }
 }
@@ -181,6 +248,9 @@ enum Outcome {
     SymbolError(Vec<(Position, String)>),
     AliasError(Vec<(Position, String)>),
     FixityError(Position, String),
+    KindError(Position, String),
+    TypeError(Position, String),
+    TraitError(Position, String),
     Ok,
 }
 
@@ -210,7 +280,19 @@ impl Outcome {
                 }
             }
             Outcome::FixityError(pos, ref msg) => {
-                println!("fixity errors at line {}, column {}", pos.line, pos.column);
+                println!("fixity error at line {}, column {}", pos.line, pos.column);
+                println!("reason: {}", msg);
+            }
+            Outcome::KindError(pos, ref msg) => {
+                println!("kind error at line {}, column {}", pos.line, pos.column);
+                println!("reason: {}", msg);
+            }
+            Outcome::TypeError(pos, ref msg) => {
+                println!("type error at line {}, column {}", pos.line, pos.column);
+                println!("reason: {}", msg);
+            }
+            Outcome::TraitError(pos, ref msg) => {
+                println!("trait error at line {}, column {}", pos.line, pos.column);
                 println!("reason: {}", msg);
             }
             Outcome::Ok => {
@@ -229,7 +311,10 @@ impl TestResult {
     fn from_expectation_and_outcome(expected: Expectation, outcome: Outcome) -> TestResult {
         match (&expected, &outcome) {
             (&Expectation::ParseError(pos), &Outcome::ParseError(pos2, _)) |
-            (&Expectation::FixityError(pos), &Outcome::FixityError(pos2, _)) => {
+            (&Expectation::FixityError(pos), &Outcome::FixityError(pos2, _)) |
+            (&Expectation::KindError(pos), &Outcome::KindError(pos2, _)) |
+            (&Expectation::TypeError(pos), &Outcome::TypeError(pos2, _)) |
+            (&Expectation::TraitError(pos), &Outcome::TraitError(pos2, _)) => {
                 if pos == pos2 {
                     return TestResult::Ok;
                 }

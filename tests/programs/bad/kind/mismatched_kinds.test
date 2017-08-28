@@ -1,0 +1,3 @@
+-- expect kind error: line 3 column 17
+type Foo a = Foo a
+type Bar = Bar (Foo Foo)

@@ -1,0 +1,9 @@
+-- expect kind error: line 8 column 6
+
+trait Foo where
+    bar : self a
+
+type Bar = Bar
+
+impl Bar : Foo where
+    bar = bar

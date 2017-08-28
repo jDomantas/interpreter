@@ -1,0 +1,5 @@
+-- expect type error: line 5 column 9
+
+type Foo = Foo Foo
+
+x = Foo 1

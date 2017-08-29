@@ -38,6 +38,7 @@ struct PatternTy {
     items: Vec<Type>,
 }
 
+#[derive(Debug)]
 enum ConstraintSource {
     AlwaysStatisfied,
     IfCondition(Span),
@@ -55,6 +56,7 @@ enum ConstraintSource {
     Infered(Sym, Span),
 }
 
+#[derive(Debug)]
 struct Constraint(Type, Type, ConstraintSource, Name);
 
 struct InferCtx<'a, 'b, 'c, 'd> {
@@ -643,13 +645,21 @@ impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
                 self.symbol_names);
             solver.solve_constraints()
         };
+        self.constraints.extend(constraints);
         for (a, b) in var_unifications {
             self.merge_var_bounds(a, b);
             self.merge_var_bounds(b, a);
         }
         for val in self.new_env.values_mut() {
-            val.type_.map_vars(&substitution);
+            val.type_ = val.type_.map_vars(&substitution);
         }
+        /*println!("have substitution: {:?}", substitution);
+        for constraint in &mut self.constraints {
+            println!("constraint prev: {:?} ~ {:?}", constraint.0, constraint.1);
+            constraint.0 = constraint.0.map_vars(&substitution);
+            constraint.1 = constraint.1.map_vars(&substitution);
+            println!("constraint after: {:?} ~ {:?}", constraint.0, constraint.1);
+        }*/
         // get free variables after substitution
         let free_vars = {
             let mut result = BTreeSet::new();

@@ -256,12 +256,20 @@ impl Rewriter for Unclosure {
                 self.rewrite_expr(value);
                 let mut free_vars = FreeVars::default();
                 for def in defs.iter_mut() {
+                    self.rewrite_def(def);
                     free_vars.rewrite_def(def);
                 }
                 let mut free_vars = free_vars.vars;
+                let vars_before = free_vars.len();
                 for def in defs.iter() {
                     free_vars.remove(&def.sym);
                 }
+                if free_vars.len() == vars_before {
+                    // none of the defs are recursive
+                    // so there is no need to fix closures
+                    return;
+                }
+                // println!("free vars: {:?}", free_vars);
                 let base_renames = defs
                     .iter()
                     .map(|def| (def.sym, self.fresh_sym()))
@@ -269,9 +277,6 @@ impl Rewriter for Unclosure {
                 for def in defs.iter_mut() {
                     Renamer(&base_renames).rewrite_expr(&mut def.value);
                     self.globals.insert(base_renames[&def.sym]);
-                }
-                for def in defs.iter_mut() {
-                    self.rewrite_def(def);
                 }
                 let mut new_let_defs = Vec::new();
                 for mut def in defs.drain(..) {
@@ -287,6 +292,9 @@ impl Rewriter for Unclosure {
                     });
                     def.sym = base_renames[&def.sym];
                     Renamer(&rename).rewrite_expr(&mut def.value);
+                    let old_val = ::std::mem::replace(&mut def.value, Expr::Var(Sym(0)));
+                    let value = Expr::Lambda(rename.iter().map(|(_, &v)| v).collect(), Box::new(old_val));
+                    def.value = value;
                     self.globals.insert(def.sym);
                     self.new_globals.push(def);
                 }
@@ -378,7 +386,15 @@ pub fn optimise(items: &mut Items) {
     SimplifyMatching.rewrite_items(items);
     SimplifyRenames::default().rewrite_items(items);
     JoinLambdas.rewrite_items(items);
+
+    // println!(">>> PRE-UNCLOSURE");
+    // ::ast::monomorphised::printer::print_items(&*items);
+
     Unclosure::new().rewrite_items(items);
+    
+    // println!(">>> POST-UNCLOSURE");
+    // ::ast::monomorphised::printer::print_items(&*items);
+
     JoinApplications.rewrite_items(items);
     RemoveEmptyApplications.rewrite_items(items);
 }

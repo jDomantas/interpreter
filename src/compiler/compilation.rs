@@ -187,7 +187,7 @@ impl Compiler {
                         f.emit(Instruction::TestBool(true, fail_address));
                     }
                     f.emit(Instruction::DeleteFrame);
-                    self.compile_expr(branch.value, true, f);
+                    self.compile_expr(branch.value, is_tail, f);
                     if !is_tail {
                         let nip = f.stack_size - stack_before - 1;
                         if nip > 0 {

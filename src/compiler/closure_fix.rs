@@ -269,17 +269,26 @@ impl Rewriter for Unclosure {
                     // so there is no need to fix closures
                     return;
                 }
-                // println!("free vars: {:?}", free_vars);
+                // mapping from def symbols to new global symbols
                 let base_renames = defs
                     .iter()
                     .map(|def| (def.sym, self.fresh_sym()))
                     .collect::<BTreeMap<_, _>>();
+                let with_free_vars = base_renames
+                    .iter()
+                    .map(|(&s, &g)| {
+                        let global = Box::new(Expr::Var(g));
+                        let vars = free_vars.iter().map(|&v| Expr::Var(v)).collect();
+                        (s, Expr::Apply(global, vars))
+                    })
+                    .collect::<BTreeMap<_, _>>();
                 for def in defs.iter_mut() {
-                    Renamer(&base_renames).rewrite_expr(&mut def.value);
+                    Replacer(&with_free_vars).rewrite_expr(&mut def.value);
                     self.globals.insert(base_renames[&def.sym]);
                 }
                 let mut new_let_defs = Vec::new();
                 for mut def in defs.drain(..) {
+                    // rename captured variables in each def to fresh ones
                     let rename = free_vars
                         .iter()
                         .map(|&sym| (sym, self.fresh_sym()))
@@ -292,10 +301,10 @@ impl Rewriter for Unclosure {
                     });
                     def.sym = base_renames[&def.sym];
                     Renamer(&rename).rewrite_expr(&mut def.value);
+                    // make def into a lambda
                     let old_val = ::std::mem::replace(&mut def.value, Expr::Var(Sym(0)));
                     let value = Expr::Lambda(rename.iter().map(|(_, &v)| v).collect(), Box::new(old_val));
                     def.value = value;
-                    self.globals.insert(def.sym);
                     self.new_globals.push(def);
                 }
                 *defs = new_let_defs;
@@ -382,6 +391,23 @@ impl<'a> Rewriter for Renamer<'a> {
     }
 }
 
+struct Replacer<'a>(&'a BTreeMap<Sym, Expr>);
+
+impl<'a> Rewriter for Replacer<'a> {
+    fn rewrite_expr(&mut self, expr: &mut Expr) {
+        let replace_with = match *expr {
+            Expr::Var(sym) => {
+                self.0.get(&sym).cloned().unwrap_or(Expr::Var(sym))
+            }
+            ref mut e => {
+                rewriter::walk_expr(self, e);
+                return;
+            }
+        };
+        *expr = replace_with;
+    }
+}
+
 pub fn optimise(items: &mut Items) {
     SimplifyMatching.rewrite_items(items);
     SimplifyRenames::default().rewrite_items(items);
@@ -391,6 +417,7 @@ pub fn optimise(items: &mut Items) {
     // ::ast::monomorphised::printer::print_items(&*items);
 
     Unclosure::new().rewrite_items(items);
+    JoinLambdas.rewrite_items(items);
     
     // println!(">>> POST-UNCLOSURE");
     // ::ast::monomorphised::printer::print_items(&*items);

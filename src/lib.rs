@@ -7,6 +7,7 @@ pub mod parsing;
 pub mod compiler;
 pub mod ast;
 pub mod vm;
+pub mod symbols;
 
 use std::collections::BTreeMap;
 use ast::resolved::Sym;
@@ -26,4 +27,3 @@ pub fn compile<S: SourceProvider>(provider: &S, main: &str)
 
     compiler::compile(&modules, &mut errors).map_err(|()| errors)
 }
-    

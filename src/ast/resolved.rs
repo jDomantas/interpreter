@@ -270,14 +270,7 @@ pub struct GroupedImpl {
     pub module: Name,
 }
 
-#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Hash, Copy, Clone)]
-pub struct Sym(pub u64);
-
-impl Sym {
-    pub fn new(id: u64) -> Sym {
-        Sym(id)
-    }
-}
+pub use symbols::Sym;
 
 #[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Hash, Copy, Clone)]
 pub enum Symbol {

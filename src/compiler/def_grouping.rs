@@ -156,7 +156,10 @@ fn group_in_expr(expr: &mut Node<Expr>) {
 }
 
 fn group_impl_items(impl_: Impl) -> GroupedImpl {
-    let Impl { scheme, trait_, values, trait_items, module } = impl_;
+    let Impl { scheme, trait_, mut values, trait_items, module } = impl_;
+    for value in &mut values {
+        group_in_expr(&mut value.value.value);
+    }
     let values = group_let_defs(values);
     GroupedImpl { scheme, trait_, values, trait_items, module }
 }

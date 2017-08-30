@@ -361,6 +361,7 @@ impl<'a> Vm<'a> {
                             }
                         }
                         self.stack.push(Value::Closure(closure));
+                        self.call_stack.pop();
                         break;
                     } else {
                         arg_count += closure.partial_args.len();

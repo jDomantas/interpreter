@@ -139,6 +139,16 @@ impl Rewriter for JoinLambdas {
             }
             _ => {}
         }
+        replace_with_inner(expr, Expr::Var(Sym(0)), |e| {
+            match *e {
+                Expr::Lambda(ref params, ref mut value) if params.len() == 0 => {
+                    Some(&mut **value)
+                }
+                _ => {
+                    None
+                }
+            }
+        });
         rewriter::walk_expr(self, expr);
     }
 }
@@ -256,10 +266,12 @@ impl Rewriter for Unclosure {
                 self.rewrite_expr(value);
                 let mut free_vars = FreeVars::default();
                 for def in defs.iter_mut() {
-                    self.rewrite_def(def);
                     free_vars.rewrite_def(def);
                 }
                 let mut free_vars = free_vars.vars;
+                for global in &self.globals {
+                    free_vars.remove(global);
+                }
                 let vars_before = free_vars.len();
                 for def in defs.iter() {
                     free_vars.remove(&def.sym);
@@ -267,6 +279,18 @@ impl Rewriter for Unclosure {
                 if free_vars.len() == vars_before {
                     // none of the defs are recursive
                     // so there is no need to fix closures
+                    return;
+                }
+                if free_vars.len() == 0 {
+                    // these defs don't close over anything
+                    // just move them to globals
+                    for def in defs.iter_mut() {
+                        self.globals.insert(def.sym);
+                    }
+                    for mut def in defs.drain(..) {
+                        self.rewrite_def(&mut def);
+                        self.new_globals.push(def);
+                    }
                     return;
                 }
                 // mapping from def symbols to new global symbols
@@ -305,6 +329,7 @@ impl Rewriter for Unclosure {
                     let old_val = ::std::mem::replace(&mut def.value, Expr::Var(Sym(0)));
                     let value = Expr::Lambda(rename.iter().map(|(_, &v)| v).collect(), Box::new(old_val));
                     def.value = value;
+                    self.rewrite_def(&mut def);
                     self.new_globals.push(def);
                 }
                 *defs = new_let_defs;
@@ -345,8 +370,11 @@ impl FreeVars {
 impl Rewriter for FreeVars {
     fn rewrite_expr(&mut self, expr: &mut Expr) {
         match *expr {
-            Expr::Lambda(_, _) => {
-                return;
+            Expr::Lambda(ref params, _) => {
+                for &param in params {
+                    self.vars.remove(&param);
+                    self.bound_in_patterns.insert(param);
+                }
             }
             Expr::Var(var) => {
                 if !self.bound_in_patterns.contains(&var) {
@@ -408,20 +436,37 @@ impl<'a> Rewriter for Replacer<'a> {
     }
 }
 
+struct RemoveEmptyLets;
+
+impl RemoveEmptyLets {
+    fn get_next_inner(expr: &mut Expr) -> &mut Expr {
+        match expr {
+            &mut Expr::Let(ref defs, ref mut e) if defs.len() == 0 => {
+                Self::get_next_inner(e)
+            }
+            e => {
+                e
+            }
+        }
+    }
+}
+
+impl Rewriter for RemoveEmptyLets {
+    fn rewrite_expr(&mut self, expr: &mut Expr) {
+        replace_with_inner(expr, Expr::Var(Sym(0)), |e| {
+            Some(Self::get_next_inner(e))
+        });
+        rewriter::walk_expr(self, expr);
+    }
+}
+
 pub fn optimise(items: &mut Items) {
     SimplifyMatching.rewrite_items(items);
     SimplifyRenames::default().rewrite_items(items);
     JoinLambdas.rewrite_items(items);
-
-    // println!(">>> PRE-UNCLOSURE");
-    // ::ast::monomorphised::printer::print_items(&*items);
-
     Unclosure::new().rewrite_items(items);
+    RemoveEmptyLets.rewrite_items(items);
     JoinLambdas.rewrite_items(items);
-    
-    // println!(">>> POST-UNCLOSURE");
-    // ::ast::monomorphised::printer::print_items(&*items);
-
     JoinApplications.rewrite_items(items);
     RemoveEmptyApplications.rewrite_items(items);
 }

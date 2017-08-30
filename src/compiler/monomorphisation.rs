@@ -226,10 +226,10 @@ impl Solver {
                             sym: Sym,
                             impls: &Impls,
                             context_impls: &Impls) -> Sym {
-        let mut impls_ = context_impls.clone();
-        impls_.merge(impls.with_context(context_impls));
-        // let impls = impls.with_context(context_impls);
-        self.instantiate_def(sym, &impls_)
+        // let mut impls_ = context_impls.clone();
+        // impls_.merge(impls.with_context(context_impls));
+        let impls = impls.with_context(context_impls);
+        self.instantiate_def(sym, &impls)
     }
 
     fn instantiate_pattern(&self, pattern: &t::Pattern) -> m::Pattern {

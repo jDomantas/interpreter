@@ -1,0 +1,18 @@
+import Basics exposing ((++))
+
+f <| x = f x
+infixr 5 <|
+
+x |> f = f x
+infixl 5 |>
+
+advance s = case s of
+    "1" -> "2"
+    "2" -> "3"
+    _ -> "4"
+
+val1 = "1" |> advance |> advance
+val2 = advance <| advance <| "1"
+
+-- expect string: 33
+main = val1 ++ val2

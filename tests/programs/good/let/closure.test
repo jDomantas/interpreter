@@ -1,0 +1,8 @@
+makeFn x =
+    let
+        f b = if b then x else f true
+    in
+        f
+
+-- expect int: 123
+main = makeFn 123 false

@@ -1,11 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
-use ast::{Name, Node};
-use ast::typed::{
-    Expr, Impl, Impls, Sym, Symbol, Items, Scheme, ImplSource, Type, Def,
-};
+use ast::{Name, Node, Sym, Symbol};
+use ast::typed::{Expr, Impl, Impls, Items, Scheme, ImplSource, Type, Def};
 use compiler::builtins;
-use errors::Errors;
-use position::Span;
+use util::CompileCtx;
+use util::position::Span;
 
 
 /// Make mapping from variables in principal type to types in concrete type.
@@ -79,9 +77,8 @@ fn get_trait_bounds<'a>(principal: &Scheme, concrete: &'a Type) -> Option<Vec<Bo
 
 struct SolverCtx<'a, 'b> {
     impls: &'a [Impl],
-    errors: &'b mut Errors,
+    ctx: &'b mut CompileCtx,
     known_impls: &'a BTreeSet<(u64, Sym)>,
-    symbol_names: &'a BTreeMap<Sym, String>,
     symbol_types: &'a BTreeMap<Sym, Scheme>,
     module: Name,
 }
@@ -89,16 +86,14 @@ struct SolverCtx<'a, 'b> {
 impl<'a, 'b> SolverCtx<'a, 'b> {
     fn new(
             impls: &'a [Impl],
-            errors: &'b mut Errors,
+            ctx: &'b mut CompileCtx,
             known_impls: &'a BTreeSet<(u64, Sym)>,
-            symbol_names: &'a BTreeMap<Sym, String>,
             symbol_types: &'a BTreeMap<Sym, Scheme>,
             module: Name) -> Self {
         SolverCtx {
             impls,
-            errors,
+            ctx,
             known_impls,
-            symbol_names,
             symbol_types,
             module,
         }
@@ -115,8 +110,8 @@ impl<'a, 'b> SolverCtx<'a, 'b> {
                     let msg = format!(
                         "Type `t{}` does not implement trait `{}`.",
                         var,
-                        self.symbol_names[&trait_]);
-                    self.errors
+                        self.ctx.symbols.symbol_name(trait_));
+                    self.ctx.errors
                         .trait_error(&self.module)
                         .note(msg, span)
                         .done();
@@ -180,9 +175,9 @@ impl<'a, 'b> SolverCtx<'a, 'b> {
                 // TODO: somehow give proper names to type variables
                 let msg = format!(
                     "Type `{}` does not implement trait `{}`.",
-                    t.display(self.symbol_names),
-                    self.symbol_names[&trait_]);
-                self.errors
+                    t.display(&self.ctx.symbols),
+                    self.ctx.symbols.symbol_name(trait_));
+                self.ctx.errors
                     .trait_error(&self.module)
                     .note(msg, span)
                     .done();
@@ -252,9 +247,8 @@ impl<'a, 'b> SolverCtx<'a, 'b> {
         }
         let mut ctx = SolverCtx {
             impls: self.impls,
-            errors: self.errors,
+            ctx: self.ctx,
             known_impls: &known_impls,
-            symbol_names: self.symbol_names,
             symbol_types: self.symbol_types,
             module: self.module.clone(),
         };
@@ -264,21 +258,18 @@ impl<'a, 'b> SolverCtx<'a, 'b> {
 
 struct GlobalSolver<'a, 'b> {
     impls: &'a [Impl],
-    errors: &'b mut Errors,
-    symbol_names: &'a BTreeMap<Sym, String>,
+    ctx: &'b mut CompileCtx,
     symbol_types: &'a BTreeMap<Sym, Scheme>,
 }
 
 impl<'a, 'b> GlobalSolver<'a, 'b> {
     fn new(
             impls: &'a [Impl],
-            errors: &'b mut Errors,
-            symbol_names: &'a BTreeMap<Sym, String>,
+            ctx: &'b mut CompileCtx,
             symbol_types: &'a BTreeMap<Sym, Scheme>) -> Self {
         GlobalSolver {
             impls,
-            errors,
-            symbol_names,
+            ctx,
             symbol_types,
         }
     }
@@ -286,8 +277,7 @@ impl<'a, 'b> GlobalSolver<'a, 'b> {
     fn check_def(&mut self, def: &mut Def) {
         let mut solver = SolverCtx {
             impls: self.impls,
-            errors: self.errors,
-            symbol_names: self.symbol_names,
+            ctx: self.ctx,
             symbol_types: self.symbol_types,
             known_impls: &BTreeSet::new(),
             module: def.module.clone(),
@@ -314,8 +304,7 @@ impl<'a, 'b> GlobalSolver<'a, 'b> {
                 .collect::<BTreeSet<_>>();
             let mut solver = SolverCtx {
                 impls: self.impls,
-                errors: self.errors,
-                symbol_names: self.symbol_names,
+                ctx: self.ctx,
                 symbol_types: self.symbol_types,
                 known_impls: &known_impls,
                 module: impl_.module.clone(),
@@ -325,12 +314,11 @@ impl<'a, 'b> GlobalSolver<'a, 'b> {
     }
 }
 
-pub fn check_items(items: &mut Items, errors: &mut Errors) {
+pub fn check_items(items: &mut Items, ctx: &mut CompileCtx) {
     let checked_impls = {
         let mut solver = GlobalSolver::new(
             &items.impls,
-            errors,
-            &items.symbol_names,
+            ctx,
             &items.symbol_types);
         
         for def in &mut items.items {

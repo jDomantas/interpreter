@@ -1,14 +1,15 @@
 use std::cmp::Ordering;
 use std::iter::Peekable;
-use errors::Errors;
-use position::{Position, Span, DUMMY_SPAN};
-use parsing::tokens::{Token, TokenKind};
 use ast::{Node, Name, Literal, Associativity};
 use ast::parsed::{
     Expr, Pattern, CaseBranch, LetDecl, Decl, Def, TypeAnnot, Scheme, Type,
     TypeAlias, UnionType, UnionCase, RecordType, Symbol, Trait, Impl, ItemList,
     ExposedItem, ModuleDef, Import, Module, DoExpr,
 };
+use parsing::tokens::{Token, TokenKind};
+use util::CompileCtx;
+use util::position::{Position, Span, DUMMY_SPAN};
+
 
 #[derive(PartialEq, Eq)]
 enum PartialResult<T> {
@@ -45,9 +46,9 @@ pub fn parse_module<I>(
                         tokens: I,
                         module: Name,
                         require_def: bool,
-                        errors: &mut Errors) -> Option<Module>
+                        ctx: &mut CompileCtx) -> Option<Module>
         where I: Iterator<Item=Node<Token>> {
-    let mut parser = Parser::new(tokens, module, errors);
+    let mut parser = Parser::new(tokens, module, ctx);
     let module = parser.module(require_def).ok();
     debug_assert!(parser.is_at_end());
     module
@@ -63,7 +64,7 @@ struct Parser<'a, I: Iterator<Item=Node<Token>>> {
     next_token: Option<Node<Token>>,
     tokens: Peekable<I>,
     expected_tokens: Vec<TokenKind>,
-    errors: &'a mut Errors,
+    ctx: &'a mut CompileCtx,
     current_indent: usize,
     accept_aligned: bool,
     last_token_span: Span,
@@ -71,17 +72,17 @@ struct Parser<'a, I: Iterator<Item=Node<Token>>> {
 }
 
 impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
-    fn new(mut tokens: I, module: Name, errors: &'a mut Errors) -> Self {
+    fn new(mut tokens: I, module: Name, ctx: &'a mut CompileCtx) -> Self {
         let next_token = tokens.next();
         Parser {
             next_token: next_token,
             tokens: tokens.peekable(),
             expected_tokens: Vec::new(),
-            errors: errors,
+            ctx,
             current_indent: 0,
             accept_aligned: false,
             last_token_span: DUMMY_SPAN,
-            module: module,
+            module,
         }
     }
 
@@ -123,7 +124,7 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
             message.push_str(&format!(" Current indent is {}, align: {}.", self.current_indent, self.accept_aligned));
         }
 
-        self.errors
+        self.ctx.errors
             .parse_error(&self.module)
             .note(message, span)
             .done();
@@ -132,7 +133,7 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
     fn bad_module_name(&mut self) {
         let span = self.previous_span();
         let message = format!("Expected to find module `{}`", self.module);
-        self.errors
+        self.ctx.errors
             .parse_error(&self.module)
             .note(message, span)
             .done();
@@ -1997,7 +1998,7 @@ mod tests {
     use parsing::lexer::lex;
     use ast::{Literal, Name};
     use ast::parsed::{Expr, Pattern, Type, Scheme, LetDecl, Def, TypeAnnot, Symbol, DoExpr};
-    use errors::Errors;
+    use util::CompileCtx;
     use super::Parser;
 
     fn write_symbol(symbol: &Symbol, output: &mut String) {
@@ -2289,32 +2290,30 @@ mod tests {
     }
 
     fn check_expr(source: &str, expected: &str) {
-        let mut errors = Errors::new();
+        let mut ctx = CompileCtx::new();
         let name = Name::from_string("<test>".into());
-        let tokens = lex(source, name.clone(), &mut errors);
-        assert!(errors.into_error_list().is_empty());
-        let mut errors = Errors::new();
+        let tokens = lex(source, name.clone(), &mut ctx);
+        assert!(!ctx.errors.have_errors());
         let expr = {
-            let mut parser = Parser::new(tokens.into_iter(), name, &mut errors);
+            let mut parser = Parser::new(tokens.into_iter(), name, &mut ctx);
             parser.expr(false).ok().unwrap()
         };
-        assert!(errors.into_error_list().is_empty());
+        assert!(!ctx.errors.have_errors());
         let mut printed = String::new();
         write_expr(&expr.value, &mut printed);
         assert_eq!(expected, printed);
     }
 
     fn check_pattern(source: &str, expected: &str) {
-        let mut errors = Errors::new();
+        let mut ctx = CompileCtx::new();
         let name = Name::from_string("<test>".into());
-        let tokens = lex(source, name.clone(), &mut errors);
-        assert!(errors.into_error_list().is_empty());
-        let mut errors = Errors::new();
+        let tokens = lex(source, name.clone(), &mut ctx);
+        assert!(!ctx.errors.have_errors());
         let pattern = {
-            let mut parser = Parser::new(tokens.into_iter(), name, &mut errors);
+            let mut parser = Parser::new(tokens.into_iter(), name, &mut ctx);
             parser.pattern().ok().unwrap()
         };
-        assert!(errors.into_error_list().is_empty());
+        assert!(!ctx.errors.have_errors());
         let mut printed = String::new();
         write_pattern(&pattern.value, &mut printed);
         assert_eq!(expected, printed);

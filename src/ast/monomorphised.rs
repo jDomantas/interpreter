@@ -1,6 +1,4 @@
-use std::collections::BTreeMap;
-use ast::Literal;
-pub use ast::resolved::Sym;
+use ast::{Literal, Sym};
 
 
 #[derive(Debug, Clone)]
@@ -38,7 +36,6 @@ pub struct Def {
 #[derive(Debug, Clone)]
 pub struct Items {
     pub items: Vec<Def>,
-    pub symbol_names: BTreeMap<Sym, String>,
 }
 
 
@@ -134,10 +131,13 @@ pub mod rewriter {
 
 pub mod printer {
     use super::*;
-    pub fn print_items(items: &Items) {
+    use util::symbols::SymbolSource;
+
+
+    pub fn print_items(items: &Items, symbols: &SymbolSource) {
         let mut printer = Printer {
             indent: 0,
-            symbol_names: &items.symbol_names,
+            symbols,
         };
         for def in &items.items {
             printer.print_def(def);
@@ -145,17 +145,17 @@ pub mod printer {
         }
     }
 
-    pub fn print_expr(symbol_names: &BTreeMap<Sym, String>, expr: &Expr) {
+    pub fn print_expr(expr: &Expr, symbols: &SymbolSource) {
         let mut printer = Printer {
             indent: 0,
-            symbol_names: &symbol_names,
+            symbols,
         };
         printer.print_expr(expr);
     }
 
     struct Printer<'a> {
         indent: usize,
-        symbol_names: &'a BTreeMap<Sym, String>,
+        symbols: &'a SymbolSource,
     }
 
     impl<'a> Printer<'a> {
@@ -229,7 +229,7 @@ pub mod printer {
         }
 
         fn print_sym(&mut self, sym: Sym) {
-            print!("{}", self.symbol_names[&sym]);
+            print!("{}", self.symbols.symbol_name(sym));
         }
 
         fn print_branch(&mut self, branch: &CaseBranch) {

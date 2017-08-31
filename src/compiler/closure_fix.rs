@@ -1,6 +1,8 @@
 use std::collections::{BTreeSet, BTreeMap};
-use ast::monomorphised::{Expr, Pattern, CaseBranch, Sym, Def, Items};
+use ast::Sym;
+use ast::monomorphised::{Expr, Pattern, CaseBranch, Def, Items};
 use ast::monomorphised::rewriter::{self, Rewriter};
+use util::CompileCtx;
 
 
 fn replace_with_inner<T, F>(value: &mut T, dummy: T, select: F)
@@ -207,32 +209,27 @@ impl Rewriter for RemoveEmptyApplications {
     }
 }
 
-struct Unclosure {
-    next_sym: u64,
-    symbol_names: BTreeMap<Sym, String>,
+struct Unclosure<'a> {
     globals: BTreeSet<Sym>,
     new_globals: Vec<Def>,
+    ctx: &'a mut CompileCtx,
 }
 
-impl Unclosure {
-    fn new() -> Self {
+impl<'a> Unclosure<'a> {
+    fn new(ctx: &'a mut CompileCtx) -> Self {
         Unclosure {
-            next_sym: 2000000000,
-            symbol_names: BTreeMap::new(),
             globals: BTreeSet::new(),
             new_globals: Vec::new(),
+            ctx,
         }
     }
 
     fn fresh_sym(&mut self) -> Sym {
-        self.next_sym += 1;
-        let sym = Sym(self.next_sym);
-        self.symbol_names.insert(sym, format!("$unc_{}", sym.0 - 2000000000));
-        sym
+        self.ctx.symbols.fresh_artificial_sym()
     }
 }
 
-impl Rewriter for Unclosure {
+impl<'a> Rewriter for Unclosure<'a> {
     fn rewrite_expr(&mut self, expr: &mut Expr) {
         let extra_args = match *expr {
             Expr::Lambda(ref mut params, ref mut value) => {
@@ -348,7 +345,6 @@ impl Rewriter for Unclosure {
             self.globals.insert(def.sym);
         }
         rewriter::walk_items(self, items);
-        items.symbol_names.extend(::std::mem::replace(&mut self.symbol_names, BTreeMap::new()));
         items.items.extend(self.new_globals.drain(..));
     }
 }
@@ -460,11 +456,11 @@ impl Rewriter for RemoveEmptyLets {
     }
 }
 
-pub fn optimise(items: &mut Items) {
+pub fn optimise(items: &mut Items, ctx: &mut CompileCtx) {
     SimplifyMatching.rewrite_items(items);
     SimplifyRenames::default().rewrite_items(items);
     JoinLambdas.rewrite_items(items);
-    Unclosure::new().rewrite_items(items);
+    Unclosure::new(ctx).rewrite_items(items);
     RemoveEmptyLets.rewrite_items(items);
     JoinLambdas.rewrite_items(items);
     JoinApplications.rewrite_items(items);

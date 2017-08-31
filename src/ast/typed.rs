@@ -1,8 +1,9 @@
 use std::collections::{BTreeSet, BTreeMap};
 use std::fmt;
 use std::rc::Rc;
-use ast::{Node, Name, Literal};
-pub use ast::resolved::{Sym, Symbol};
+use ast::{Node, Name, Literal, Sym, Symbol};
+use util::symbols::SymbolSource;
+
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum Type {
@@ -57,10 +58,10 @@ impl Type {
         }
     }
 
-    pub fn display<'a, 'b>(&'a self, symbol_names: &'b BTreeMap<Sym, String>) -> TypeFormatter<'a, 'b> {
+    pub fn display<'a, 'b>(&'a self, symbols: &'b SymbolSource) -> TypeFormatter<'a, 'b> {
         TypeFormatter {
             type_: self,
-            symbol_names,
+            symbols,
         }
     }
 
@@ -102,7 +103,7 @@ impl Type {
 
 pub struct TypeFormatter<'a, 'b> {
     type_: &'a Type,
-    symbol_names: &'b BTreeMap<Sym, String>,
+    symbols: &'b SymbolSource,
 }
 
 impl<'a, 'b> fmt::Display for TypeFormatter<'a, 'b> {
@@ -110,27 +111,27 @@ impl<'a, 'b> fmt::Display for TypeFormatter<'a, 'b> {
         match *self.type_ {
             Type::Any => write!(f, "?"),
             Type::Var(index) => write!(f, "t{}", index),
-            Type::Concrete(sym) => write!(f, "{}", self.symbol_names[&sym]),
+            Type::Concrete(sym) => write!(f, "{}", self.symbols.symbol_name(sym)),
             Type::Tuple(ref items) if items.len() == 0 => {
                 write!(f, "()")
             }
             Type::Tuple(ref items) => {
-                try!(write!(f, "({}", items[0].display(self.symbol_names)));
+                try!(write!(f, "({}", items[0].display(self.symbols)));
                 for item in items.iter().skip(1) {
-                    try!(write!(f, ", {}", item.display(self.symbol_names)));
+                    try!(write!(f, ", {}", item.display(self.symbols)));
                 }
                 write!(f, ")")
             }
             Type::Apply(ref a, ref b) => {
                 if a.precedence() < 1 {
-                    try!(write!(f, "({}) ", a.display(self.symbol_names)));
+                    try!(write!(f, "({}) ", a.display(self.symbols)));
                 } else {
-                    try!(write!(f, "{} ", a.display(self.symbol_names)));
+                    try!(write!(f, "{} ", a.display(self.symbols)));
                 }
                 if b.precedence() <= 1 {
-                    write!(f, "({})", b.display(self.symbol_names))
+                    write!(f, "({})", b.display(self.symbols))
                 } else {
-                    write!(f, "{}", b.display(self.symbol_names))
+                    write!(f, "{}", b.display(self.symbols))
                 }
             }
             Type::Function(ref a, ref b) => {
@@ -138,14 +139,14 @@ impl<'a, 'b> fmt::Display for TypeFormatter<'a, 'b> {
                     write!(
                         f, 
                         "({}) -> {}",
-                        a.display(self.symbol_names),
-                        b.display(self.symbol_names))
+                        a.display(self.symbols),
+                        b.display(self.symbols))
                 } else {
                     write!(
                         f,
                         "{} -> {}",
-                        a.display(self.symbol_names),
-                        b.display(self.symbol_names))
+                        a.display(self.symbols),
+                        b.display(self.symbols))
                 }
             }
         }
@@ -377,17 +378,17 @@ pub struct Scheme {
 impl Scheme {
     pub fn display<'a, 'b>(
                         &'a self,
-                        symbol_names: &'b BTreeMap<Sym, String>) -> SchemeFormatter<'a, 'b> {
+                        symbols: &'b SymbolSource) -> SchemeFormatter<'a, 'b> {
         SchemeFormatter {
             scheme: self,
-            symbol_names,
+            symbols,
         }
     }
 }
 
 pub struct SchemeFormatter<'a, 'b> {
     scheme: &'a Scheme,
-    symbol_names: &'b BTreeMap<Sym, String>,
+    symbols: &'b SymbolSource,
 }
 
 impl<'a, 'b> fmt::Display for SchemeFormatter<'a, 'b> {
@@ -404,17 +405,17 @@ impl<'a, 'b> fmt::Display for SchemeFormatter<'a, 'b> {
             if !var.bounds.is_empty() {
                 try!(write!(f, " : "));
                 let mut need_plus = false;
-                for bound in &var.bounds {
+                for &bound in &var.bounds {
                     if need_plus {
                         try!(write!(f, " + "));
                     } else {
                         need_plus = true;
                     }
-                    try!(write!(f, "{}", self.symbol_names[bound]));
+                    try!(write!(f, "{}", self.symbols.symbol_name(bound)));
                 }
             }
         }
-        write!(f, "] {}", self.scheme.type_.display(self.symbol_names))
+        write!(f, "] {}", self.scheme.type_.display(self.symbols))
     }
 }
 
@@ -483,7 +484,6 @@ pub struct Items {
     pub items: Vec<Def>,
     pub traits: Vec<Trait>,
     pub impls: Vec<Impl>,
-    pub symbol_names: BTreeMap<Sym, String>,
     pub symbol_types: BTreeMap<Sym, Scheme>,
 }
 
@@ -499,10 +499,13 @@ pub struct ImplSym(pub u64);
 
 pub mod printer {
     use super::*;
-    pub fn print_items(items: &Items) {
+    use util::symbols::SymbolSource;
+
+
+    pub fn print_items(items: &Items, symbols: &SymbolSource) {
         let mut printer = Printer {
             indent: 0,
-            symbol_names: &items.symbol_names,
+            symbols,
         };
         for typ in &items.types {
             match *typ {
@@ -532,17 +535,17 @@ pub mod printer {
                 println!("");
             }
         }
-        for (sym, ref typ) in &items.symbol_types {
+        for (&sym, typ) in &items.symbol_types {
             println!("symbol type:  {} ({:?}) : {}",
-                items.symbol_names[&sym],
+                symbols.symbol_name(sym),
                 sym,
-                typ.display(&items.symbol_names));
+                typ.display(&symbols));
         }
     }
 
     struct Printer<'a> {
         indent: usize,
-        symbol_names: &'a BTreeMap<Sym, String>,
+        symbols: &'a SymbolSource,
     }
 
     impl<'a> Printer<'a> {
@@ -576,7 +579,7 @@ pub mod printer {
                 Expr::Var(sym, ref type_, _) => {
                     print!("(");
                     self.print_symbol(sym);
-                    print!(" : {})", type_.display(self.symbol_names));
+                    print!(" : {})", type_.display(self.symbols));
                 }
                 Expr::Lambda(ref sym, ref value) => {
                     print!("(\\ ");
@@ -624,7 +627,7 @@ pub mod printer {
         fn print_symbol(&mut self, symbol: Symbol) {
             match symbol {
                 Symbol::Known(sym) => {
-                    print!("{}", self.symbol_names[&sym]);
+                    print!("{}", self.symbols.symbol_name(sym));
                 }
                 Symbol::Unknown => {
                     print!("?");
@@ -694,7 +697,7 @@ pub mod printer {
                 print!("| ");
                 self.print_sym(tag.value);
                 for typ in args {
-                    print!(" {}", typ.display(self.symbol_names));
+                    print!(" {}", typ.display(self.symbols));
                 }
                 println!("");
             }
@@ -717,7 +720,7 @@ pub mod printer {
                     self.print_indent();
                     if first { print!("{{ "); } else { print!(", "); }
                     self.print_sym(name.value);
-                    println!(" : {}", type_.display(self.symbol_names));
+                    println!(" : {}", type_.display(self.symbols));
                     first = false;
                 }
                 self.print_indent();
@@ -728,7 +731,7 @@ pub mod printer {
 
         fn print_def(&mut self, def: &Def) {
             self.print_sym(def.sym.value);
-            println!(": {} =", def.scheme.display(self.symbol_names));
+            println!(": {} =", def.scheme.display(self.symbols));
             self.indent += 1;
             self.print_indent();
             self.print_expr(&def.value.value);
@@ -737,7 +740,7 @@ pub mod printer {
         }
 
         fn print_impl(&mut self, impl_: &Impl) {
-            println!("impl {}", impl_.scheme.value.display(self.symbol_names));
+            println!("impl {}", impl_.scheme.value.display(self.symbols));
             self.indent += 1;
             for def in &impl_.items {
                 self.print_indent();

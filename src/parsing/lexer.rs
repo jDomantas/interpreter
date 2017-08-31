@@ -2,13 +2,13 @@ use std::str::{Chars, FromStr};
 use std::iter::Peekable;
 use ast::{Node, Name};
 use ast::parsed::Symbol;
-use errors::Errors;
 use parsing::tokens::Token;
-use position::{Position, Span};
+use util::position::{Position, Span};
+use util::CompileCtx;
 
 
-pub fn lex(source: &str, module: Name, errors: &mut Errors) -> Vec<Node<Token>> {
-    let mut lexer = Lexer::new(source, module, errors);
+pub fn lex(source: &str, module: Name, ctx: &mut CompileCtx) -> Vec<Node<Token>> {
+    let mut lexer = Lexer::new(source, module, ctx);
     let mut tokens = Vec::new();
     while let Some(token) = lexer.next_token() {
         tokens.push(token);
@@ -24,28 +24,28 @@ struct Lexer<'a, 'b> {
     column: usize,
     eof_position: Position,
     panicking: bool,
-    errors: &'b mut Errors,
+    ctx: &'b mut CompileCtx,
     module: Name,
 }
 
 impl<'a, 'b> Lexer<'a, 'b> {
-    fn new(source: &'a str, module: Name, errors: &'b mut Errors) -> Self {
+    fn new(source: &'a str, module: Name, ctx: &'b mut CompileCtx) -> Self {
         let mut chars = source.chars();
         let current = chars.next();
         Lexer {
             source: chars.peekable(),
-            current: current,
+            current,
             line: 1,
             column: 1,
             eof_position: Position::new(1, 1),
             panicking: false,
-            errors: errors,
-            module: module,
+            ctx,
+            module,
         }
     }
 
     fn error(&mut self, message: &str, span: Span) {
-        self.errors
+        self.ctx.errors
             .parse_error(&self.module)
             .note(message, span)
             .done();
@@ -458,16 +458,16 @@ fn change_special(token: Token) -> Token {
 mod tests {
     use ast::{Node, Name};
     use ast::parsed::Symbol;
-    use errors::Errors;
-    use position::{Position, Span};
     use parsing::tokens::Token;
     use parsing::lexer::lex;
+    use util::CompileCtx;
+    use util::position::{Position, Span};
 
     fn lex_no_positions(source: &str) -> Vec<Token> {
-        let mut errors = Errors::new();
+        let mut ctx = CompileCtx::new();
         let name = Name::from_string("<test>".into());
-        let tokens = lex(source, name, &mut errors);
-        assert!(errors.into_error_list().is_empty());
+        let tokens = lex(source, name, &mut ctx);
+        assert!(!ctx.errors.have_errors());
         tokens.into_iter().map(|tok| tok.value).collect()
     }
 
@@ -523,10 +523,10 @@ mod tests {
 
     #[test]
     fn positions() {
-        let mut errors = Errors::new();
+        let mut ctx = CompileCtx::new();
         let name = Name::from_string("<test>".into());
-        let tokens = lex("a =\n1", name, &mut errors);
-        assert!(errors.into_error_list().is_empty());
+        let tokens = lex("a =\n1", name, &mut ctx);
+        assert!(!ctx.errors.have_errors());
         assert_eq!(tokens, vec![
             Node {
                 value: Token::Ident(Symbol::Unqualified("a".to_string())),

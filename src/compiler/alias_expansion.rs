@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
-use ast::{Node, Name};
-use ast::resolved::{Items, TypeDecl, Type, TypeAnnot, Sym, Symbol};
+use ast::{Node, Name, Sym, Symbol};
+use ast::resolved::{Items, TypeDecl, Type, TypeAnnot};
 use compiler::util::{self, Graph};
-use errors::Errors;
-use position::Span;
+use util::CompileCtx;
+use util::position::Span;
 
 
 fn make_graph<'a, I: Iterator<Item=&'a TypeDecl>>(decls: I) -> Graph<'a, Sym> {
@@ -21,7 +21,7 @@ fn make_graph<'a, I: Iterator<Item=&'a TypeDecl>>(decls: I) -> Graph<'a, Sym> {
     Graph::new(nodes)
 }
 
-fn find_alias_cycles(items: &Items, errors: &mut Errors) -> Result<(), ()> {
+fn find_alias_cycles(items: &Items, ctx: &mut CompileCtx) -> Result<(), ()> {
     let mut positions = BTreeMap::new();
     for decl in &items.types {
         if let TypeDecl::TypeAlias(ref alias) = *decl {
@@ -33,22 +33,22 @@ fn find_alias_cycles(items: &Items, errors: &mut Errors) -> Result<(), ()> {
     let mut had_error = false;
     for cycle in graph.find_all_cycles() {
         let message = if cycle.len() == 2 {
-            format!("Type alias `{}` depends on itself.", items.symbol_names[&cycle[0]])
+            format!("Type alias `{}` depends on itself.", ctx.symbols.symbol_name(*cycle[0]))
         } else {
-            let main = &items.symbol_names[&cycle[0]];
+            let main = ctx.symbols.symbol_name(*cycle[0]);
             let mut msg = format!("Type alias `{}` depends on itself indirectly. Dependency chain is `{}`",
                 main,
                 main);
-            for typ in &cycle[1..] {
+            for &&typ in &cycle[1..] {
                 msg.push_str(" -> '");
-                msg.push_str(&items.symbol_names[&typ]);
+                msg.push_str(ctx.symbols.symbol_name(typ));
                 msg.push_str("'");
             }
             msg.push_str(".");
             msg
         };
         let &(span, ref module) = &positions[cycle[0]];
-        errors
+        ctx.errors
             .alias_expansion_error(module)
             .note(message, span)
             .done();
@@ -73,17 +73,16 @@ fn check_args(
                 module: &Name,
                 span: Span,
                 name: Sym,
-                symbol_names: &BTreeMap<Sym, String>,
                 args_count: usize,
                 replacements: &Replacements,
-                errors: &mut Errors) -> bool {
+                ctx: &mut CompileCtx) -> bool {
     if let Some(replacement) = replacements.get(&name) {
         if args_count != replacement.vars.len() {
             let msg = format!("Type alias `{}` expected {} arguments, got {}.",
-                symbol_names[&name],
+                ctx.symbols.symbol_name(name),
                 replacement.vars.len(),
                 args_count);
-            errors
+            ctx.errors
                 .alias_expansion_error(module)
                 .note(msg, span)
                 .done();
@@ -96,32 +95,31 @@ fn check_args(
 fn check_in_type(
                     type_: &Node<Type>,
                     replacements: &Replacements,
-                    symbol_names: &BTreeMap<Sym, String>,
                     module: &Name,
-                    errors: &mut Errors) -> bool {
+                    ctx: &mut CompileCtx) -> bool {
     match type_.value {
         Type::Any |
         Type::SelfType |
         Type::Var(_) => true,
         Type::Function(ref a, ref b) => {
-            let a = check_in_type(&**a, replacements, symbol_names, module, errors);
-            let b = check_in_type(&**b, replacements, symbol_names, module, errors);
+            let a = check_in_type(&**a, replacements, module, ctx);
+            let b = check_in_type(&**b, replacements, module, ctx);
             a && b
         }
         Type::Tuple(ref items) => {
             let mut res = true;
             for item in items {
-                let a = check_in_type(item, replacements, symbol_names, module, errors);
+                let a = check_in_type(item, replacements, module, ctx);
                 res &= a;
             }
             res
         }
         Type::Apply(ref a, ref b) => {
             let mut arg_count = 1;
-            let mut res = check_in_type(&**b, replacements, symbol_names, module, errors);
+            let mut res = check_in_type(&**b, replacements, module, ctx);
             let mut matched = a;
             while let Type::Apply(ref l, ref r) = matched.value {
-                let a = check_in_type(&**r, replacements, symbol_names, module, errors);
+                let a = check_in_type(&**r, replacements, module, ctx);
                 res &= a;
                 arg_count += 1;
                 matched = l;
@@ -134,10 +132,9 @@ fn check_in_type(
                                 module,
                                 matched.span,
                                 sym,
-                                symbol_names,
                                 arg_count,
                                 replacements,
-                                errors);
+                                ctx);
                             res && a
                         }
                         Symbol::Unknown => {
@@ -146,7 +143,7 @@ fn check_in_type(
                     }
                 }
                 _ => {
-                    let a = check_in_type(matched, replacements, symbol_names, module, errors);
+                    let a = check_in_type(matched, replacements, module, ctx);
                     res && a
                 }
             }
@@ -158,10 +155,9 @@ fn check_in_type(
                         module,
                         type_.span,
                         sym,
-                        symbol_names,
                         0,
                         replacements,
-                        errors)
+                        ctx)
                 }
                 Symbol::Unknown => {
                     true
@@ -174,7 +170,7 @@ fn check_in_type(
 fn check_arg_count(
                     items: &Items,
                     replacements: &Replacements,
-                    errors: &mut Errors) -> Result<(), ()> {
+                    ctx: &mut CompileCtx) -> Result<(), ()> {
     let mut ok = true;
     for type_ in &items.types {
         match *type_ {
@@ -183,9 +179,8 @@ fn check_arg_count(
                     ok = check_in_type(
                         &field.1,
                         &replacements,
-                        &items.symbol_names,
                         &record.module,
-                        errors) && ok;
+                        ctx) && ok;
                 }
             }
             TypeDecl::Union(ref union) => {
@@ -194,9 +189,8 @@ fn check_arg_count(
                         ok = check_in_type(
                             arg,
                             &replacements,
-                            &items.symbol_names,
                             &union.module,
-                            errors) && ok;
+                            ctx) && ok;
                     }
                 }
             }
@@ -205,9 +199,8 @@ fn check_arg_count(
                     ok = check_in_type(
                         type_,
                         &replacements,
-                        &items.symbol_names,
                         &alias.module,
-                        errors) && ok;
+                        ctx) && ok;
                 }
             }
         }
@@ -216,18 +209,16 @@ fn check_arg_count(
         ok = check_in_type(
             &annot.value.type_.value.type_,
             &replacements,
-            &items.symbol_names,
             &annot.value.module,
-            errors) && ok;
+            ctx) && ok;
     }
     for trait_ in &items.traits {
         for item in &trait_.values {
             ok = check_in_type(
                 &item.value.type_.value.type_,
                 &replacements,
-                &items.symbol_names,
                 &trait_.module,
-                errors) && ok;
+                ctx) && ok;
         }
     }
 
@@ -269,10 +260,9 @@ fn make_result(
                 module: &Name,
                 span: Span,
                 name: Sym,
-                symbol_names: &BTreeMap<Sym, String>,
                 args: &[Node<Type>],
                 replacements: &Replacements,
-                errors: &mut Errors) -> Type {
+                ctx: &mut CompileCtx) -> Type {
     if let Some(replacement) = replacements.get(&name) {
         debug_assert_eq!(args.len(), replacement.vars.len());
         let mut vars = BTreeMap::new();
@@ -280,7 +270,7 @@ fn make_result(
             vars.insert(replacement.vars[i], &args[i].value);
         }
         let res = Node::new(replace_vars(&replacement.type_, &vars, span), span);
-        expand_in_type(&res, replacements, symbol_names, module, errors).value
+        expand_in_type(&res, replacements, module, ctx).value
     } else {
         let mut result = Node::new(Type::Concrete(Symbol::Known(name)), span);
         for arg in args {
@@ -294,31 +284,30 @@ fn make_result(
 fn expand_in_type(
                     type_: &Node<Type>,
                     replacements: &Replacements,
-                    symbol_names: &BTreeMap<Sym, String>,
                     module: &Name,
-                    errors: &mut Errors) -> Node<Type> {
+                    ctx: &mut CompileCtx) -> Node<Type> {
     let replaced = match type_.value {
         Type::Any => Type::Any,
         Type::SelfType => Type::SelfType,
         Type::Var(ref var) => Type::Var(var.clone()),
         Type::Function(ref a, ref b) => {
-            let a = expand_in_type(&**a, replacements, symbol_names, module, errors);
-            let b = expand_in_type(&**b, replacements, symbol_names, module, errors);
+            let a = expand_in_type(&**a, replacements, module, ctx);
+            let b = expand_in_type(&**b, replacements, module, ctx);
             Type::Function(Box::new(a), Box::new(b))
         }
         Type::Tuple(ref items) => {
             let mut new_items = Vec::new();
             for item in items {
-                new_items.push(expand_in_type(item, replacements, symbol_names, module, errors));
+                new_items.push(expand_in_type(item, replacements, module, ctx));
             }
             Type::Tuple(new_items)
         }
         Type::Apply(ref a, ref b) => {
             let mut args = Vec::new();
-            args.push(expand_in_type(&**b, replacements, symbol_names, module, errors));
+            args.push(expand_in_type(&**b, replacements, module, ctx));
             let mut matched = a;
             while let Type::Apply(ref l, ref r) = matched.value {
-                args.push(expand_in_type(&**r, replacements, symbol_names, module, errors));
+                args.push(expand_in_type(&**r, replacements, module, ctx));
                 matched = l;
             }
             args.reverse();
@@ -330,10 +319,9 @@ fn expand_in_type(
                                 module,
                                 matched.span,
                                 sym,
-                                symbol_names,
                                 &args,
                                 replacements,
-                                errors)
+                                ctx)
                         }
                         Symbol::Unknown => {
                             Type::Concrete(Symbol::Unknown)
@@ -341,7 +329,7 @@ fn expand_in_type(
                     }
                 }
                 _ => {
-                    let mut result = expand_in_type(matched, replacements, symbol_names, module, errors);
+                    let mut result = expand_in_type(matched, replacements, module, ctx);
                     for item in args {
                         let span = type_.span;
                         let type_ = Type::Apply(Box::new(result), Box::new(item));
@@ -358,10 +346,9 @@ fn expand_in_type(
                         module,
                         type_.span,
                         sym,
-                        symbol_names,
                         &[],
                         replacements,
-                        errors)
+                        ctx)
                 }
                 Symbol::Unknown => {
                     Type::Concrete(Symbol::Unknown)
@@ -375,19 +362,17 @@ fn expand_in_type(
 fn expand_in_annotation(
                         annot: &mut TypeAnnot,
                         replacements: &Replacements,
-                        symbol_names: &BTreeMap<Sym, String>,
-                        errors: &mut Errors) {
+                        ctx: &mut CompileCtx) {
     let expanded = expand_in_type(
         &annot.type_.value.type_,
         replacements,
-        symbol_names,
         &annot.module,
-        errors);
+        ctx);
     annot.type_.value.type_ = expanded;
 }
 
-pub fn expand_aliases(mut items: Items, errors: &mut Errors) -> Items {
-    if find_alias_cycles(&items, errors).is_err() {
+pub fn expand_aliases(mut items: Items, ctx: &mut CompileCtx) -> Items {
+    if find_alias_cycles(&items, ctx).is_err() {
         return items;
     }
     let mut replacements = BTreeMap::new();
@@ -400,7 +385,7 @@ pub fn expand_aliases(mut items: Items, errors: &mut Errors) -> Items {
             replacements.insert(alias.name.value.clone(), replacement);
         }
     }
-    if check_arg_count(&items, &replacements, errors).is_err() {
+    if check_arg_count(&items, &replacements, ctx).is_err() {
         return items;
     }
     for type_ in &mut items.types {
@@ -410,9 +395,8 @@ pub fn expand_aliases(mut items: Items, errors: &mut Errors) -> Items {
                     let expanded = expand_in_type(
                         &field.1,
                         &replacements,
-                        &items.symbol_names,
                         &record.module,
-                        errors);
+                        ctx);
                     field.1 = expanded;
                 }
             }
@@ -422,9 +406,8 @@ pub fn expand_aliases(mut items: Items, errors: &mut Errors) -> Items {
                         let expanded = expand_in_type(
                             arg,
                             &replacements,
-                            &items.symbol_names,
                             &union.module,
-                            errors);
+                            ctx);
                         *arg = expanded;
                     }
                 }
@@ -436,16 +419,14 @@ pub fn expand_aliases(mut items: Items, errors: &mut Errors) -> Items {
         expand_in_annotation(
             &mut annot.value,
             &replacements,
-            &items.symbol_names,
-            errors);
+            ctx);
     }
     for trait_ in &mut items.traits {
         for item in &mut trait_.values {
             expand_in_annotation(
                 &mut item.value,
                 &replacements,
-                &items.symbol_names,
-                errors);
+                ctx);
         }
     }
     items

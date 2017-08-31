@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::rc::Rc;
-use ast::resolved::Sym;
+use ast::Sym;
 
 
 #[derive(Debug, Clone)]

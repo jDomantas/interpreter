@@ -5,7 +5,8 @@ mod parser;
 use std::collections::{BTreeSet, BTreeMap};
 use ast::Name;
 use ast::parsed::Module;
-use errors::Errors;
+use util::CompileCtx;
+
 
 pub trait SourceProvider {
     fn get_module_source(&self, name: &str) -> Result<&str, String>;
@@ -49,13 +50,13 @@ impl<'a, 'b, T: 'a + SourceProvider> SourceProvider for WrappingProvider<'a, 'b,
     }
 }
 
-pub fn parse_module(source: &str, module: Name, require_def: bool, errors: &mut Errors) -> Option<Module> {
-    let tokens = lexer::lex(source, module.clone(), errors);
-    let module = parser::parse_module(tokens.into_iter(), module, require_def, errors);
+pub fn parse_module(source: &str, module: Name, require_def: bool, ctx: &mut CompileCtx) -> Option<Module> {
+    let tokens = lexer::lex(source, module.clone(), ctx);
+    let module = parser::parse_module(tokens.into_iter(), module, require_def, ctx);
     module
 }
 
-pub fn parse_modules<T: SourceProvider>(main: &str, provider: &T, errors: &mut Errors) -> BTreeMap<Name, Module> {
+pub fn parse_modules<T: SourceProvider>(main: &str, provider: &T, ctx: &mut CompileCtx) -> BTreeMap<Name, Module> {
     let provider = WrappingProvider {
         inner: provider,
         main: main,
@@ -66,7 +67,7 @@ pub fn parse_modules<T: SourceProvider>(main: &str, provider: &T, errors: &mut E
     let mut checked = BTreeSet::new();
 
     let main_name = Name::from_string("Main".into());
-    let main_module = parse_module(main, main_name, false, errors);
+    let main_module = parse_module(main, main_name, false, ctx);
 
     if let Some(module) = main_module {
         to_walk.push(module);
@@ -81,13 +82,13 @@ pub fn parse_modules<T: SourceProvider>(main: &str, provider: &T, errors: &mut E
             match provider.get_module_source(name) {
                 Ok(source) => {
                     let name = Name::from_string(name.clone());
-                    let module = parse_module(source, name, true, errors);
+                    let module = parse_module(source, name, true, ctx);
                     if let Some(module) = module {
                         to_walk.push(module);
                     }
                 }
                 Err(message) => {
-                    errors
+                    ctx.errors
                         .parse_error(&Name::from_string(module.name().into()))
                         .note(message, import.value.name.span)
                         .done();

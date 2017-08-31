@@ -1,15 +1,14 @@
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 use std::fmt;
-use ast::{Node, Name};
-use ast::parsed as p;
+use ast::{Node, Name, Sym, Symbol};
 use ast::parsed::{
-    Module, Symbol, Decl, LetDecl, ItemList, Impl, Def, RecordType, Trait,
+    self as p, Module, Decl, LetDecl, ItemList, Impl, Def, RecordType, Trait,
     TypeAlias, UnionType, Type, Expr, Pattern, Scheme, DoExpr,
 };
-use ast::resolved::{self as r, Sym};
-use errors::Errors;
-use position::Span;
+use ast::resolved as r;
+use util::CompileCtx;
+use util::position::Span;
 
 
 #[derive(Debug, Clone, Default)]
@@ -158,8 +157,8 @@ impl fmt::Display for Kind {
     }
 }
 
-pub fn resolve_symbols(modules: &BTreeMap<Name, Module>, errors: &mut Errors) -> r::Items {
-    let mut resolver = Resolver::new(errors);
+pub fn resolve_symbols(modules: &BTreeMap<Name, Module>, ctx: &mut CompileCtx) -> r::Items {
+    let mut resolver = Resolver::new(ctx);
     let mut items = BTreeMap::new();
     let mut exports = BTreeMap::new();
     for (name, module) in modules {
@@ -181,88 +180,25 @@ pub fn resolve_symbols(modules: &BTreeMap<Name, Module>, errors: &mut Errors) ->
 }
 
 struct Resolver<'a> {
-    errors: &'a mut Errors,
+    ctx: &'a mut CompileCtx,
     result: r::Items,
     traits: BTreeMap<Sym, TraitInfo>,
-    next_sym: u64,
 }
 
 impl<'a> Resolver<'a> {
-    fn new(errors: &'a mut Errors) -> Resolver<'a> {
-        use compiler::builtins::{types, values, traits};
-        let mut result = r::Items::new();
-        // TODO: fix this horrible horrible hack?
-        result.symbol_names.insert(Sym(0), "self".into());
-        result.symbol_names.insert(Sym(1), "Tuple".into());
-
-        result.symbol_names.insert(types::FRAC, "Frac".into());
-        result.symbol_names.insert(types::BOOL, "Bool".into());
-        result.symbol_names.insert(types::CHAR, "Char".into());
-        result.symbol_names.insert(types::STRING, "String".into());
-        result.symbol_names.insert(types::LIST, "List".into());
-        result.symbol_names.insert(types::INT, "Int".into());
-
-        result.symbol_names.insert(traits::COMPUTATION, "Computation".into());
-        result.symbol_names.insert(traits::FAILABLE, "Failable".into());
-        result.symbol_names.insert(traits::DEFAULT, "Default".into());
-        result.symbol_names.insert(traits::EQ, "Eq".into());
-        result.symbol_names.insert(traits::ORD, "Ord".into());
-        result.symbol_names.insert(traits::TO_STRING, "ToString".into());
-
-        result.symbol_names.insert(values::NIL, "Nil".into());
-        result.symbol_names.insert(values::CONS, "::".into());
-        result.symbol_names.insert(values::SOME, "Some".into());
-        result.symbol_names.insert(values::NONE, "None".into());
-        result.symbol_names.insert(values::AND_THEN, "andThen".into());
-        result.symbol_names.insert(values::FAIL, "fail".into());
-        result.symbol_names.insert(values::DEFAULT, "default".into());
-        result.symbol_names.insert(values::AND, "&&".into());
-        result.symbol_names.insert(values::OR, "||".into());
-        result.symbol_names.insert(values::INT_ADD, "intAdd".into());
-        result.symbol_names.insert(values::INT_SUB, "intSub".into());
-        result.symbol_names.insert(values::INT_MUL, "intMul".into());
-        result.symbol_names.insert(values::INT_DIV, "intDiv".into());
-        result.symbol_names.insert(values::INT_LE, "intLe".into()); 
-        result.symbol_names.insert(values::INT_EQ, "intEq".into()); 
-        result.symbol_names.insert(values::INT_GR, "intGr".into()); 
-        result.symbol_names.insert(values::INT_TO_STR, "intToString".into());
-        result.symbol_names.insert(values::FRAC_ADD, "fracAdd".into());
-        result.symbol_names.insert(values::FRAC_SUB, "fracSub".into());
-        result.symbol_names.insert(values::FRAC_MUL, "fracMul".into());
-        result.symbol_names.insert(values::FRAC_DIV, "fracDiv".into());
-        result.symbol_names.insert(values::FRAC_LE, "fracLe".into());
-        result.symbol_names.insert(values::FRAC_EQ, "fracEq".into());
-        result.symbol_names.insert(values::FRAC_GR, "fracGr".into());
-        result.symbol_names.insert(values::FRAC_TO_STR, "fracToString".into());
-        result.symbol_names.insert(values::CHAR_TO_STR, "charToString".into());
-        result.symbol_names.insert(values::CHAR_LE, "charLe".into());
-        result.symbol_names.insert(values::CHAR_EQ, "charEq".into());
-        result.symbol_names.insert(values::CHAR_GR, "charGr".into());
-        result.symbol_names.insert(values::STR_APPEND, "append".into());
-        result.symbol_names.insert(values::STR_CHAR_AT, "charAt".into());
-        result.symbol_names.insert(values::STR_LENGTH, "length".into());
-        result.symbol_names.insert(values::STR_SUBSTRING, "substring".into());
-        result.symbol_names.insert(values::STR_LE, "less".into());
-        result.symbol_names.insert(values::STR_EQ, "equals".into());
-
-        result.symbol_names.insert(values::MAIN, "main".into());
-        
+    fn new(ctx: &'a mut CompileCtx) -> Resolver<'a> {
         Resolver {
-            errors: errors,
-            result: result,
+            ctx,
+            result: r::Items::new(),
             traits: BTreeMap::new(),
-            next_sym: 100,
         }
     }
 
-    fn fresh_sym<S: Into<String>>(&mut self, name: S) -> r::Sym {
-        let sym = r::Sym::new(self.next_sym);
-        self.next_sym += 1;
-        self.result.symbol_names.insert(sym, name.into());
-        sym
+    fn fresh_sym<S: Into<String>>(&mut self, name: S) -> Sym {
+        self.ctx.symbols.fresh_sym(name.into())
     }
 
-    fn fresh_type_sym(&mut self, module: &Name, name: &str) -> r::Sym {
+    fn fresh_type_sym(&mut self, module: &Name, name: &str) -> Sym {
         use compiler::builtins::types;
         match (module.as_str(), name) {
             ("Basics", "Frac") => types::FRAC,
@@ -272,13 +208,12 @@ impl<'a> Resolver<'a> {
             ("List", "List") => types::LIST,
             ("Basics", "Int") => types::INT,
             _ => {
-                //let name = name.into();
                 self.fresh_sym(name)
             }
         }
     }
 
-    fn fresh_trait_sym(&mut self, module: &Name, name: &str) -> r::Sym {
+    fn fresh_trait_sym(&mut self, module: &Name, name: &str) -> Sym {
         use compiler::builtins::traits;
         match (module.as_str(), name) {
             ("Computation", "Computation") => traits::COMPUTATION,
@@ -294,7 +229,7 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    fn fresh_value_sym(&mut self, module: &Name, name: &str, parent: Option<&str>) -> r::Sym {
+    fn fresh_value_sym(&mut self, module: &Name, name: &str, parent: Option<&str>) -> Sym {
         use compiler::builtins::values;
         match (module.as_str(), parent, name) {
             ("List", Some("List"), "Nil") => values::NIL,
@@ -340,19 +275,18 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    fn fresh_var_sym(&mut self, var: &str) -> r::Sym {
+    fn fresh_var_sym(&mut self, var: &str) -> Sym {
         self.fresh_sym(var)
     }
 
-    fn fresh_artificial_sym(&mut self) -> r::Sym {
-        let name = format!("$sym_{}", self.next_sym);
-        self.fresh_sym(name)
+    fn fresh_artificial_sym(&mut self) -> Sym {
+        self.ctx.symbols.fresh_artificial_sym()
     }
 
     fn double_definition(&mut self, name: &str, span: Span, previous: Span, module: &Name) {
         let message = format!("Item `{}` is defined multiple times.", name);
         let previous_message = "Note: previously defined here.";
-        self.errors
+        self.ctx.errors
             .symbol_error(module)
             .note(message, span)
             .note(previous_message, previous)
@@ -362,7 +296,7 @@ impl<'a> Resolver<'a> {
     fn duplicate_binding(&mut self, name: &str, span: Span, previous: Span, module: &Name) {
         let message = format!("Name `{}` is bound multiple times.", name);
         let previous_message = "Note: previously bound here.";
-        self.errors
+        self.ctx.errors
             .symbol_error(module)
             .note(message, span)
             .note(previous_message, previous)
@@ -370,7 +304,7 @@ impl<'a> Resolver<'a> {
     }
 
     fn bad_export(&mut self, message: String, span: Span, module: &Name) {
-        self.errors
+        self.ctx.errors
             .symbol_error(module)
             .note(message, span)
             .done();
@@ -379,7 +313,7 @@ impl<'a> Resolver<'a> {
     fn module_double_import(&mut self, offending: &str, span: Span, previous: Span, module: &Name) {
         let message = format!("Module `{}` is imported twice.", offending);
         let previous_message = "Note: previously imported here.";
-        self.errors
+        self.ctx.errors
             .symbol_error(module)
             .note(message, span)
             .note(previous_message, previous)
@@ -389,7 +323,7 @@ impl<'a> Resolver<'a> {
     fn double_import(&mut self, kind: Kind, item: &str, span: Span, previous: Span, module: &Name) {
         let message = format!("{} `{}` is imported multiple times.", kind, item);
         let previous_message = "Note: previously imported here.";
-        self.errors
+        self.ctx.errors
             .symbol_error(module)
             .note(message, span)
             .note(previous_message, previous)
@@ -399,7 +333,7 @@ impl<'a> Resolver<'a> {
     fn double_export(&mut self, kind: Kind, item: &str, span: Span, previous: Span, module: &Name) {
         let message = format!("{} `{}` is exported multiple times.", kind, item);
         let previous_message = "Note: previously exported here.";
-        self.errors
+        self.ctx.errors
             .symbol_error(module)
             .note(message, span)
             .note(previous_message, previous)
@@ -409,7 +343,7 @@ impl<'a> Resolver<'a> {
     fn double_fixity_decl(&mut self, name: &str, span: Span, previous: Span, module: &Name) {
         let message = format!("Fixity of `{}` is declared twice.", name);
         let previous_message = "Note: previously declared here.";
-        self.errors
+        self.ctx.errors
             .symbol_error(module)
             .note(message, span)
             .note(previous_message, previous)
@@ -419,7 +353,7 @@ impl<'a> Resolver<'a> {
     fn double_type_annotation(&mut self, name: &str, span: Span, previous: Span, module: &Name) {
         let message = format!("Type of `{}` is declared twice.", name);
         let previous_message = "Note: previously declared here.";
-        self.errors
+        self.ctx.errors
             .symbol_error(module)
             .note(message, span)
             .note(previous_message, previous)
@@ -428,7 +362,7 @@ impl<'a> Resolver<'a> {
 
     fn not_exported(&mut self, item: &str, by: &str, span: Span, module: &Name) {
         let message = format!("Item `{}` is not exported by `{}`.", item, by);
-        self.errors
+        self.ctx.errors
             .symbol_error(module)
             .note(message, span)
             .done();
@@ -436,7 +370,7 @@ impl<'a> Resolver<'a> {
 
     fn subitem_not_exported(&mut self, item: &str, parent: &str, by: &str, span: Span, module: &Name) {
         let message = format!("Module `{}` does not export `{}` as subitem of `{}`.", by, item, parent);
-        self.errors
+        self.ctx.errors
             .symbol_error(module)
             .note(message, span)
             .done();
@@ -444,7 +378,7 @@ impl<'a> Resolver<'a> {
 
     fn no_subitems(&mut self, item: &str, by: &str, span: Span, module: &Name) {
         let message = format!("Module `{}` does not export any subitems of `{}`.", by, item);
-        self.errors
+        self.ctx.errors
             .symbol_error(module)
             .note(message, span)
             .done();
@@ -452,7 +386,7 @@ impl<'a> Resolver<'a> {
 
     fn unknown_symbol(&mut self, kind: Kind, symbol: &Node<p::Symbol>, module: &Name) {
         let message = format!("Unknown {}: `{}`.", kind, symbol.value.clone().full_name());
-        self.errors
+        self.ctx.errors
             .symbol_error(module)
             .note(message, symbol.span)
             .done();
@@ -460,7 +394,7 @@ impl<'a> Resolver<'a> {
 
     fn unknown_type_var(&mut self, name: &str, span: Span, module: &Name) {
         let message = format!("Unknown type var: `{}`.", name);
-        self.errors
+        self.ctx.errors
             .symbol_error(module)
             .note(message, span)
             .done();
@@ -468,7 +402,7 @@ impl<'a> Resolver<'a> {
 
     fn unknown_local_symbol(&mut self, kind: Kind, symbol: &Node<String>, module: &Name) {
         let message = format!("Unknown local {}: `{}`.", kind, symbol.value);
-        self.errors
+        self.ctx.errors
             .symbol_error(module)
             .note(message, symbol.span)
             .done();
@@ -476,7 +410,7 @@ impl<'a> Resolver<'a> {
 
     fn unknown_module(&mut self, m: &str, span: Span, module: &Name) {
         let message = format!("Unknown module: `{}`.", m);
-        self.errors
+        self.ctx.errors
             .symbol_error(module)
             .note(message, span)
             .done();
@@ -1195,7 +1129,7 @@ impl<'a> Resolver<'a> {
                             }
                         }
                     } else {
-                        let sym = sym.clone().map(Symbol::Unqualified);
+                        let sym = sym.clone().map(p::Symbol::Unqualified);
                         self.unknown_symbol(Kind::LocalValue, &sym, &ctx.module);
                     }
                 }
@@ -1284,7 +1218,7 @@ impl<'a> Resolver<'a> {
             .collect::<BTreeMap<_, _>>();
 
         let trait_items = match trait_.value {
-            r::Symbol::Known(sym) => {
+            Symbol::Known(sym) => {
                 if let Some(info) = self.traits.get(&sym) {
                     let mut items = BTreeMap::new();
                     for (&name, &sym) in &symbols {
@@ -1296,7 +1230,7 @@ impl<'a> Resolver<'a> {
                         if !symbols.contains_key(name.as_str()) {
                             // symbol required in trait is missing in impl
                             let message = format!("Missing impl of `{}`.", name);
-                            self.errors
+                            self.ctx.errors
                                 .symbol_error(&ctx.module)
                                 .note(message, impl_.scheme.value.type_.span)
                                 .done();
@@ -1307,7 +1241,7 @@ impl<'a> Resolver<'a> {
                     BTreeMap::new()
                 }
             }
-            r::Symbol::Unknown => BTreeMap::new(),
+            Symbol::Unknown => BTreeMap::new(),
         };
 
         // remove locals that are trait items, so that trait items used in
@@ -1404,7 +1338,7 @@ impl<'a> Resolver<'a> {
             //     a = case expr of
             //       pattern(fresh) -> fresh
             let fresh = self.fresh_artificial_sym();
-            let sym = r::Symbol::Known(fresh);
+            let sym = Symbol::Known(fresh);
             let ident = Node::new(r::Expr::Ident(sym), pattern_span);
             let pat = pattern.value.only_with_var(vars[0], fresh);
             let pattern = Node::new(pat, pattern_span);
@@ -1443,7 +1377,7 @@ impl<'a> Resolver<'a> {
             });
             for var in vars {
                 let fresh = self.fresh_artificial_sym();
-                let sym = r::Symbol::Known(fresh);
+                let sym = Symbol::Known(fresh);
                 let ident = Node::new(r::Expr::Ident(sym), pattern_span);
                 let pat = pattern.value.only_with_var(var, fresh);
                 let pattern = Node::new(pat, pattern_span);
@@ -1452,7 +1386,7 @@ impl<'a> Resolver<'a> {
                     value: ident,
                     guard: None,
                 };
-                let expr = Node::new(r::Expr::Ident(r::Symbol::Known(val)), pattern_span);
+                let expr = Node::new(r::Expr::Ident(Symbol::Known(val)), pattern_span);
                 let branch = Node::new(branch, pattern_span);
                 let case = r::Expr::Case(Box::new(expr), vec![branch]);
                 let case = Node::new(case, def_span);
@@ -1592,7 +1526,7 @@ impl<'a> Resolver<'a> {
     fn resolve_type<'b>(
                     &mut self,
                     type_: &'b Node<Type>,
-                    vars: &mut BTreeMap<&'b str, r::Sym>,
+                    vars: &mut BTreeMap<&'b str, Sym>,
                     ctx: &Context,
                     allow_new_vars: bool) -> Node<r::Type> {
         let resolved = match type_.value {
@@ -1660,8 +1594,8 @@ impl<'a> Resolver<'a> {
 
     fn resolve_trait_bound(
                             &mut self,
-                            bound: &Node<Symbol>,
-                            ctx: &Context) -> Node<r::Symbol> {
+                            bound: &Node<p::Symbol>,
+                            ctx: &Context) -> Node<Symbol> {
         self.resolve_symbol(bound, Kind::Trait, ctx)
     }
 
@@ -1810,7 +1744,7 @@ impl<'a> Resolver<'a> {
                 for (index, pattern) in resolved.into_iter().enumerate().rev() {
                     let fresh = fresh_symbols[index].value;
                     let pattern_span = pattern.span;
-                    let sym = r::Symbol::Known(fresh);
+                    let sym = Symbol::Known(fresh);
                     let ident = Node::new(r::Expr::Ident(sym), pattern_span);
                     let span = pattern_span.merge(result.span);
                     let branch = r::CaseBranch {
@@ -2026,12 +1960,12 @@ impl<'a> Resolver<'a> {
                         ctx: &Context) {
         for (index, first) in vars.iter().enumerate() {
             for second in vars.iter().skip(index + 1) {
-                let first_name = &self.result.symbol_names[&first.value];
-                let second_name = &self.result.symbol_names[&second.value];
+                let first_name = self.ctx.symbols.symbol_name(first.value);
+                let second_name = self.ctx.symbols.symbol_name(second.value);
                 if first_name == second_name {
                     let message = format!(
                         "Type variable `{}` is defined twice.", first_name);
-                    self.errors
+                    self.ctx.errors
                         .symbol_error(&ctx.module)
                         .note(message, second.span)
                         .note("Note: previously defined here.", first.span)
@@ -2043,12 +1977,12 @@ impl<'a> Resolver<'a> {
 
     fn resolve_symbol(
                         &mut self,
-                        symbol: &Node<Symbol>,
+                        symbol: &Node<p::Symbol>,
                         kind: Kind,
-                        ctx: &Context) -> Node<r::Symbol> {
-        let unknown = Node::new(r::Symbol::Unknown, symbol.span);
+                        ctx: &Context) -> Node<Symbol> {
+        let unknown = Node::new(Symbol::Unknown, symbol.span);
         let sym = match symbol.value {
-            Symbol::Qualified(ref m, ref n) => {
+            p::Symbol::Qualified(ref m, ref n) => {
                 let m = if let Some(&m) = ctx.imports.modules.get(m.as_str()) {
                     m
                 } else {
@@ -2061,14 +1995,14 @@ impl<'a> Resolver<'a> {
                     return unknown;
                 };
                 match exports.get_symbol(kind, n) {
-                    Some(sym) => r::Symbol::Known(sym),
+                    Some(sym) => Symbol::Known(sym),
                     None => {
                         self.not_exported(n, m, symbol.span, &ctx.module);
-                        r::Symbol::Unknown
+                        Symbol::Unknown
                     }
                 }
             }
-            Symbol::Unqualified(ref s) => {
+            p::Symbol::Unqualified(ref s) => {
                 if let Some(m) = ctx.imports.get_origin(kind, s) {
                     let s = if m == ctx.module.as_str() {
                         // value comes from current module, look in ctx.locals
@@ -2079,10 +2013,10 @@ impl<'a> Resolver<'a> {
                     };
                     // if we got origin then symbol must exist there,
                     // therefore unwrap
-                    r::Symbol::Known(s.unwrap())
+                    Symbol::Known(s.unwrap())
                 } else {
                     self.unknown_symbol(kind, symbol, &ctx.module);
-                    r::Symbol::Unknown
+                    Symbol::Unknown
                 }
             }
         };
@@ -2091,13 +2025,13 @@ impl<'a> Resolver<'a> {
 
     fn resolve_symbol_in_expr(
                                 &mut self,
-                                symbol: &Node<Symbol>,
+                                symbol: &Node<p::Symbol>,
                                 ctx: &Context,
-                                locals: &[(Node<&str>, Sym)]) -> Node<r::Symbol> {
-        if let Symbol::Unqualified(ref name) = symbol.value {
+                                locals: &[(Node<&str>, Sym)]) -> Node<Symbol> {
+        if let p::Symbol::Unqualified(ref name) = symbol.value {
             for &(ref local, sym) in locals.iter().rev() {
                 if local.value == name {
-                    return Node::new(r::Symbol::Known(sym), symbol.span);
+                    return Node::new(Symbol::Known(sym), symbol.span);
                 }
             }
         }

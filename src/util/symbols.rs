@@ -5,57 +5,70 @@ use compiler::builtins::{traits, types, values};
 #[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Hash, Copy, Clone)]
 pub struct Sym(pub u64);
 
-enum SymbolData {
+enum SymbolType {
     Original { name: String, times_derived: u64 },
     Derived { name: String, parent: Sym },
 }
 
 pub struct SymbolSource {
     next_sym: u64,
-    symbols: HashMap<Sym, SymbolData>,
+    symbols: HashMap<Sym, SymbolType>,
 }
 
 impl SymbolSource {
     pub fn new() -> SymbolSource {
+        let mut symbols = HashMap::new();
+        for &(sym, _, name) in BUILTIN_SYMBOLS.iter() {
+            let data = SymbolType::Original {
+                name: name.into(),
+                times_derived: 0,
+            };
+            symbols.insert(sym, data);
+        }
         SymbolSource {
-            next_sym: 0,
-            symbols: HashMap::new(),
+            next_sym: 100,
+            symbols,
         }
     }
 
-    pub fn fresh_sym(&mut self, name: &str) -> Sym {
+    pub fn fresh_sym(&mut self, name: String) -> Sym {
         let sym = Sym(self.next_sym);
         self.next_sym += 1;
-        self.symbols.insert(sym, SymbolData::Original {
-            name: name.into(),
+        self.symbols.insert(sym, SymbolType::Original {
+            name,
             times_derived: 0,
         });
         sym
     }
 
+    pub fn fresh_artificial_sym(&mut self) -> Sym {
+        let name = format!("$s{}", self.next_sym);
+        self.fresh_sym(name)
+    }
+
     pub fn derived_sym(&mut self, mut from: Sym) -> Sym {
         let (name, parent) = loop {
             match *self.symbols.get_mut(&from).unwrap() {
-                SymbolData::Original { ref name, ref mut times_derived } => {
+                SymbolType::Original { ref name, ref mut times_derived } => {
                     *times_derived += 1;
                     let name = format!("{}-{}", name, times_derived);
                     break (name, from);
                 }
-                SymbolData::Derived { parent, .. } => {
+                SymbolType::Derived { parent, .. } => {
                     from = parent;
                 }
             }
         };
         let sym = Sym(self.next_sym);
         self.next_sym += 1;
-        self.symbols.insert(sym, SymbolData::Derived { name, parent });
+        self.symbols.insert(sym, SymbolType::Derived { name, parent });
         sym
     }
 
     pub fn symbol_name(&self, sym: Sym) -> &str {
         match &self.symbols[&sym] {
-            &SymbolData::Original { ref name, .. } |
-            &SymbolData::Derived { ref name, .. } => {
+            &SymbolType::Original { ref name, .. } |
+            &SymbolType::Derived { ref name, .. } => {
                 name
             }
         }

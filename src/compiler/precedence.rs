@@ -1,25 +1,22 @@
 use std::collections::BTreeMap;
-use ast::{Node, Associativity, Name};
-use ast::resolved::{Expr, Pattern, Def, Impl, Sym, Symbol, Items, CaseBranch};
-use errors::Errors;
+use ast::{Node, Associativity, Name, Sym, Symbol};
+use ast::resolved::{Expr, Pattern, Def, Impl, Items, CaseBranch};
+use util::CompileCtx;
 
 
 struct Context<'a, 'b> {
-    errors: &'b mut Errors,
+    ctx: &'b mut CompileCtx,
     current_module: Option<Name>,
-    symbol_names: &'a BTreeMap<Sym, String>,
     operators: &'a BTreeMap<Sym, (Associativity, u64)>, 
 }
 
 impl<'a, 'b> Context<'a, 'b> {
     fn new(
             operators: &'a BTreeMap<Sym, (Associativity, u64)>,
-            errors: &'b mut Errors,
-            symbol_names: &'a BTreeMap<Sym, String>) -> Self {
+            ctx: &'b mut CompileCtx) -> Self {
         Context {
-            errors,
+            ctx,
             operators,
-            symbol_names,
             current_module: None,
         }
     }
@@ -49,17 +46,17 @@ impl<'a, 'b> Context<'a, 'b> {
         debug_assert!(left.value != right.value || a1 == Associativity::None);
         let message = if left.value == right.value {
             format!("Operator `{}` is {}.",
-                self.symbol_names[&le],
+                self.ctx.symbols.symbol_name(le),
                 a1.as_str())
         } else {
             format!("Operator `{}` is {}, and `{}` is {}.",
-                self.symbol_names[&le],
+                self.ctx.symbols.symbol_name(le),
                 a1.as_str(),
-                self.symbol_names[&ri],
+                self.ctx.symbols.symbol_name(ri),
                 a2.as_str())
         };
         let span = left.span.merge(right.span);
-        self.errors
+        self.ctx.errors
             .fixity_error(self.current_module.as_ref().unwrap())
             .note(message, span)
             .done();
@@ -288,13 +285,13 @@ fn collect_pattern(pat: Node<Pattern>, ops: &mut Vec<Node<Symbol>>, pats: &mut V
     }
 }
 
-pub fn fix_items(items: Items, errors: &mut Errors) -> Items {
-    let Items { types, items, traits, impls, annotations, fixities, symbol_names } = items;
+pub fn fix_items(items: Items, ctx: &mut CompileCtx) -> Items {
+    let Items { types, items, traits, impls, annotations, fixities } = items;
     let (items, impls) = {
-        let mut ctx = Context::new(&fixities, errors, &symbol_names);
+        let mut ctx = Context::new(&fixities, ctx);
         let items = items.into_iter().map(|i| ctx.fix_def(i)).collect();
         let impls = impls.into_iter().map(|i| ctx.fix_impl(i)).collect();
         (items, impls)
     };
-    Items { types, items, traits, impls, annotations, fixities, symbol_names }
+    Items { types, items, traits, impls, annotations, fixities }
 }

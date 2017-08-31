@@ -1,26 +1,28 @@
 use std::collections::BTreeMap;
-use ast::typed::{self as t, Sym, ImplSym, ImplSource, Impls};
+use ast::{Sym, Symbol};
+use ast::typed::{self as t, ImplSym, ImplSource, Impls};
 use ast::monomorphised as m;
+use util::CompileCtx;
+
 
 #[derive(PartialEq, PartialOrd, Eq, Ord, Hash, Debug, Copy, Clone)]
 struct Context(u64);
 
 const GLOBAL: Context = Context(0);
 
-struct Solver {
+struct Solver<'a> {
     impls: BTreeMap<ImplSym, t::Impl>,
     defs: BTreeMap<(Sym, Context), (t::Def, Impls)>,
     instantiations: BTreeMap<(Sym, Context), BTreeMap<Impls, m::Def>>,
     current_context: BTreeMap<Sym, Context>,
     owner_trait: BTreeMap<Sym, Sym>,
-    next_sym: u64,
     simple_defs: Vec<Sym>,
     next_context: u64,
-    symbol_names: BTreeMap<Sym, String>,
+    ctx: &'a mut CompileCtx,
 }
 
-impl Solver {
-    fn from_items(items: t::Items) -> Solver {
+impl<'a> Solver<'a> {
+    fn new(items: t::Items, ctx: &'a mut CompileCtx) -> Solver<'a> {
         let mut impls = BTreeMap::new();
         for impl_ in items.impls {
             impls.insert(impl_.symbol, impl_);
@@ -44,20 +46,15 @@ impl Solver {
             defs,
             instantiations: BTreeMap::new(),
             owner_trait,
-            next_sym: 0,
             simple_defs,
             next_context: 0,
             current_context: BTreeMap::new(),
-            symbol_names: items.symbol_names,
+            ctx,
         }
     }
 
     fn fresh_sym(&mut self, parent: Sym) -> Sym {
-        self.next_sym += 1;
-        let name = format!("{}_#{}", self.symbol_names[&parent], self.next_sym);
-        let sym = Sym(self.next_sym + 1000000000);
-        self.symbol_names.insert(sym, name);
-        sym
+        self.ctx.symbols.derived_sym(parent)
     }
 
     fn create_context(&mut self) -> Context {
@@ -145,11 +142,11 @@ impl Solver {
             t::Expr::Literal(ref lit) => {
                 m::Expr::Literal(lit.clone())
             }
-            t::Expr::Var(t::Symbol::Known(sym), _, ref impl_args) => {
+            t::Expr::Var(Symbol::Known(sym), _, ref impl_args) => {
                 let sym = self.instantiate_symbol(sym, impl_args, impls);
                 m::Expr::Var(sym)
             }
-            t::Expr::Var(t::Symbol::Unknown, _, _) => {
+            t::Expr::Var(Symbol::Unknown, _, _) => {
                 panic!("monomorphising code with unresolved symbols")
             }
             t::Expr::Apply(ref a, ref b) => {
@@ -241,7 +238,7 @@ impl Solver {
                 let items = items.iter().map(|item| {
                     self.instantiate_pattern(&item.value)
                 }).collect::<Vec<_>>();
-                if let t::Symbol::Known(sym) = sym.value {
+                if let Symbol::Known(sym) = sym.value {
                     m::Pattern::Deconstruct(sym, items)
                 } else {
                     panic!("monomorphising code with unresolved symbols")
@@ -263,7 +260,7 @@ impl Solver {
         }
     }
 
-    fn run(mut self) -> (Vec<m::Def>, BTreeMap<Sym, String>) {
+    fn run(mut self) -> Vec<m::Def> {
         let mut simple_defs = Vec::new();
         ::std::mem::swap(&mut simple_defs, &mut self.simple_defs);
         for def in simple_defs {
@@ -274,7 +271,7 @@ impl Solver {
             .flat_map(|(_, m)| m.into_iter())
             .map(|(_, def)| def)
             .collect();
-        (defs, self.symbol_names)
+        defs
     }
 }
 
@@ -311,13 +308,11 @@ fn make_constructors(types: &[t::TypeDecl]) -> Vec<m::Def> {
     defs
 }
 
-pub fn monomorphise(items: t::Items) -> m::Items {
+pub fn monomorphise(items: t::Items, ctx: &mut CompileCtx) -> m::Items {
     let mut defs = make_constructors(&items.types);
-    let ctx = Solver::from_items(items);
-    let (defs2, symbol_names) = ctx.run();
-    defs.extend(defs2);
+    let ctx = Solver::new(items, ctx);
+    defs.extend(ctx.run());
     m::Items {
         items: defs,
-        symbol_names,
     }
 }

@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 use ast::Name;
-use position::Span;
+use util::position::Span;
 
 
 #[derive(Debug, Clone)]

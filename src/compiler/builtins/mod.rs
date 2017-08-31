@@ -1,5 +1,5 @@
 pub mod types {
-    use symbols::Sym;
+    use util::symbols::Sym;
     
     pub const FRAC: Sym = Sym(10);
     pub const BOOL: Sym = Sym(11);
@@ -10,7 +10,7 @@ pub mod types {
 }
 
 pub mod traits {
-    use symbols::Sym;
+    use util::symbols::Sym;
     
     pub const COMPUTATION: Sym = Sym(20);
     pub const DEFAULT: Sym = Sym(21);
@@ -21,7 +21,7 @@ pub mod traits {
 }
 
 pub mod values {
-    use symbols::Sym;
+    use util::symbols::Sym;
 
     pub const NIL: Sym = Sym(40);
     pub const CONS: Sym = Sym(41);

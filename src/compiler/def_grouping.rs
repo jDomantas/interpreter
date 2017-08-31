@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
-use ast::{Node, NodeView};
-use ast::resolved::{Def, Expr, Sym, Symbol, Items, GroupedItems, Impl, GroupedImpl};
+use ast::{Node, NodeView, Sym, Symbol};
+use ast::resolved::{Def, Expr, Items, GroupedItems, Impl, GroupedImpl};
 use compiler::util::Graph;
 
 
@@ -123,7 +123,7 @@ fn group_in_expr(expr: &mut Node<Expr>) {
         Expr::Let(ref mut defs, ref mut val) => {
             group_in_expr(val);
             let mut defs_vec = Vec::new();
-            let mut result = Node::new(Expr::Tuple(Vec::new()), ::position::DUMMY_SPAN);
+            let mut result = Node::new(Expr::Tuple(Vec::new()), ::util::position::DUMMY_SPAN);
             ::std::mem::swap(&mut defs_vec, defs);
             ::std::mem::swap(&mut result, val);
             let defs_vec = group_let_defs(defs_vec);
@@ -172,7 +172,6 @@ pub fn group_items(items: Items) -> GroupedItems {
         impls,
         annotations,
         fixities,
-        symbol_names
     } = items;
     for item in &mut items {
         group_in_expr(&mut item.value);
@@ -186,6 +185,5 @@ pub fn group_items(items: Items) -> GroupedItems {
         impls,
         annotations,
         fixities,
-        symbol_names,
     }
 }

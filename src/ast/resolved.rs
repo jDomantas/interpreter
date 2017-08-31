@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use ast::{Node, Name, Literal, Associativity};
+use ast::{Node, Name, Literal, Associativity, Sym, Symbol};
 
 
 #[derive(Debug, Clone)]
@@ -270,14 +270,6 @@ pub struct GroupedImpl {
     pub module: Name,
 }
 
-pub use symbols::Sym;
-
-#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Hash, Copy, Clone)]
-pub enum Symbol {
-    Known(Sym),
-    Unknown,
-}
-
 #[derive(Default)]
 pub struct Items {
     pub types: Vec<TypeDecl>,
@@ -286,7 +278,6 @@ pub struct Items {
     pub impls: Vec<Impl>,
     pub annotations: BTreeMap<Sym, Node<TypeAnnot>>,
     pub fixities: BTreeMap<Sym, (Associativity, u64)>,
-    pub symbol_names: BTreeMap<Sym, String>,
 }
 
 impl Items {
@@ -303,7 +294,6 @@ pub struct GroupedItems {
     pub impls: Vec<GroupedImpl>,
     pub annotations: BTreeMap<Sym, Node<TypeAnnot>>,
     pub fixities: BTreeMap<Sym, (Associativity, u64)>,
-    pub symbol_names: BTreeMap<Sym, String>,
 }
 
 impl GroupedItems {
@@ -315,10 +305,12 @@ impl GroupedItems {
 
 pub mod printer {
     use super::*;
-    pub fn print_items(items: &Items) {
+    use util::symbols::SymbolSource;
+
+    pub fn print_items(items: &Items, symbols: &SymbolSource) {
         let mut printer = Printer {
             indent: 0,
-            symbol_names: &items.symbol_names,
+            symbols,
         };
         for typ in &items.types {
             match *typ {
@@ -336,7 +328,7 @@ pub mod printer {
 
     struct Printer<'a> {
         indent: usize,
-        symbol_names: &'a BTreeMap<Sym, String>,
+        symbols: &'a SymbolSource,
     }
 
     impl<'a> Printer<'a> {
@@ -479,7 +471,7 @@ pub mod printer {
         fn print_symbol(&mut self, symbol: Symbol) {
             match symbol {
                 Symbol::Known(sym) => {
-                    print!("{}", self.symbol_names[&sym]);
+                    print!("{}", self.symbols.symbol_name(sym));
                 }
                 Symbol::Unknown => {
                     print!("?");

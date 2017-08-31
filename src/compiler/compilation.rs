@@ -1,7 +1,7 @@
 use std::collections::{BTreeSet, BTreeMap};
 use std::rc::Rc;
-use ast::Literal;
-use ast::monomorphised::{Sym, Expr, Pattern, Def, Items};
+use ast::{Literal, Sym};
+use ast::monomorphised::{Expr, Pattern, Def, Items};
 use vm::{Instruction, Function, Value, Object, Closure, GlobalValue};
 
 

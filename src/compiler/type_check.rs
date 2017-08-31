@@ -1,12 +1,13 @@
 use std::collections::{BTreeSet, BTreeMap};
 use std::mem;
 use std::rc::Rc;
-use ast::typed::{self as t, Type, Scheme, SchemeVar, Symbol, Sym, ImplSym, ImplDef, Impls};
+use ast::{Node, NodeView, Name, Literal, Symbol, Sym};
 use ast::resolved as r;
-use ast::{Node, NodeView, Name, Literal};
+use ast::typed::{self as t, Type, Scheme, SchemeVar, ImplSym, ImplDef, Impls};
 use compiler::{builtins, util};
-use errors::Errors;
-use position::Span;
+use util::CompileCtx;
+use util::position::Span;
+use util::symbols::SymbolSource;
 
 
 #[derive(Debug, Copy, Clone)]
@@ -23,9 +24,9 @@ impl FunctionName {
         }
     }
 
-    fn name<'a>(self, symbol_names: &'a BTreeMap<Sym, String>) -> &'a str {
+    fn name<'a>(self, symbols: &'a SymbolSource) -> &'a str {
         match self {
-            FunctionName::Sym(sym) => &symbol_names[&sym],
+            FunctionName::Sym(sym) => symbols.symbol_name(sym),
             FunctionName::Str(name) => name,
         }
     }
@@ -59,38 +60,33 @@ enum ConstraintSource {
 #[derive(Debug)]
 struct Constraint(Type, Type, ConstraintSource, Name);
 
-struct InferCtx<'a, 'b, 'c, 'd> {
-    pattern_types: &'d BTreeMap<Sym, PatternTy>,
+struct InferCtx<'a, 'b, 'c> {
+    pattern_types: &'a BTreeMap<Sym, PatternTy>,
     env: BTreeMap<Sym, Scheme>,
     new_env: BTreeMap<Sym, Scheme>,
     next_var: u64,
-    next_sym: u64,
     var_bounds: BTreeMap<u64, BTreeSet<Sym>>,
-    errors: &'b mut Errors,
+    ctx: &'b mut CompileCtx,
     constraints: Vec<Constraint>,
     current_module: Option<Name>,
-    annotations: &'a BTreeMap<Sym, (Scheme, Span)>,
-    symbol_names: &'c mut BTreeMap<Sym, String>,
+    annotations: &'c BTreeMap<Sym, (Scheme, Span)>,
 }
 
-impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
+impl<'a, 'b, 'c> InferCtx<'a, 'b, 'c> {
     fn new(
-            pattern_types: &'d BTreeMap<Sym, PatternTy>,
-            annotations: &'a BTreeMap<Sym, (Scheme, Span)>,
-            errors: &'b mut Errors,
-            symbol_names: &'c mut BTreeMap<Sym, String>) -> Self {
+            pattern_types: &'a BTreeMap<Sym, PatternTy>,
+            annotations: &'c BTreeMap<Sym, (Scheme, Span)>,
+            ctx: &'b mut CompileCtx) -> Self {
         InferCtx {
             pattern_types,
             env: BTreeMap::new(),
             new_env: BTreeMap::new(),
             next_var: 1,
-            next_sym: 500000000,
             var_bounds: BTreeMap::new(),
-            errors,
+            ctx,
             constraints: Vec::new(),
             current_module: None,
             annotations,
-            symbol_names,
         }
     }
 
@@ -101,10 +97,7 @@ impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
     }
 
     fn fresh_sym(&mut self) -> Sym {
-        self.next_sym += 1;
-        let sym = Sym(self.next_sym);
-        self.symbol_names.insert(sym, format!("$typeck_{}", self.next_sym - 500000000));
-        sym
+        self.ctx.symbols.fresh_artificial_sym()
     }
 
     fn add_var_bound(&mut self, var: u64, trait_: Sym) {
@@ -187,7 +180,7 @@ impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
             s
         } else {
             panic!("symbol `{}` ({:?}) is not in env",
-                self.symbol_names[&sym],
+                self.ctx.symbols.symbol_name(sym),
                 sym);
         }
     }
@@ -220,10 +213,10 @@ impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
                             let module = self.current_module.as_ref().unwrap();
                             let msg = format!(
                                 "Pattern `{}` takes {} arguments, but here it has {}.",
-                                self.symbol_names[&sym],
+                                self.ctx.symbols.symbol_name(sym),
                                 args_types.len(),
                                 args.len());
-                            self.errors
+                            self.ctx.errors
                                 .pattern_error(module)
                                 .note(msg, pattern.span)
                                 .done();
@@ -641,8 +634,7 @@ impl<'a, 'b, 'c, 'd> InferCtx<'a, 'b, 'c, 'd> {
         let (substitution, var_unifications) = {
             let solver = Solver::new(
                 &constraints,
-                self.errors,
-                self.symbol_names);
+                self.ctx);
             solver.solve_constraints()
         };
         self.constraints.extend(constraints);
@@ -832,23 +824,20 @@ fn empty_scheme(type_: Type) -> Scheme {
     }
 }
 
-struct Solver<'a, 'b, 'c> {
+struct Solver<'a, 'b> {
     constraints: &'a [Constraint],
-    errors: &'b mut Errors,
-    symbol_names: &'c BTreeMap<Sym, String>,
+    ctx: &'b mut CompileCtx,
     substitution: BTreeMap<u64, Type>,
     var_unifications: Vec<(u64, u64)>,
 }
 
-impl<'a, 'b, 'c> Solver<'a, 'b, 'c> {
+impl<'a, 'b> Solver<'a, 'b> {
     fn new(
             constraints: &'a [Constraint],
-            errors: &'b mut Errors,
-            symbol_names: &'c BTreeMap<Sym, String>) -> Self {
+            ctx: &'b mut CompileCtx) -> Self {
         Solver {
             constraints,
-            errors,
-            symbol_names,
+            ctx,
             substitution: BTreeMap::new(),
             var_unifications: Vec::new(),
         }
@@ -929,9 +918,9 @@ impl<'a, 'b, 'c> Solver<'a, 'b, 'c> {
 
     fn unsolved_constraint(&mut self, constraint: &Constraint) {
         let type1 = self.do_substitutions(&constraint.0);
-        let type1 = type1.display(self.symbol_names);
+        let type1 = type1.display(&self.ctx.symbols);
         let type2 = self.do_substitutions(&constraint.1);
-        let type2 = type2.display(self.symbol_names);
+        let type2 = type2.display(&self.ctx.symbols);
         let module = &constraint.3;
         match constraint.2 {
             ConstraintSource::AlwaysStatisfied => {
@@ -943,7 +932,7 @@ impl<'a, 'b, 'c> Solver<'a, 'b, 'c> {
                     "Remaining statements have type `{}`, \
                     while it should be `m a`.",
                     type1);
-                self.errors
+                self.ctx.errors
                     .type_error(module)
                     .note(msg, span)
                     .done();
@@ -952,11 +941,11 @@ impl<'a, 'b, 'c> Solver<'a, 'b, 'c> {
                 let msg1 = format!(
                     "Infered type `{}` for `{}`.",
                     type1,
-                    self.symbol_names[&sym]);
+                    self.ctx.symbols.symbol_name(sym));
                 let msg2 = format!(
                     "but annotation says it should have type `{}`.",
                     type2);
-                self.errors
+                self.ctx.errors
                     .type_error(module)
                     .note(msg1, def_span)
                     .note(msg2, annot_span)
@@ -968,7 +957,7 @@ impl<'a, 'b, 'c> Solver<'a, 'b, 'c> {
                     while expected type was `{}`.",
                     type1,
                     type2);
-                self.errors
+                self.ctx.errors
                     .type_error(module)
                     .note(msg, span)
                     .done();
@@ -978,7 +967,7 @@ impl<'a, 'b, 'c> Solver<'a, 'b, 'c> {
                     "Value that is being unwrapped has type `{}`, while it \
                     should be `m a`",
                     type1);
-                self.errors
+                self.ctx.errors
                     .type_error(module)
                     .note(msg, span)
                     .done();
@@ -987,7 +976,7 @@ impl<'a, 'b, 'c> Solver<'a, 'b, 'c> {
                 let msg1 = format!(
                     "This expression has type `{}`, and cannot be used as a function.",
                     type1);
-                self.errors
+                self.ctx.errors
                     .type_error(module)
                     .note(msg1, span)
                     .done();
@@ -996,12 +985,12 @@ impl<'a, 'b, 'c> Solver<'a, 'b, 'c> {
                 let msg = format!(
                     "`{}` expects {}{} arg to have type `{}`, \
                     but it has type `{}`.",
-                    fn_name.name(self.symbol_names),
+                    fn_name.name(&self.ctx.symbols),
                     index + 1,
                     number_suffix(index + 1),
                     type1,
                     type2);
-                self.errors
+                self.ctx.errors
                     .type_error(module)
                     .note(msg, span)
                     .done();
@@ -1013,7 +1002,7 @@ impl<'a, 'b, 'c> Solver<'a, 'b, 'c> {
                 let msg2 = format!(
                     "while else branch has type `{}`,",
                     type2);
-                self.errors
+                self.ctx.errors
                     .type_error(module)
                     .note(msg1, first_span)
                     .note(msg2, second_span)
@@ -1023,7 +1012,7 @@ impl<'a, 'b, 'c> Solver<'a, 'b, 'c> {
                 let msg = format!(
                     "Condition has type `{}`, when it should be `Bool`.",
                     type1);
-                self.errors
+                self.ctx.errors
                     .type_error(module)
                     .note(msg, span)
                     .done();
@@ -1033,7 +1022,7 @@ impl<'a, 'b, 'c> Solver<'a, 'b, 'c> {
                     "Infix operator has type `{}`, when it should be a \
                     function with two parameters.",
                     type1);
-                self.errors
+                self.ctx.errors
                     .type_error(module)
                     .note(msg, span)
                     .done();
@@ -1049,7 +1038,7 @@ impl<'a, 'b, 'c> Solver<'a, 'b, 'c> {
                     first_index + 2,
                     number_suffix(first_index + 2),
                     type2);
-                self.errors
+                self.ctx.errors
                     .type_error(module)
                     .note(msg1, first_span)
                     .note(msg2, second_span)
@@ -1066,7 +1055,7 @@ impl<'a, 'b, 'c> Solver<'a, 'b, 'c> {
                     first_index + 2,
                     number_suffix(first_index + 2),
                     type2);
-                self.errors
+                self.ctx.errors
                     .type_error(module)
                     .note(msg1, first_span)
                     .note(msg2, second_span)
@@ -1078,7 +1067,7 @@ impl<'a, 'b, 'c> Solver<'a, 'b, 'c> {
                     while matched value has type `{}`.",
                     type2,
                     type1);
-                self.errors
+                self.ctx.errors
                     .type_error(module)
                     .note(msg, span)
                     .done();
@@ -1088,9 +1077,9 @@ impl<'a, 'b, 'c> Solver<'a, 'b, 'c> {
                     "Infered type `{}` for `{}` from definition body, \
                     but it seems to be `{}` based on usage.",
                     type1,
-                    self.symbol_names[&sym],
+                    self.ctx.symbols.symbol_name(sym),
                     type2);
-                self.errors
+                self.ctx.errors
                     .type_error(module)
                     .note(msg, span)
                     .done();
@@ -1571,7 +1560,7 @@ fn infer_impl(
     }
 }
 
-pub fn infer_types(mut items: r::GroupedItems, errors: &mut Errors) -> t::Items {
+pub fn infer_types(mut items: r::GroupedItems, ctx: &mut CompileCtx) -> t::Items {
     let pattern_types = collect_pattern_types(&items);
     let trait_item_types = collect_trait_item_types(&items);
     let impl_item_types = make_impl_annotations(&items, &trait_item_types);
@@ -1589,8 +1578,7 @@ pub fn infer_types(mut items: r::GroupedItems, errors: &mut Errors) -> t::Items 
         let mut inferer = InferCtx::new(
             &pattern_types,
             &known_types,
-            errors,
-            &mut items.symbol_names);
+            ctx);
         
         let mut typed_defs = Vec::new();
         for def_group in &items.items {
@@ -1630,12 +1618,12 @@ pub fn infer_types(mut items: r::GroupedItems, errors: &mut Errors) -> t::Items 
             if !are_schemes_equal(&def.scheme, &scheme) {
                 let msg1 = format!(
                     "Infered type of `{}` is less general than annotated. Infered type `{}`,",
-                    items.symbol_names[&annot.value.value.value],
-                    def.scheme.display(&items.symbol_names));
+                    ctx.symbols.symbol_name(annot.value.value.value),
+                    def.scheme.display(&ctx.symbols));
                 let msg2 = format!(
                     "while annotation says it should be `{}`.",
-                    scheme.display(&items.symbol_names));
-                errors.type_error(&annot.value.module)
+                    scheme.display(&ctx.symbols));
+                ctx.errors.type_error(&annot.value.module)
                     .note(msg1, def.sym.span)
                     .note(msg2, annot.value.value.span)
                     .done();
@@ -1648,12 +1636,12 @@ pub fn infer_types(mut items: r::GroupedItems, errors: &mut Errors) -> t::Items 
             if !are_schemes_equal(&def.def.scheme, scheme) {
                 let msg1 = format!(
                     "Infered type of `{}` is less general than required. Infered type `{}`,",
-                    items.symbol_names[&def.def.sym.value],
-                    def.def.scheme.display(&items.symbol_names));
+                    ctx.symbols.symbol_name(def.def.sym.value),
+                    def.def.scheme.display(&ctx.symbols));
                 let msg2 = format!(
                     "while annotation says it should be `{}`.",
-                    scheme.display(&items.symbol_names));
-                errors.type_error(&def.def.module)
+                    scheme.display(&ctx.symbols));
+                ctx.errors.type_error(&def.def.module)
                     .note(msg1, def.def.sym.span)
                     .note(msg2, span)
                     .done();
@@ -1666,7 +1654,6 @@ pub fn infer_types(mut items: r::GroupedItems, errors: &mut Errors) -> t::Items 
         traits,
         impls,
         items: defs,
-        symbol_names: items.symbol_names,
         symbol_types: symbol_types,
     }
 }

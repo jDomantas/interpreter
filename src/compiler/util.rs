@@ -1,6 +1,6 @@
 use std::collections::{BTreeSet, BTreeMap};
-use ast::Node;
-use ast::resolved::{Type, Sym, Symbol};
+use ast::{Node, Sym, Symbol};
+use ast::resolved::Type;
 
 
 pub struct Graph<'a, T: 'a + ?Sized> {

@@ -1,30 +1,3 @@
-import Basics exposing (..)
-import List exposing (List(..))
-import Option exposing (Option(..))
-import String exposing (String)
+import Basics
 
-type Bit = Zero | One
-
-not bit = case bit of
-    Zero -> One
-    One -> Zero
-
-xor a b = case a of
-    Zero -> b
-    One -> not b
-
-impl Bit : Appendable where
-    (++) = xor
-
-impl Bit : Default where
-    default = Zero
-
-toInt bit = case bit of
-    Zero -> 0
-    One -> 1
-
-impl Bit : Eq where
-    a == b = toInt a == toInt b
-
-main = List.fold [One, Zero, Zero] == One
-
+main = 1

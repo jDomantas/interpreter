@@ -3,8 +3,8 @@ extern crate interpreter;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::Read;
-use interpreter::position::Span;
-use interpreter::errors::Error;
+use interpreter::util::position::Span;
+use interpreter::util::errors::Error;
 
 
 fn main() {

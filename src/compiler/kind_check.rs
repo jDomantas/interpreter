@@ -1,11 +1,11 @@
 use std::collections::{BTreeSet, BTreeMap};
 use std::collections::btree_map::Entry;
 use std::fmt;
-use ast::{Node, Name};
-use ast::resolved::{TypeDecl, Type, Items, Trait, TypeAnnot, Scheme, Impl, Sym, Symbol};
+use ast::{Node, Name, Sym, Symbol};
+use ast::resolved::{TypeDecl, Type, Items, Trait, TypeAnnot, Scheme, Impl};
 use compiler::util::{self, Graph};
-use errors::Errors;
-use position::Span;
+use util::CompileCtx;
+use util::position::Span;
 
 
 #[derive(PartialEq, Eq, Debug, Clone)]
@@ -94,27 +94,25 @@ struct InferCtx<'a, 'b> {
     kinds: BTreeMap<Sym, Kind>,
     trait_kinds: BTreeMap<Sym, Kind>,
     next_var: u64,
-    errors: &'b mut Errors,
+    ctx: &'b mut CompileCtx,
     constraints: Vec<Constraint<'a>>,
     new_kinds: BTreeMap<Sym, Kind>,
     var_kinds: BTreeMap<Sym, Kind>,
     substitutions: BTreeMap<u64, Kind>,
-    symbol_names: &'b BTreeMap<Sym, String>,
 }
 
 impl<'a, 'b> InferCtx<'a, 'b> {
-    fn new(errors: &'b mut Errors, symbol_names: &'b BTreeMap<Sym, String>) -> Self {
+    fn new(ctx: &'b mut CompileCtx) -> Self {
         InferCtx {
             kinds: BTreeMap::new(),
             trait_kinds: BTreeMap::new(),
             // start from 1 because 0 is used as id for `self`
             next_var: 1,
-            errors,
+            ctx,
             constraints: Vec::new(),
             new_kinds: BTreeMap::new(),
             var_kinds: BTreeMap::new(),
             substitutions: BTreeMap::new(),
-            symbol_names,
         }
     }
 
@@ -141,28 +139,28 @@ impl<'a, 'b> InferCtx<'a, 'b> {
                 (msg, module, f.span)
             }
         };
-        self.errors
+        self.ctx.errors
             .kind_error(module)
             .note(message, span)
             .done();
     }
 
     fn invalid_self(&mut self, span: Span, module: &Name) {
-        self.errors
+        self.ctx.errors
             .kind_error(module)
             .note("`self` type can only be used in trait definitions.", span)
             .done();
     }
 
     fn missing_self(&mut self, span: Span, module: &Name) {
-        self.errors
+        self.ctx.errors
             .kind_error(module)
             .note("`self` must be mentioned at least once in every trait member.", span)
             .done();
     }
 
     fn unused_var(&mut self, span: Span, module: &Name) {
-        self.errors
+        self.ctx.errors
             .kind_error(module)
             .note("Constrained type variable must be used in implementing type.", span)
             .done();
@@ -250,7 +248,7 @@ impl<'a, 'b> InferCtx<'a, 'b> {
                 Kind::Star
             }
             Type::SelfType => {
-                let self_ = Sym::new(0);
+                let self_ = Sym(0);
                 if self.var_kinds.contains_key(&self_) {
                     self.var_kinds[&self_].clone()
                 } else {
@@ -356,7 +354,7 @@ impl<'a, 'b> InferCtx<'a, 'b> {
         debug_assert!(self.var_kinds.is_empty());
         debug_assert!(self.substitutions.is_empty());
         let self_kind = self.fresh_var();
-        self.var_kinds.insert(Sym::new(0), self_kind);
+        self.var_kinds.insert(Sym(0), self_kind);
         for annot in &trait_.values {
             let scheme = &annot.value.type_;
             self.infer_for_type(&scheme.value.type_, &trait_.module, true);
@@ -365,7 +363,7 @@ impl<'a, 'b> InferCtx<'a, 'b> {
             }
         }
         let self_kind = if self.solve_constraints() {
-            let kind = self.var_kinds.remove(&Sym::new(0)).unwrap();
+            let kind = self.var_kinds.remove(&Sym(0)).unwrap();
             let mut kind = self.do_substitutions(kind);
             kind.default_vars();
             kind
@@ -402,10 +400,10 @@ impl<'a, 'b> InferCtx<'a, 'b> {
                         if entry.get() != &Kind::Any {
                             let message = format!(
                                 "Variable {} here has kind `{}`, but in previous bound it was bound to `{}`.",
-                                self.symbol_names[&var.value],
+                                self.ctx.symbols.symbol_name(var.value),
                                 kind,
                                 entry.get());
-                            self.errors
+                            self.ctx.errors
                                 .kind_error(module)
                                 .note(message, var.span)
                                 .done();
@@ -453,10 +451,10 @@ impl<'a, 'b> InferCtx<'a, 'b> {
                 if self_kind != *kind && self_kind != Kind::Any && *kind != Kind::Any {
                     let message = format!(
                         "Trait `{}` has kind `{}`, but its parent trait has kind `{}`.",
-                        self.symbol_names[&trait_.name.value],
+                        self.ctx.symbols.symbol_name(trait_.name.value),
                         self_kind,
                         kind);
-                    self.errors
+                    self.ctx.errors
                         .kind_error(&trait_.module)
                         .note(message, base_trait.span)
                         .done();
@@ -464,7 +462,7 @@ impl<'a, 'b> InferCtx<'a, 'b> {
             }
         }
         for annot in &trait_.values {
-            self.var_kinds.insert(Sym::new(0), self_kind.clone());
+            self.var_kinds.insert(Sym(0), self_kind.clone());
             self.validate_scheme(&annot.value.type_.value, &trait_.module);
         }
     }
@@ -495,7 +493,7 @@ impl<'a, 'b> InferCtx<'a, 'b> {
                             "Inferred kind `{}` for this type, but trait expected it to be `{}`.",
                             kind,
                             trait_);
-                        self.errors
+                        self.ctx.errors
                             .kind_error(&impl_.module)
                             .note(message, impl_.scheme.value.type_.span)
                             .done();
@@ -585,33 +583,24 @@ fn make_graph<'a, I: Iterator<Item=&'a TypeDecl>>(decls: I) -> Graph<'a, Sym> {
     Graph::new(nodes)
 }
 
-pub fn find_kind_errors(items: &Items, errors: &mut Errors) -> Result<(), ()> {
-    let errors_before = errors.error_count();
+pub fn find_kind_errors(items: &Items, ctx: &mut CompileCtx) {
     let graph = make_graph(items.types.iter());
     let components = graph.to_strongly_connected_components();
     let table = items.types.iter().map(|decl| (decl.name(), decl)).collect::<BTreeMap<_, _>>();
     
-    {
-        let mut inferer = InferCtx::new(errors, &items.symbol_names);
-        for scc in components {
-            let decls = scc.into_iter().map(|name| table[name]).collect::<Vec<_>>();
-            inferer.add_types(&decls);
-        }
-        inferer.infer_traits(&items.traits);
-        for annot in items.annotations.values() {
-            inferer.validate_annotation(&annot.value, &annot.value.module);
-        }
-        for trait_ in &items.traits {
-            inferer.validate_trait(trait_);
-        }
-        for impl_ in &items.impls {
-            inferer.validate_impl(impl_);
-        }
+    let mut inferer = InferCtx::new(ctx);
+    for scc in components {
+        let decls = scc.into_iter().map(|name| table[name]).collect::<Vec<_>>();
+        inferer.add_types(&decls);
     }
-
-    if errors.error_count() == errors_before {
-        Ok(())
-    } else {
-        Err(())
+    inferer.infer_traits(&items.traits);
+    for annot in items.annotations.values() {
+        inferer.validate_annotation(&annot.value, &annot.value.module);
+    }
+    for trait_ in &items.traits {
+        inferer.validate_trait(trait_);
+    }
+    for impl_ in &items.impls {
+        inferer.validate_impl(impl_);
     }
 }

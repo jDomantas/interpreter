@@ -1,0 +1,10 @@
+type Nat = Zero | Succ Nat
+
+two = Succ (Succ Zero)
+
+-- expect string: 2
+main = case two of
+    Zero -> "0"
+    Succ Zero -> "1"
+    Succ (Succ Zero) -> "2"
+    _ -> "big number"

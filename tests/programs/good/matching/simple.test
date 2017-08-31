@@ -1,0 +1,6 @@
+type AorB = A | B
+
+-- expect string: got B
+main = case B of
+    A -> "got A"
+    B -> "got B"

@@ -1,0 +1,14 @@
+trait Foo where
+    foo : self -> self
+
+type T = A | B
+
+impl T : Foo where
+    foo _ = B
+
+toString x = case x of
+    A -> "A"
+    B -> "B"
+
+-- expect string: B
+main = toString (foo A)

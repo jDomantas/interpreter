@@ -1,0 +1,7 @@
+import Basics exposing ((==), (&&), not)
+
+test1 = "a quick brown fox" == "a quick brown fox"
+test2 = "jumps over a lazy dog" == "jumps over A lazy Dog"
+
+-- expect bool: true
+main = test1 && not test2

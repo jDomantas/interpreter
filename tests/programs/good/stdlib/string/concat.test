@@ -1,0 +1,4 @@
+import Basics exposing ((++))
+
+-- expect string: foobar
+main = "foo" ++ "bar"

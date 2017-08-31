@@ -1,0 +1,22 @@
+trait Foo where
+    foo : self -> self -> self
+
+bar : [a : Foo] a -> a
+bar x = foo x x
+
+type T = A | B | C
+
+impl T : Foo where
+    foo a b = case (a, b) of
+        (A, A) -> B
+        (B, B) -> C
+        (C, C) -> A
+        _ -> a
+
+toString x = case x of
+    A -> "A"
+    B -> "B"
+    C -> "C"
+
+-- expect string: A
+main = toString (bar C)

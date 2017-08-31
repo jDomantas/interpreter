@@ -1,0 +1,18 @@
+import Basics exposing ((+), (*))
+import Computation exposing (Computation)
+
+type Id a = Id a
+
+impl Id : Computation where
+    succeed = Id
+    andThen f (Id a) = f a
+
+value = do
+    x <- Id 1
+    let y = 3
+    y <- Id (y * 2)
+    Id (x + y)
+
+-- expect int: 7
+main = case value of
+    Id a -> a

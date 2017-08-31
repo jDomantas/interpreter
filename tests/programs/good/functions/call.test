@@ -1,0 +1,4 @@
+-- expect int: 2
+main = f 1 2 3
+
+f x y z = y

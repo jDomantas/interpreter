@@ -5,6 +5,9 @@ authors = ["Domantas Jadenkus <djadenkus@gmail.com>"]
 
 [dependencies]
 
+[dev-dependencies]
+walkdir = "1"
+
 [[bin]]
 name = "test_bin"
 path = "src/bin.rs"

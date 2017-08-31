@@ -1,0 +1,5 @@
+import Basics exposing (toString)
+import List
+
+-- expect string: [1, 2, 3, 4]
+main = toString [1, 2, 3, 4]

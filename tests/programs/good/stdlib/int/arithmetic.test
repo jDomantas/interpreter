@@ -1,0 +1,4 @@
+import Basics exposing ((+), (-), (*), (//))
+
+-- expect int: 8
+main = 8 + 6 * 3 // 7 - 2

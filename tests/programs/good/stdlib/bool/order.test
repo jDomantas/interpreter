@@ -1,0 +1,4 @@
+import Basics exposing ((<), (>), not, (&&))
+
+-- expect bool: true
+main = (false < true) && not (false > true) && not (false < false)

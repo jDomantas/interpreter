@@ -1,0 +1,24 @@
+trait Foo where
+    foo : self -> self
+
+trait Bar where
+    bar : [a : Foo] self -> a -> a
+
+type Bool = False | True
+
+impl Bool : Bar where
+    bar me other = case me of
+        True -> foo other
+        False -> other
+
+impl Bool : Foo where
+    foo x = case x of
+        True -> False
+        False -> True
+
+toString x = case x of
+    True -> "True"
+    False -> "False"
+
+-- expect string: True
+main = toString (bar True False)

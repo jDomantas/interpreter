@@ -1,0 +1,10 @@
+type A = A
+type B = B
+
+f : a -> b -> a
+f x y = x
+
+toString A = "A"
+
+-- expect string: A
+main = toString (f A B)

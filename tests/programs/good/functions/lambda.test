@@ -1,0 +1,4 @@
+-- expect int: 2
+main = f (\x y z -> y) 3
+
+f g x = g 1 2 x

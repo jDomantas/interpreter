@@ -1,0 +1,8 @@
+-- expect string: foo
+main =
+    let
+        f x = x
+    in
+        second (f 1, f "foo")
+
+second (_, x) = x

@@ -1,0 +1,4 @@
+import Basics exposing (toString, (++))
+
+-- expect string: truefalse
+main = toString true ++ toString false

@@ -1,0 +1,26 @@
+import Basics exposing (toString)
+import Option
+import Computation exposing (Computation, Failable)
+
+type Opt a = Some a | None
+
+impl Opt : Computation where
+    succeed = Some
+    andThen f opt = case opt of
+        Some a -> f a
+        None -> None
+
+impl Opt : Failable where
+    fail = None
+
+value = do
+    x <- Some 1
+    if false
+    Some 2
+
+toOption opt = case opt of
+    Some a -> Option.Some a
+    None -> Option.None
+
+-- expect string: None
+main = toString (toOption value)

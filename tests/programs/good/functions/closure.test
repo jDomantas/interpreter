@@ -1,0 +1,6 @@
+-- expect int: 1
+main = alwaysOne "blahblah"
+
+alwaysOne = f 1
+
+f x = (\_ -> x)

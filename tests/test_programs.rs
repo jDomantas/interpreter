@@ -1,60 +1,83 @@
 extern crate interpreter;
+extern crate walkdir;
 
 use std::fs;
 use std::io::Read;
 use std::str;
 use std::collections::BTreeMap;
+use std::path::Path;
 use interpreter::parsing::BTreeMapProvider;
 use interpreter::position::Position;
+use interpreter::vm::{self, EvalError};
+
 
 #[test]
 fn run_test_programs() {
-    let dirs = [
-        "./tests/programs/bad/parse",
-        "./tests/programs/bad/symbol",
-        "./tests/programs/bad/fixity",
-        "./tests/programs/bad/type_alias",
-        "./tests/programs/bad/kind",
-        "./tests/programs/bad/type",
-        "./tests/programs/bad/trait",
-    ];
-    let mut failed_tests = Vec::new();
-    let mut passed = 0;
-    let mut failed = 0;
-    for dir in &dirs {
-        let files = fs::read_dir(dir).unwrap();
-        for file in files {
-            let file = file.unwrap();
-            let name = format!("{}/{}", dir, file.file_name().to_str().unwrap());
-            let mut file = fs::File::open(&name).unwrap();
-            let mut source = String::new();
-            file.read_to_string(&mut source).unwrap();
-            let result = run_test(&source);            
-            match result {
-                TestResult::Ok => {
-                    println!("program: \"{}\" ... ok", name);
-                    passed += 1;
-                }
-                TestResult::Err(expectation, outcome) => {
-                    println!("program: \"{}\" ... FAIL", name);
-                    failed_tests.push((name, expectation, outcome));
-                    failed += 1;
-                }
-            }
+    let mut runner = TestRunner::new();
+    for entry in walkdir::WalkDir::new("./tests/programs") {
+        let entry = entry.expect("failed to read fs entry");
+        if entry.file_type().is_file() {
+            let name = format!("{}", entry.path().display());
+            runner.run_file(entry.path(), &name);
+        }
+    }
+    runner.report_results();
+}
+
+struct TestRunner {
+    failed: u64,
+    passed: u64,
+    results: BTreeMap<String, TestResult>,
+}
+
+impl TestRunner {
+    fn new() -> TestRunner {
+        TestRunner {
+            failed: 0,
+            passed: 0,
+            results: BTreeMap::new(),
         }
     }
 
-    println!("{} passed, {} failed", passed, failed);
-    if !failed_tests.is_empty() {
-        println!("failed tests:");
-        for (test, expectation, outcome) in failed_tests {
-            println!("- {}", test);
-            println!("expected:");
-            expectation.report();
-            println!("outcome:");
-            outcome.report();
+    fn run_file(&mut self, path: &Path, name: &str) {
+        let mut file = fs::File::open(path).expect("failed to open test file");
+        let mut source = String::new();
+        file.read_to_string(&mut source).expect("failed to read test file");
+        self.run_test(name, &source);
+    }
+
+    fn run_test(&mut self, name: &str, source: &str) {
+        let result = run_test(source);
+        match result {
+            TestResult::Ok => self.passed += 1,
+            TestResult::Err(_, _) => self.failed += 1,
         }
-        panic!("{} passed, {} failed", passed, failed);
+        self.results.insert(name.into(), result);
+    }
+
+    fn report_results(&self) {
+        let mut failed_tests = String::new();
+        for (name, result) in &self.results {
+            match *result {
+                TestResult::Ok => {
+                    println!("test {} ... ok", name);
+                }
+                TestResult::Err(ref expected, ref outcome) => {
+                    println!("test {} ... FAILED", name);
+                    println!("expected:");
+                    expected.report();
+                    println!("outcome:");
+                    outcome.report();
+                    failed_tests.push_str("'");
+                    failed_tests.push_str(name);
+                    failed_tests.push_str("', ");
+                }
+            }
+        }
+        println!("passed: {}, failed: {}", self.passed, self.failed);
+        if self.failed > 0 {
+            panic!("failed {} tests: {}", self.failed, failed_tests);
+        }
     }
 }
 
@@ -71,14 +94,14 @@ fn run_program(source: &str) -> Outcome {
     let modules = parse_modules_from_source(source);
     let main = modules.get_module_source("Main").unwrap();
 
-    match interpreter::compile(&modules, main) {
-        Ok(_) => Outcome::Ok,
+    let (fns, globals) = match interpreter::compile(&modules, main) {
+        Ok(result) => result,
         Err(errors) => {
             let errors = errors.into_error_list();
             let err = errors[0].clone();
             let pos = err.notes[0].span.start;
             let message = err.notes[0].message.clone();
-            match err.phase {
+            return match err.phase {
                 Phase::Parsing => Outcome::ParseError(pos, message),
                 Phase::SymbolResolution => {
                     let errors = errors
@@ -105,8 +128,14 @@ fn run_program(source: &str) -> Outcome {
                 Phase::TypeChecking => Outcome::TypeError(pos, message),
                 Phase::TraitChecking => Outcome::TraitError(pos, message),
                 Phase::PatternError => unimplemented!(),
-            }
+            };
         }
+    };
+
+    let mut vm = interpreter::vm::Vm::new(globals, &fns);
+    match vm.eval_globals() {
+        Ok(value) => Outcome::Ok(value),
+        Err(err) => Outcome::EvalError(err),
     }
 }
 
@@ -169,7 +198,39 @@ fn parse_expectation(source: &str) -> Expectation {
         return e;
     }
 
+    for line in source.lines() {
+        if line.starts_with("-- expect int: ") {
+            let value = str::parse::<i64>(&line[15..]).unwrap();
+            return Expectation::Ok(Value::Int(value));
+        } else if line.starts_with("-- expect bool: true") {
+            return Expectation::Ok(Value::Bool(true));
+        } else if line.starts_with("-- expect bool: false") {
+            return Expectation::Ok(Value::Bool(false));
+        } else if line.starts_with("-- expect string: ") {
+            let s = line[18..].to_string();
+            return Expectation::Ok(Value::Str(s));
+        }
+    }
+
     panic!("no expectations in program");
+}
+
+#[derive(Debug)]
+enum Value {
+    Bool(bool),
+    Int(i64),
+    Str(String),
+}
+
+impl Value {
+    fn matches_vm_val(&self, value: &vm::Value) -> bool {
+        match (self, value) {
+            (&Value::Bool(b), &vm::Value::Bool(b2)) => b == b2,
+            (&Value::Int(i), &vm::Value::Int(i2)) => i == i2,
+            (&Value::Str(ref s), &vm::Value::Str(ref s2)) => *s == **s2,
+            _ => false,
+        }
+    }
 }
 
 enum Expectation {
@@ -180,6 +241,7 @@ enum Expectation {
     KindError(Position),
     TypeError(Position),
     TraitError(Position),
+    Ok(Value),
 }
 
 impl Expectation {
@@ -209,6 +271,9 @@ impl Expectation {
             Expectation::TraitError(pos) => {
                 println!("trait error at line {}, column {}", pos.line, pos.column);
             }
+            Expectation::Ok(ref value) => {
+                println!("success: {:?}", value);
+            }
         }
     }
 }
@@ -221,7 +286,8 @@ enum Outcome {
     KindError(Position, String),
     TypeError(Position, String),
     TraitError(Position, String),
-    Ok,
+    EvalError(EvalError),
+    Ok(vm::Value),
 }
 
 impl Outcome {
@@ -265,8 +331,11 @@ impl Outcome {
                 println!("trait error at line {}, column {}", pos.line, pos.column);
                 println!("reason: {}", msg);
             }
-            Outcome::Ok => {
-                println!("program passed");
+            Outcome::EvalError(ref err) => {
+                println!("eval error: {:?}", err);
+            }
+            Outcome::Ok(ref value) => {
+                println!("success: {:?}", value);
             }
         }
     }
@@ -304,6 +373,11 @@ impl TestResult {
             }
             (&Expectation::RecursiveAliasError, &Outcome::AliasError(_)) => {
                 return TestResult::Ok;
+            }
+            (&Expectation::Ok(ref val1), &Outcome::Ok(ref val2)) => {
+                if val1.matches_vm_val(val2) {
+                    return TestResult::Ok;
+                }
             }
             _ => { }
         }

@@ -1,0 +1,4 @@
+import Basics exposing (toString)
+
+-- expect string: 1337420
+main = toString 1337420

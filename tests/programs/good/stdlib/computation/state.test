@@ -1,0 +1,40 @@
+import Basics exposing ((+), toString, Int)
+import List
+import Computation exposing (..)
+
+
+type State s a = State (s -> (s, a))
+
+get : State s s
+get = State (\s -> (s, s))
+
+set : s -> State s ()
+set state = State (\_ -> (state, ()))
+
+impl State s : Computation where
+    succeed x = State (\s -> (s, x))
+    andThen f (State run) = State (\s ->
+        case run s of
+            (newState, res) ->
+                case f res of
+                    (State run2) -> run2 newState)
+
+runState : s -> State s a -> a
+runState init (State run) =
+    case run init of
+        (_, result) -> result
+
+add : Int -> State Int Int
+add to = do
+    current <- get
+    set (current + 1)
+    succeed (to + current)
+
+list = do
+    x <- add 1
+    y <- add 5
+    z <- add 3
+    succeed [x, y, z]
+
+-- expect string: [1, 6, 5]
+main = toString (runState 0 list)

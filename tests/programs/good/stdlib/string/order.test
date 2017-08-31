@@ -1,0 +1,8 @@
+import Basics exposing ((<), (>), not, (&&))
+
+test1 = "abc" < "aaa"
+test2 = "bbb" < "ccc"
+test3 = "abcdef" > "abc"
+
+-- expect bool: true
+main = not test1 && test2 && test3

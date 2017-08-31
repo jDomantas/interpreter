@@ -1,0 +1,7 @@
+import Basics exposing (Bool, (&&))
+
+neverReturns : Bool -> Bool
+neverReturns x = neverReturns x
+
+-- expect bool: false
+main = false && neverReturns true

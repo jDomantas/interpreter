@@ -1,0 +1,2 @@
+-- expect bool: true
+main = true

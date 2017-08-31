@@ -15,95 +15,21 @@ fn main() {
 }
 
 fn run(source: &str) {
-    use interpreter::parsing::parse_modules;
-    use interpreter::compiler::symbols::resolve_symbols;
-    use interpreter::compiler::alias_expansion::expand_aliases;
-    use interpreter::compiler::precedence::fix_items;
-    use interpreter::compiler::kind_check::find_kind_errors;
-    use interpreter::compiler::def_grouping::group_items;
-    use interpreter::compiler::type_check::infer_types;
-    use interpreter::compiler::trait_check::check_items;
-    use interpreter::compiler::monomorphisation::monomorphise;
+    use interpreter::parsing::BTreeMapProvider;
 
-    let modules = interpreter::parsing::BTreeMapProvider::new(BTreeMap::new());
-    let mut errors = interpreter::errors::Errors::new();
-
-    let modules = parse_modules(source, &modules, &mut errors);
-    if errors.have_errors() {
-        for err in errors.into_error_list() {
-            format_error(source, &err);
+    let modules = BTreeMapProvider::new(BTreeMap::new());
+    let (fns, globals) = match interpreter::compile(&modules, source) {
+        Ok(result) => result,
+        Err(errors) => {
+            for err in errors.into_error_list() {
+                format_error(source, &err);
+            }
+            return;
         }
-        return;
-    }
-
-    let items = resolve_symbols(&modules, &mut errors);
-    if errors.have_errors() {
-        for err in errors.into_error_list() {
-            format_error(source, &err);
-        }
-        return;
     };
 
-    let items = expand_aliases(items, &mut errors);
-    if errors.have_errors() {
-        for err in errors.into_error_list() {
-            format_error(source, &err);
-        }
-        return;
-    };
-
-    let items = fix_items(items, &mut errors);
-    if errors.have_errors() {
-        for err in errors.into_error_list() {
-            format_error(source, &err);
-        }
-        return;
-    };
-
-    let res = find_kind_errors(&items, &mut errors);
-    if errors.have_errors() {
-        for err in errors.into_error_list() {
-            format_error(source, &err);
-        }
-        return;
-    };
-    assert!(res.is_ok());
-
-    let items = group_items(items);
-
-    let mut items = infer_types(items, &mut errors);
-    if errors.have_errors() {
-        for err in errors.into_error_list() {
-            format_error(source, &err);
-        }
-        return;
-    }
-
-    // interpreter::ast::typed::printer::print_items(&items);
-
-    check_items(&mut items, &mut errors);
-    if errors.have_errors() {
-        for err in errors.into_error_list() {
-            format_error(source, &err);
-        }
-        return;
-    }
-
-    let mut items = monomorphise(items);
-
-    interpreter::compiler::closure_fix::optimise(&mut items);
-
-    println!("OK");
-
-    println!(">>> POST OPT");
-    interpreter::ast::monomorphised::printer::print_items(&items);
-
-    println!(">>> BYTECODE");
-
-    let (fns, globals) = interpreter::compiler::compilation::compile(items);
-
-    println!("globals: {:#?}", globals);
-    println!("fns: {:#?}", fns);
+    // println!("globals: {:#?}", globals);
+    // println!("fns: {:#?}", fns);
 
     let mut vm = interpreter::vm::Vm::new(globals, &fns);
     let res = vm.eval_globals();

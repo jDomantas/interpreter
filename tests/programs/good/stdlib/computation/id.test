@@ -16,3 +16,4 @@ value = do
 -- expect int: 7
 main = case value of
     Id a -> a
+    

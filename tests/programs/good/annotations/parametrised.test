@@ -1,0 +1,15 @@
+trait Foo where
+    foo : self
+
+f : [a : Foo] a -> a
+f x = x
+
+type A = A
+
+impl A : Foo where
+    foo = A
+
+toString A = "A"
+
+-- expect string: A
+main = toString (f A)

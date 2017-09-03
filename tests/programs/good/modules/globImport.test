@@ -1,0 +1,10 @@
+import Other exposing (..)
+
+-- expect string: ok
+main = f (g "ok")
+
+-- module: Other
+module Other exposing (..)
+
+f x = x
+g x = x

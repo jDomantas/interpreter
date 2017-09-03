@@ -1,0 +1,11 @@
+import Other exposing (value)
+
+value = "ok"
+
+-- expect string: ok
+main = value
+
+-- module: Other
+module Other exposing (..)
+
+value = "bad"

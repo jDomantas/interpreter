@@ -7,7 +7,7 @@ use std::str;
 use std::collections::BTreeMap;
 use std::path::Path;
 use interpreter::parsing::BTreeMapProvider;
-use interpreter::position::Position;
+use interpreter::util::position::Position;
 use interpreter::vm::{self, EvalError};
 
 
@@ -89,7 +89,7 @@ fn run_test(source: &str) -> TestResult {
 
 fn run_program(source: &str) -> Outcome {
     use interpreter::parsing::SourceProvider;
-    use interpreter::errors::Phase;
+    use interpreter::util::errors::Phase;
 
     let modules = parse_modules_from_source(source);
     let main = modules.get_module_source("Main").unwrap();

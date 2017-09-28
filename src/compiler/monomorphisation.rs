@@ -174,7 +174,7 @@ impl<'a> Solver<'a> {
                     self.current_context.insert(def.value.sym.value, context);
                 }
                 for def in simple_defs {
-                    self.instantiate_def(def, impls);
+                    self.instantiate_symbol(def, &Impls::empty(), impls);
                 }
                 let value = self.instantiate_expr(&value.value, impls);
                 for (def, ctx) in prev_context {

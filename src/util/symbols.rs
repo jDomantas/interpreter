@@ -25,6 +25,17 @@ impl SymbolSource {
             };
             symbols.insert(sym, data);
         }
+
+        // TODO: fixme
+        symbols.insert(Sym(0), SymbolType::Original {
+            name: "self".into(),
+            times_derived: 0,
+        });
+        symbols.insert(Sym(1), SymbolType::Original {
+            name: "Tuple".into(),
+            times_derived: 0,
+        });
+
         SymbolSource {
             next_sym: 100,
             symbols,

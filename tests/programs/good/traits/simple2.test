@@ -1,0 +1,17 @@
+trait Foo where
+    foo : self
+
+impl () : Foo where
+    foo = ()
+
+-- f : () -> String
+-- but I don't want to import stdlib
+f x = case x of
+    () -> "ok"
+
+-- expect string: ok
+main =
+    let
+        x = foo
+    in
+        f x

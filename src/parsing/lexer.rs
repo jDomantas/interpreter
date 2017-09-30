@@ -159,7 +159,7 @@ impl<'a, 'b> Lexer<'a, 'b> {
 
     fn lex_number(&mut self) -> Node<Token> {
         let (number, span) = self.collect_chars(|ch| {
-           ch.is_alphanumeric() || ch == '_' || ch == '.'
+            is_symbol_char(ch) || ch == '.'
         });
         debug_assert!(!number.is_empty());
 

@@ -515,8 +515,8 @@ impl<'a> Vm<'a> {
                 self.stack.push(Value::Int(s.chars().count() as i64));
             }
             StrCharAt => {
-                let s = self.pop_string();
                 let index = self.pop_int() as usize;
+                let s = self.pop_string();
                 match s.chars().nth(index) {
                     Some(c) => self.stack.push(make_some(Value::Char(c))),
                     None => self.stack.push(make_none()),

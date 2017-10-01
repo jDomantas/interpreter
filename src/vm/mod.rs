@@ -529,9 +529,9 @@ impl<'a> Vm<'a> {
                 self.stack.push(Value::Str(a));
             }
             StrSubstring => {
-                let s = self.pop_string();
                 let index = self.pop_int() as usize;
                 let length = self.pop_int() as usize;
+                let s = self.pop_string();
                 let s = s.chars().skip(index).take(length).collect();
                 self.stack.push(Value::Str(Rc::new(s)));
             }

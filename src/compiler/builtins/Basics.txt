@@ -121,6 +121,9 @@ impl Frac : Eq where
 impl Bool : Eq where
     a == b = if a then b else not b
 
+impl Char : Eq where
+    (==) = charEq
+
 infix 4 ==
 infix 4 !=
 

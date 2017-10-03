@@ -1,0 +1,6 @@
+import Basics exposing (..)
+
+-- expect string: abc
+main = (\_ -> f <| "a" ++ "b") ()
+
+f s = s ++ "c"

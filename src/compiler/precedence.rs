@@ -158,6 +158,7 @@ impl<'a, 'b> Context<'a, 'b> {
                     Expr::Literal(literal)
                 }
                 Expr::Parenthesised(expr) => {
+                    let expr = Box::new(self.fix_expr(*expr));
                     Expr::Parenthesised(expr)
                 }
                 Expr::Tuple(items) => {

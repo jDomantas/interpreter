@@ -276,6 +276,10 @@ impl<'a> Rewriter for Unclosure<'a> {
                 if free_vars.len() == vars_before {
                     // none of the defs are recursive
                     // so there is no need to fix closures
+                    // just fix their values
+                    for def in defs {
+                        self.rewrite_expr(&mut def.value);
+                    }
                     return;
                 }
                 if free_vars.len() == 0 {

@@ -15,13 +15,12 @@ mod util;
 use std::collections::BTreeMap;
 use ast::Name;
 use ast::parsed::Module;
-use util::symbols::Sym;
 use util::CompileCtx;
-use vm::{GlobalValue, Function};
+use vm::Vm;
 
 
 pub fn compile(modules: &BTreeMap<Name, Module>, ctx: &mut CompileCtx)
-    -> Result<(BTreeMap<u64, Function>, BTreeMap<Sym, GlobalValue>), ()>
+    -> Result<Vm, ()>
 {
     let items = resolve_symbols::resolve_symbols(modules, ctx);
     if ctx.errors.have_errors() {
@@ -59,9 +58,9 @@ pub fn compile(modules: &BTreeMap<Name, Module>, ctx: &mut CompileCtx)
 
     closure_fix::optimise(&mut items, ctx);
 
-    // ::ast::monomorphised::printer::print_items(&items, &ctx.symbols);
+    ::ast::monomorphised::printer::print_items(&items, &ctx.symbols);
 
-    let (fns, globals) = compilation::compile(items);
+    let vm = compilation::compile(items);
 
-    Ok((fns, globals))
+    Ok(vm)
 }

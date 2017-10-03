@@ -7,16 +7,14 @@ pub mod compiler;
 pub mod ast;
 pub mod vm;
 
-use std::collections::BTreeMap;
 use parsing::SourceProvider;
 use util::CompileCtx;
 use util::errors::Errors;
-use util::symbols::Sym;
-use vm::{Function, GlobalValue};
+use vm::Vm;
 
 
-pub fn compile<S: SourceProvider>(provider: &S, main: &str)
-    -> Result<(BTreeMap<u64, Function>, BTreeMap<Sym, GlobalValue>), Errors>
+pub fn compile<S>(provider: &S, main: &str) -> Result<Vm, Errors>
+    where S: SourceProvider
 {
     let mut ctx = CompileCtx::new();
 

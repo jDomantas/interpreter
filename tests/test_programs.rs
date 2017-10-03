@@ -47,6 +47,7 @@ impl TestRunner {
     }
 
     fn run_test(&mut self, name: &str, source: &str) {
+        println!("test: {}", name);
         let result = run_test(source);
         match result {
             TestResult::Ok => self.passed += 1,
@@ -94,8 +95,13 @@ fn run_program(source: &str) -> Outcome {
     let modules = parse_modules_from_source(source);
     let main = modules.get_module_source("Main").unwrap();
 
-    let (fns, globals) = match interpreter::compile(&modules, main) {
-        Ok(result) => result,
+    match interpreter::compile(&modules, main) {
+        Ok(mut vm) => {
+            match vm.get_main() {
+                Ok(value) => Outcome::Ok(value),
+                Err(err) => Outcome::EvalError(err),
+            }
+        }
         Err(errors) => {
             let errors = errors.into_error_list();
             let err = errors[0].clone();
@@ -130,12 +136,6 @@ fn run_program(source: &str) -> Outcome {
                 Phase::PatternError => unimplemented!(),
             };
         }
-    };
-
-    let mut vm = interpreter::vm::Vm::new(globals, &fns);
-    match vm.eval_globals() {
-        Ok(value) => Outcome::Ok(value),
-        Err(err) => Outcome::EvalError(err),
     }
 }
 
@@ -224,10 +224,10 @@ enum Value {
 
 impl Value {
     fn matches_vm_val(&self, value: &vm::Value) -> bool {
-        match (self, value) {
-            (&Value::Bool(b), &vm::Value::Bool(b2)) => b == b2,
-            (&Value::Int(i), &vm::Value::Int(i2)) => i == i2,
-            (&Value::Str(ref s), &vm::Value::Str(ref s2)) => *s == **s2,
+        match (self, vm::value_to_internal(value)) {
+            (&Value::Bool(b), &vm::InternalValue::Bool(b2)) => b == b2,
+            (&Value::Int(i), &vm::InternalValue::Int(i2)) => i == i2,
+            (&Value::Str(ref s), &vm::InternalValue::Str(ref s2)) => *s == **s2,
             _ => false,
         }
     }

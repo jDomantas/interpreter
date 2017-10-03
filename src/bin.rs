@@ -18,8 +18,8 @@ fn run(source: &str) {
     use interpreter::parsing::BTreeMapProvider;
 
     let modules = BTreeMapProvider::new(BTreeMap::new());
-    let (fns, globals) = match interpreter::compile(&modules, source) {
-        Ok(result) => result,
+    let mut vm = match interpreter::compile(&modules, source) {
+        Ok(vm) => vm,
         Err(errors) => {
             for err in errors.into_error_list() {
                 format_error(source, &err);
@@ -28,11 +28,7 @@ fn run(source: &str) {
         }
     };
 
-    // println!("globals: {:#?}", globals);
-    // println!("fns: {:#?}", fns);
-
-    let mut vm = interpreter::vm::Vm::new(globals, &fns);
-    let res = vm.eval_globals();
+    let res = vm.get_main();
     println!("res: {:#?}", res);
 }
 

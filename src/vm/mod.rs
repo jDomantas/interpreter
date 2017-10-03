@@ -1,98 +1,18 @@
+pub(crate) mod internal;
+
 use std::collections::BTreeMap;
 use std::rc::Rc;
 use ast::Sym;
+use self::internal::{Instruction, GlobalValue, Closure, Object, Value as RawValue};
+pub use self::internal::Value as InternalValue;
 
 
-#[derive(Debug, Clone)]
-pub enum Instruction {
-    NoOp,
-    PushValue(Value),
-    PushLocal(usize),
-    PushGlobal(Sym),
-    CreateFrame,
-    DeleteFrame,
-    TagTest(Sym, usize),
-    TestBool(bool, usize),
-    TestInt(i64, usize),
-    TestFrac(f64, usize),
-    TestChar(char, usize),
-    TestString(Rc<String>, usize),
-    Jump(usize),
-    CallFunction(u64),
-    Call(usize),
-    TailCallFunction(u64),
-    TailCall(usize),
-    MakeClosure(u64),
-    MakeObject(Sym, usize),
-    Return,
-    Nip(usize, usize),
-    Drop(usize),
-    Crash(&'static str),
-    IntAdd,
-    IntSub,
-    IntMul,
-    IntDiv,
-    IntLe,
-    IntEq,
-    IntGr,
-    IntToString,
-    FracAdd,
-    FracSub,
-    FracMul,
-    FracDiv,
-    FracLe,
-    FracEq,
-    FracGr,
-    FracToString,
-    CharToString,
-    CharLe,
-    CharEq,
-    CharGr,
-    StrLength,
-    StrCharAt,
-    StrAppend,
-    StrSubstring,
-    StrLe,
-    StrEq,
-}
-
-#[derive(Debug)]
-pub struct Function {
-    pub arg_count: usize,
-    pub instructions: Vec<Instruction>,
-}
-
-#[derive(Debug)]
-pub enum GlobalValue {
-    Thunk(u64),
-    Value(Value),
+pub fn value_to_internal(value: &Value) -> &InternalValue {
+    &value.0
 }
 
 #[derive(Debug, Clone)]
-pub enum Value {
-    Bool(bool),
-    Int(i64),
-    Frac(f64),
-    Char(char),
-    Str(Rc<String>),
-    Object(Rc<Object>),
-    Closure(Rc<Closure>),
-}
-
-// TODO: fields should not be pub?
-// pub(crate) at worst
-#[derive(Debug, Clone)]
-pub struct Object {
-    pub tag: Sym,
-    pub items: Vec<Value>,
-}
-
-// TODO: same as above
-#[derive(Debug, Clone)]
-pub struct Closure {
-    pub function: u64,
-    pub partial_args: Vec<Value>,
-}
+pub struct Value(RawValue);
 
 #[derive(Debug)]
 pub enum EvalError {
@@ -102,63 +22,67 @@ pub enum EvalError {
 pub type EvalResult = Result<Value, EvalError>;
 
 #[derive(Debug)]
-pub struct Vm<'a> {
+pub struct Vm {
     globals: BTreeMap<Sym, GlobalValue>,
-    functions: &'a BTreeMap<u64, Function>,
-    stack: Vec<Value>,
+    instructions: Vec<Instruction>,
+    stack: Vec<RawValue>,
     frames: Vec<usize>,
-    call_stack: Vec<(&'a Function, usize)>,
+    call_stack: Vec<usize>,
 }
 
-impl<'a> Vm<'a> {
+impl Vm {
     pub fn new(
             globals: BTreeMap<Sym, GlobalValue>,
-            functions: &'a BTreeMap<u64, Function>) -> Vm {
+            instructions: Vec<Instruction>) -> Vm {
         Vm {
             globals,
-            functions,
+            instructions,
             stack: Vec::new(),
             frames: Vec::new(),
             call_stack: Vec::new(),
         }
     }
 
-    pub fn eval_globals(&mut self) -> EvalResult {
+    pub fn get_main(&mut self) -> EvalResult {
         self.get_global(::compiler::builtins::values::MAIN)
     }
 
-    fn apply(&mut self, f: Value, args: &[Value]) -> EvalResult {
+    pub fn apply_multiple(&mut self, f: Value, args: &[Value]) -> EvalResult {
         for arg in args.iter().rev().cloned() {
-            self.stack.push(arg);
+            self.stack.push(arg.0);
         }
-        self.stack.push(f);
+        self.stack.push(f.0);
         self.run_instruction(Instruction::Call(args.len()))?;
-        Ok(self.stack.pop().unwrap())
+        Ok(Value(self.stack.pop().unwrap()))
     }
 
-    fn eval_thunk(&mut self, f: u64) -> EvalResult {
+    pub fn apply(&mut self, f: Value, arg: Value) -> EvalResult {
+        let args = &[arg];
+        self.apply_multiple(f, args)
+    }
+
+    fn eval_thunk(&mut self, f_address: usize) -> EvalResult {
         let old_stack_size = self.stack.len();
         let old_call_stack = ::std::mem::replace(&mut self.call_stack, Vec::new());
-        let f = &self.functions[&f];
-        self.call_stack.push((f, 0));
+        self.call_stack.push(f_address);
         while self.call_stack.len() > 0 {
             self.step()?;
         }
         let value = self.stack.pop().unwrap();
         debug_assert_eq!(self.stack.len(), old_stack_size);
         self.call_stack = old_call_stack;
-        Ok(value)
+        Ok(Value(value))
     }
 
     fn step(&mut self) -> Result<(), EvalError> {
         let instruction = match self.call_stack.last_mut() {
-            Some(&mut (f, ref mut ip)) => {
-                let i = f.instructions[*ip].clone();
+            Some(ip) => {
+                let i = self.instructions[*ip].clone();
                 *ip += 1;
                 i
             }
             None => {
-                return Ok(());
+                panic!("fell out of function")
             }
         };
         self.run_instruction(instruction)
@@ -167,19 +91,19 @@ impl<'a> Vm<'a> {
     fn get_global(&mut self, sym: Sym) -> EvalResult {
         let function_id = match self.globals[&sym] {
             GlobalValue::Value(ref val) => {
-                return Ok(val.clone());
+                return Ok(Value(val.clone()));
             }
             GlobalValue::Thunk(id) => {
                 id
             }
         };
-        let value = self.eval_thunk(function_id)?;
+        let value = self.eval_thunk(function_id)?.0;
         self.globals.insert(sym, GlobalValue::Value(value.clone()));
-        Ok(value)
+        Ok(Value(value))
     }
 
     fn set_ip(&mut self, ip: usize) {
-        self.call_stack.last_mut().unwrap().1 = ip;
+        *self.call_stack.last_mut().unwrap() = ip;
     }
 
     fn pop_frame(&mut self) {
@@ -215,7 +139,7 @@ impl<'a> Vm<'a> {
                 }
             }
             PushGlobal(sym) => {
-                let value = self.get_global(sym)?;
+                let value = self.get_global(sym)?.0;
                 self.stack.push(value);
             }
             CreateFrame => {
@@ -227,7 +151,7 @@ impl<'a> Vm<'a> {
             TagTest(tag, fail_jump) => {
                 let value = self.stack.last().unwrap().clone();
                 match value {
-                    Value::Object(ref obj) if obj.tag == tag => {
+                    RawValue::Object(ref obj) if obj.tag == tag => {
                         for item in &obj.items {
                             self.stack.push(item.clone());
                         }
@@ -241,8 +165,8 @@ impl<'a> Vm<'a> {
             TestBool(val, fail_jump) => {
                 let value = self.stack.last().unwrap().clone();
                 match value {
-                    Value::Bool(b) if b == val => {}
-                    Value::Bool(_) => {
+                    RawValue::Bool(b) if b == val => {}
+                    RawValue::Bool(_) => {
                         self.pop_frame();
                         self.set_ip(fail_jump);
                     }
@@ -254,8 +178,8 @@ impl<'a> Vm<'a> {
             TestInt(val, fail_jump) => {
                 let value = self.stack.last().unwrap().clone();
                 match value {
-                    Value::Int(i) if i == val => {}
-                    Value::Int(_) => {
+                    RawValue::Int(i) if i == val => {}
+                    RawValue::Int(_) => {
                         self.pop_frame();
                         self.set_ip(fail_jump);
                     }
@@ -267,8 +191,8 @@ impl<'a> Vm<'a> {
             TestFrac(val, fail_jump) => {
                 let value = self.stack.last().unwrap().clone();
                 match value {
-                    Value::Frac(f) if f == val => {}
-                    Value::Frac(_) => {
+                    RawValue::Frac(f) if f == val => {}
+                    RawValue::Frac(_) => {
                         self.pop_frame();
                         self.set_ip(fail_jump);
                     }
@@ -280,8 +204,8 @@ impl<'a> Vm<'a> {
             TestChar(val, fail_jump) => {
                 let value = self.stack.last().unwrap().clone();
                 match value {
-                    Value::Char(c) if c == val => {}
-                    Value::Char(_) => {
+                    RawValue::Char(c) if c == val => {}
+                    RawValue::Char(_) => {
                         self.pop_frame();
                         self.set_ip(fail_jump);
                     }
@@ -293,8 +217,8 @@ impl<'a> Vm<'a> {
             TestString(val, fail_jump) => {
                 let value = self.stack.last().unwrap().clone();
                 match value {
-                    Value::Str(ref s) if s == &val => {}
-                    Value::Str(_) => {
+                    RawValue::Str(ref s) if s == &val => {}
+                    RawValue::Str(_) => {
                         self.pop_frame();
                         self.set_ip(fail_jump);
                     }
@@ -306,20 +230,17 @@ impl<'a> Vm<'a> {
             Jump(address) => {
                 self.set_ip(address);
             }
-            CallFunction(id) => {
-                let f = &self.functions[&id];
-                self.call_stack.push((f, 0));
+            CallFunction(address) => {
+                self.call_stack.push(address);
             }
-            TailCallFunction(id) => {
-                let f = &self.functions[&id];
+            TailCallFunction(address) => {
                 self.call_stack.pop().expect("missing current call frame");
-                self.call_stack.push((f, 0));
+                self.call_stack.push(address);
             }
             Call(mut arg_count) => {
                 while arg_count > 0 {
                     let mut closure = self.pop_closure();
-                    let f = &self.functions[&closure.function];
-                    let args_missing = f.arg_count - closure.partial_args.len();
+                    let args_missing = closure.args_missing();
                     debug_assert!(args_missing > 0);
                     if arg_count < args_missing {
                         {
@@ -328,16 +249,16 @@ impl<'a> Vm<'a> {
                                 args.push(self.stack.pop().unwrap());
                             }
                         }
-                        self.stack.push(Value::Closure(closure));
+                        self.stack.push(RawValue::Closure(closure));
                         break;
                     } else {
                         arg_count += closure.partial_args.len();
-                        arg_count -= f.arg_count;
+                        arg_count -= closure.arg_count;
                         for arg in closure.partial_args.iter().rev().cloned() {
                             self.stack.push(arg);
                         }
                         let cur_stack_size = self.call_stack.len();
-                        self.call_stack.push((f, 0));
+                        self.call_stack.push(closure.address);
                         if arg_count == 0 {
                             break;
                         }
@@ -350,8 +271,7 @@ impl<'a> Vm<'a> {
             TailCall(mut arg_count) => {
                 while arg_count > 0 {
                     let mut closure = self.pop_closure();
-                    let f = &self.functions[&closure.function];
-                    let args_missing = f.arg_count - closure.partial_args.len();
+                    let args_missing = closure.args_missing();
                     debug_assert!(args_missing > 0);
                     if arg_count < args_missing {
                         {
@@ -360,35 +280,36 @@ impl<'a> Vm<'a> {
                                 args.push(self.stack.pop().unwrap());
                             }
                         }
-                        self.stack.push(Value::Closure(closure));
+                        self.stack.push(RawValue::Closure(closure));
                         self.call_stack.pop();
                         break;
                     } else {
                         arg_count += closure.partial_args.len();
-                        arg_count -= f.arg_count;
+                        arg_count -= closure.arg_count;
                         for arg in closure.partial_args.iter().rev().cloned() {
                             self.stack.push(arg);
                         }
                         let cur_stack_size = self.call_stack.len();
                         if arg_count == 0 {
                             self.call_stack.pop();
-                            self.call_stack.push((f, 0));
+                            self.call_stack.push(closure.address);
                             break;
                         }
-                        self.call_stack.push((f, 0));
+                        self.call_stack.push(closure.address);
                         while self.call_stack.len() > cur_stack_size {
                             self.step()?;
                         }
                     }
                 }
             }
-            MakeClosure(id) => {
+            MakeClosure(address, arg_count) => {
+                debug_assert!(arg_count > 0);
                 let closure = Closure {
-                    function: id,
+                    address,
+                    arg_count,
                     partial_args: Vec::new(),
                 };
-                debug_assert!(self.functions[&id].arg_count > 0);
-                self.stack.push(Value::Closure(Rc::new(closure)));
+                self.stack.push(RawValue::Closure(Rc::new(closure)));
             }
             MakeObject(tag, arg_count) => {
                 let mut items = Vec::new();
@@ -396,7 +317,7 @@ impl<'a> Vm<'a> {
                     items.push(self.stack.pop().unwrap());
                 }
                 let obj = Object { tag, items };
-                self.stack.push(Value::Object(Rc::new(obj)));
+                self.stack.push(RawValue::Object(Rc::new(obj)));
             }
             Return => {
                 self.call_stack.pop().expect("no function to return from");
@@ -416,109 +337,109 @@ impl<'a> Vm<'a> {
             IntAdd => {
                 let a = self.pop_int();
                 let b = self.pop_int();
-                self.stack.push(Value::Int(a + b));
+                self.stack.push(RawValue::Int(a + b));
             }
             IntSub => {
                 let a = self.pop_int();
                 let b = self.pop_int();
-                self.stack.push(Value::Int(a - b));
+                self.stack.push(RawValue::Int(a - b));
             }
             IntMul => {
                 let a = self.pop_int();
                 let b = self.pop_int();
-                self.stack.push(Value::Int(a * b));
+                self.stack.push(RawValue::Int(a * b));
             }
             IntDiv => {
                 let a = self.pop_int();
                 let b = self.pop_int();
-                self.stack.push(Value::Int(a / b));
+                self.stack.push(RawValue::Int(a / b));
             }
             IntLe => {
                 let a = self.pop_int();
                 let b = self.pop_int();
-                self.stack.push(Value::Bool(a < b));
+                self.stack.push(RawValue::Bool(a < b));
             }
             IntEq => {
                 let a = self.pop_int();
                 let b = self.pop_int();
-                self.stack.push(Value::Bool(a == b));
+                self.stack.push(RawValue::Bool(a == b));
             }
             IntGr => {
                 let a = self.pop_int();
                 let b = self.pop_int();
-                self.stack.push(Value::Bool(a > b));
+                self.stack.push(RawValue::Bool(a > b));
             }
             IntToString => {
                 let a = self.pop_int();
-                self.stack.push(Value::Str(Rc::new(a.to_string())));
+                self.stack.push(RawValue::Str(Rc::new(a.to_string())));
             }
             FracAdd => {
                 let a = self.pop_frac();
                 let b = self.pop_frac();
-                self.stack.push(Value::Frac(a + b));
+                self.stack.push(RawValue::Frac(a + b));
             }
             FracSub => {
                 let a = self.pop_frac();
                 let b = self.pop_frac();
-                self.stack.push(Value::Frac(a - b));
+                self.stack.push(RawValue::Frac(a - b));
             }
             FracMul => {
                 let a = self.pop_frac();
                 let b = self.pop_frac();
-                self.stack.push(Value::Frac(a * b));
+                self.stack.push(RawValue::Frac(a * b));
             }
             FracDiv => {
                 let a = self.pop_frac();
                 let b = self.pop_frac();
-                self.stack.push(Value::Frac(a / b));
+                self.stack.push(RawValue::Frac(a / b));
             }
             FracLe => {
                 let a = self.pop_frac();
                 let b = self.pop_frac();
-                self.stack.push(Value::Bool(a < b));
+                self.stack.push(RawValue::Bool(a < b));
             }
             FracEq => {
                 let a = self.pop_frac();
                 let b = self.pop_frac();
-                self.stack.push(Value::Bool(a == b));
+                self.stack.push(RawValue::Bool(a == b));
             }
             FracGr => {
                 let a = self.pop_frac();
                 let b = self.pop_frac();
-                self.stack.push(Value::Bool(a > b));
+                self.stack.push(RawValue::Bool(a > b));
             }
             FracToString => {
                 let a = self.pop_frac();
-                self.stack.push(Value::Str(Rc::new(a.to_string())));
+                self.stack.push(RawValue::Str(Rc::new(a.to_string())));
             }
             CharToString => {
                 let a = self.pop_char();
-                self.stack.push(Value::Str(Rc::new(a.to_string())));
+                self.stack.push(RawValue::Str(Rc::new(a.to_string())));
             }
             CharLe => {
                 let a = self.pop_char();
                 let b = self.pop_char();
-                self.stack.push(Value::Bool(a < b));
+                self.stack.push(RawValue::Bool(a < b));
             }
             CharEq => {
                 let a = self.pop_char();
                 let b = self.pop_char();
-                self.stack.push(Value::Bool(a == b));
+                self.stack.push(RawValue::Bool(a == b));
             }
             CharGr => {
                 let a = self.pop_char();
                 let b = self.pop_char();
-                self.stack.push(Value::Bool(a > b));
+                self.stack.push(RawValue::Bool(a > b));
             }
             StrLength => {
                 let s = self.pop_string();
-                self.stack.push(Value::Int(s.chars().count() as i64));
+                self.stack.push(RawValue::Int(s.chars().count() as i64));
             }
             StrCharAt => {
                 let index = self.pop_int() as usize;
                 let s = self.pop_string();
                 match s.chars().nth(index) {
-                    Some(c) => self.stack.push(make_some(Value::Char(c))),
+                    Some(c) => self.stack.push(make_some(RawValue::Char(c))),
                     None => self.stack.push(make_none()),
                 }
             }
@@ -526,24 +447,24 @@ impl<'a> Vm<'a> {
                 let mut a = self.pop_string();
                 let b = self.pop_string();
                 Rc::make_mut(&mut a).push_str(&b);
-                self.stack.push(Value::Str(a));
+                self.stack.push(RawValue::Str(a));
             }
             StrSubstring => {
                 let index = self.pop_int() as usize;
                 let length = self.pop_int() as usize;
                 let s = self.pop_string();
                 let s = s.chars().skip(index).take(length).collect();
-                self.stack.push(Value::Str(Rc::new(s)));
+                self.stack.push(RawValue::Str(Rc::new(s)));
             }
             StrLe => {
                 let a = self.pop_string();
                 let b = self.pop_string();
-                self.stack.push(Value::Bool(a < b));
+                self.stack.push(RawValue::Bool(a < b));
             }
             StrEq => {
                 let a = self.pop_string();
                 let b = self.pop_string();
-                self.stack.push(Value::Bool(a == b));
+                self.stack.push(RawValue::Bool(a == b));
             }
         }
         Ok(())
@@ -551,49 +472,49 @@ impl<'a> Vm<'a> {
 
     fn pop_int(&mut self) -> i64 {
         match self.stack.pop().unwrap() {
-            Value::Int(val) => val,
+            RawValue::Int(val) => val,
             val => panic!("expected int, got: {:?}", val),
         }
     }
 
     fn pop_frac(&mut self) -> f64 {
         match self.stack.pop().unwrap() {
-            Value::Frac(val) => val,
+            RawValue::Frac(val) => val,
             val => panic!("expected frac, got: {:?}", val),
         }
     }
 
     fn pop_char(&mut self) -> char {
         match self.stack.pop().unwrap() {
-            Value::Char(val) => val,
+            RawValue::Char(val) => val,
             val => panic!("expected char, got: {:?}", val),
         }
     }
 
     fn pop_string(&mut self) -> Rc<String> {
         match self.stack.pop().unwrap() {
-            Value::Str(val) => val,
+            RawValue::Str(val) => val,
             val => panic!("expected string, got: {:?}", val),
         }
     }
     
     fn pop_closure(&mut self) -> Rc<Closure> {
         match self.stack.pop().unwrap() {
-            Value::Closure(val) => val,
+            RawValue::Closure(val) => val,
             val => panic!("expected closure, got: {:?}", val),
         }
     }
 }
 
-fn make_some(value: Value) -> Value {
-    Value::Object(Rc::new(Object {
+fn make_some(value: RawValue) -> RawValue {
+    RawValue::Object(Rc::new(Object {
         tag: ::compiler::builtins::values::SOME,
         items: vec![value],
     }))
 }
 
-fn make_none() -> Value {
-    Value::Object(Rc::new(Object {
+fn make_none() -> RawValue {
+    RawValue::Object(Rc::new(Object {
         tag: ::compiler::builtins::values::NONE,
         items: Vec::new(),
     }))

@@ -2,18 +2,25 @@ use std::collections::{BTreeSet, BTreeMap};
 use std::rc::Rc;
 use ast::{Literal, Sym};
 use ast::monomorphised::{Expr, Pattern, Def, Items};
-use vm::{Instruction, Function, Value, Object, Closure, GlobalValue};
+use vm::Vm;
+use vm::internal::{Instruction, Value, Object, Closure, GlobalValue};
 
+
+#[derive(Debug)]
+struct Function {
+    arg_count: usize,
+    instructions: Vec<Instruction>,
+}
 
 struct FunctionCtx {
     function: Function,
-    id: u64,
+    id: usize,
     locals: BTreeMap<Sym, usize>,
     stack_size: usize,
 }
 
 impl FunctionCtx {
-    fn new(id: u64, locals: &[Sym]) -> FunctionCtx {
+    fn new(id: usize, locals: &[Sym]) -> FunctionCtx {
         let arg_count = locals.len();
         let locals = locals
             .iter()
@@ -75,13 +82,13 @@ impl FunctionCtx {
 }
 
 struct Compiler {
-    functions: BTreeMap<u64, Function>,
-    next_function_id: u64,
+    functions: BTreeMap<usize, Function>,
+    next_function_id: usize,
     next_temp_address: usize,
     globals: BTreeMap<Sym, GlobalValue>,
     string_cache: BTreeSet<Rc<String>>,
     object_cache: BTreeMap<Sym, Rc<Object>>,
-    ctor_cache: BTreeMap<(Sym, usize), u64>,
+    ctor_cache: BTreeMap<(Sym, usize), usize>,
     global_symbols: BTreeSet<Sym>,
 }
 
@@ -104,8 +111,9 @@ impl Compiler {
         FunctionCtx::new(self.next_function_id, args)
     }
 
-    fn add_function(&mut self, f: FunctionCtx) {
+    fn add_function(&mut self, mut f: FunctionCtx) {
         debug_assert!(!self.functions.contains_key(&f.id));
+        f.emit(Instruction::Crash("function did not end in return"));
         self.functions.insert(f.id, f.function);
     }
 
@@ -136,7 +144,7 @@ impl Compiler {
             .clone()
     }
 
-    fn make_ctor(&mut self, sym: Sym, args: usize) -> u64 {
+    fn make_ctor(&mut self, sym: Sym, args: usize) -> usize {
         if self.ctor_cache.contains_key(&(sym, args)) {
             self.ctor_cache[&(sym, args)]
         } else {
@@ -214,7 +222,7 @@ impl Compiler {
                     f.emit(Instruction::PushValue(obj));
                 } else {
                     let ctor_id = self.make_ctor(sym, args);
-                    f.emit(Instruction::MakeClosure(ctor_id));
+                    f.emit(Instruction::MakeClosure(ctor_id, args));
                 }
                 f.stack_size += 1;
                 if is_tail {
@@ -223,7 +231,7 @@ impl Compiler {
             }
             Expr::Lambda(params, value) => {
                 let mut lambda = self.new_function(&params);
-                f.emit(Instruction::MakeClosure(lambda.id));
+                f.emit(Instruction::MakeClosure(lambda.id, lambda.function.arg_count));
                 f.stack_size += 1;
                 self.compile_expr(*value, true, &mut lambda);
                 self.add_function(lambda);
@@ -355,7 +363,8 @@ impl Compiler {
                 let mut lambda = self.new_function(&params);
                 self.compile_expr(*value, true, &mut lambda);
                 let closure = Value::Closure(Rc::new(Closure {
-                    function: lambda.id,
+                    address: lambda.id,
+                    arg_count: lambda.function.arg_count,
                     partial_args: Vec::new(),
                 }));
                 self.globals.insert(def.sym, GlobalValue::Value(closure));
@@ -409,20 +418,97 @@ impl Compiler {
         f.emit(instr);
         f.emit(Instruction::Return);
         self.globals.insert(sym, GlobalValue::Value(Value::Closure(Rc::new(Closure {
-            function: f.id,
+            address: f.id,
+            arg_count,
             partial_args: Vec::new(),
         }))));
         self.add_function(f);
     }
 }
 
-pub fn compile(items: Items) -> (BTreeMap<u64, Function>, BTreeMap<Sym, GlobalValue>) {
+fn append_function(instrs: &mut Vec<Instruction>, f: Function) {
+    let offset = instrs.len();
+    for instr in f.instructions {
+        match instr {
+            Instruction::Jump(address) => {
+                instrs.push(Instruction::Jump(address + offset));
+            }
+            Instruction::TagTest(tag, address) => {
+                instrs.push(Instruction::TagTest(tag, address + offset));
+            }
+            Instruction::TestBool(value, address) => {
+                instrs.push(Instruction::TestBool(value, address + offset));
+            }
+            Instruction::TestInt(value, address) => {
+                instrs.push(Instruction::TestInt(value, address + offset));
+            }
+            Instruction::TestFrac(value, address) => {
+                instrs.push(Instruction::TestFrac(value, address + offset));
+            }
+            Instruction::TestChar(value, address) => {
+                instrs.push(Instruction::TestChar(value, address + offset));
+            }
+            Instruction::TestString(value, address) => {
+                instrs.push(Instruction::TestString(value, address + offset));
+            }
+            i => {
+                instrs.push(i);
+            }
+        }
+    }
+}
+
+fn concat_functions(functions: BTreeMap<usize, Function>)
+    -> (Vec<Instruction>, BTreeMap<usize, usize>)
+{
+    let mut result = Vec::new();
+    let mut address_mapping = BTreeMap::new();
+    for (id, f) in functions {
+        address_mapping.insert(id, result.len());
+        append_function(&mut result, f);
+    }
+    for instr in &mut result {
+        match *instr {
+            Instruction::MakeClosure(ref mut id, _) |
+            Instruction::CallFunction(ref mut id) |
+            Instruction::TailCallFunction(ref mut id) => {
+                *id = address_mapping[id];
+            }
+            Instruction::PushValue(ref mut value) => {
+                if let Value::Closure(ref mut c) = *value {
+                    Rc::make_mut(c).address = address_mapping[&c.address];
+                }
+            }
+            _ => {}
+        }
+    }
+
+    (result, address_mapping)
+}
+
+pub fn compile(items: Items) -> Vm {
     let globals = items.items.iter().map(|d| d.sym).collect();
     let mut compiler = Compiler::new(globals);
     for def in items.items {
         compiler.compile_def(def);
     }
+
     // override dummy builtins with actual builtins
     compiler.make_builtins();
-    (compiler.functions, compiler.globals)
+
+    let (instrs, mapping) = concat_functions(compiler.functions);
+    for (_, val) in &mut compiler.globals {
+        match *val {
+            GlobalValue::Thunk(ref mut id) => {
+                *id = mapping[id];
+            }
+            GlobalValue::Value(ref mut value) => {
+                if let Value::Closure(ref mut c) = *value {
+                    Rc::make_mut(c).address = mapping[&c.address];
+                }
+            }
+        }
+    }
+    
+    Vm::new(compiler.globals, instrs)
 }

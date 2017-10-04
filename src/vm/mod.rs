@@ -4,15 +4,46 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 use ast::Sym;
 use self::internal::{Instruction, GlobalValue, Closure, Object, Value as RawValue};
-pub use self::internal::Value as InternalValue;
 
 
-pub fn value_to_internal(value: &Value) -> &InternalValue {
-    &value.0
+#[derive(Debug, Clone)]
+pub enum Value {
+    Bool(bool),
+    Int(i64),
+    Frac(f64),
+    Char(char),
+    Str(Rc<String>),
+    Object(InternalObject),
 }
 
 #[derive(Debug, Clone)]
-pub struct Value(RawValue);
+pub struct InternalObject(RawValue);
+
+impl From<RawValue> for Value {
+    fn from(value: RawValue) -> Value {
+        match value {
+            RawValue::Bool(b) => Value::Bool(b),
+            RawValue::Char(c) => Value::Char(c),
+            RawValue::Frac(f) => Value::Frac(f),
+            RawValue::Int(i) => Value::Int(i),
+            RawValue::Str(s) => Value::Str(s),
+            other => Value::Object(InternalObject(other)),
+        }
+    }
+}
+
+impl From<Value> for RawValue {
+    fn from(value: Value) -> RawValue {
+        match value {
+            Value::Bool(b) => RawValue::Bool(b),
+            Value::Char(c) => RawValue::Char(c),
+            Value::Frac(f) => RawValue::Frac(f),
+            Value::Int(i) => RawValue::Int(i),
+            Value::Str(s) => RawValue::Str(s),
+            Value::Object(InternalObject(val)) => val,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum EvalError {
@@ -49,11 +80,11 @@ impl Vm {
 
     pub fn apply_multiple(&mut self, f: Value, args: &[Value]) -> EvalResult {
         for arg in args.iter().rev().cloned() {
-            self.stack.push(arg.0);
+            self.stack.push(arg.into());
         }
-        self.stack.push(f.0);
+        self.stack.push(f.into());
         self.run_instruction(Instruction::Call(args.len()))?;
-        Ok(Value(self.stack.pop().unwrap()))
+        Ok(self.stack.pop().unwrap().into())
     }
 
     pub fn apply(&mut self, f: Value, arg: Value) -> EvalResult {
@@ -71,7 +102,7 @@ impl Vm {
         let value = self.stack.pop().unwrap();
         debug_assert_eq!(self.stack.len(), old_stack_size);
         self.call_stack = old_call_stack;
-        Ok(Value(value))
+        Ok(value.into())
     }
 
     fn step(&mut self) -> Result<(), EvalError> {
@@ -91,15 +122,15 @@ impl Vm {
     fn get_global(&mut self, sym: Sym) -> EvalResult {
         let function_id = match self.globals[&sym] {
             GlobalValue::Value(ref val) => {
-                return Ok(Value(val.clone()));
+                return Ok(val.clone().into());
             }
             GlobalValue::Thunk(id) => {
                 id
             }
         };
-        let value = self.eval_thunk(function_id)?.0;
+        let value: RawValue = self.eval_thunk(function_id)?.into();
         self.globals.insert(sym, GlobalValue::Value(value.clone()));
-        Ok(Value(value))
+        Ok(value.into())
     }
 
     fn set_ip(&mut self, ip: usize) {
@@ -139,7 +170,7 @@ impl Vm {
                 }
             }
             PushGlobal(sym) => {
-                let value = self.get_global(sym)?.0;
+                let value = self.get_global(sym)?.into();
                 self.stack.push(value);
             }
             CreateFrame => {

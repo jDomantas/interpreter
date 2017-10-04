@@ -58,8 +58,6 @@ pub fn compile(modules: &BTreeMap<Name, Module>, ctx: &mut CompileCtx)
 
     closure_fix::optimise(&mut items, ctx);
 
-    ::ast::monomorphised::printer::print_items(&items, &ctx.symbols);
-
     let vm = compilation::compile(items);
 
     Ok(vm)

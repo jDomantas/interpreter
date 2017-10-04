@@ -47,7 +47,6 @@ impl TestRunner {
     }
 
     fn run_test(&mut self, name: &str, source: &str) {
-        println!("test: {}", name);
         let result = run_test(source);
         match result {
             TestResult::Ok => self.passed += 1,
@@ -224,10 +223,10 @@ enum Value {
 
 impl Value {
     fn matches_vm_val(&self, value: &vm::Value) -> bool {
-        match (self, vm::value_to_internal(value)) {
-            (&Value::Bool(b), &vm::InternalValue::Bool(b2)) => b == b2,
-            (&Value::Int(i), &vm::InternalValue::Int(i2)) => i == i2,
-            (&Value::Str(ref s), &vm::InternalValue::Str(ref s2)) => *s == **s2,
+        match (self, value) {
+            (&Value::Bool(b), &vm::Value::Bool(b2)) => b == b2,
+            (&Value::Int(i), &vm::Value::Int(i2)) => i == i2,
+            (&Value::Str(ref s), &vm::Value::Str(ref s2)) => *s == **s2,
             _ => false,
         }
     }

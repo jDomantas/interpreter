@@ -1,6 +1,6 @@
 extern crate interpreter;
 
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
 use interpreter::util::position::Span;
@@ -15,9 +15,9 @@ fn main() {
 }
 
 fn run(source: &str) {
-    use interpreter::parsing::BTreeMapProvider;
+    use interpreter::HashMapProvider;
 
-    let modules = BTreeMapProvider::new(BTreeMap::new());
+    let modules = HashMapProvider::new(HashMap::new());
     let mut vm = match interpreter::compile(&modules, source) {
         Ok(vm) => vm,
         Err(errors) => {

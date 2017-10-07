@@ -1,5 +1,4 @@
-// TODO: does it really need to be pub(crate) ?
-pub(crate) mod builtins;
+pub mod builtins;
 mod resolve_symbols;
 mod alias_expansion;
 mod precedence;

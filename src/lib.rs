@@ -2,12 +2,12 @@
 #![allow(dead_code)]
 
 pub mod util;
-pub mod parsing;
-pub mod compiler;
-pub mod ast;
+pub(crate) mod parsing;
+pub(crate) mod compiler;
+pub(crate) mod ast;
 pub mod vm;
 
-use parsing::SourceProvider;
+pub use parsing::{SourceProvider, HashMapProvider};
 use util::CompileCtx;
 use util::errors::Errors;
 use vm::Vm;

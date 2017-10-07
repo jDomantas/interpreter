@@ -4,9 +4,9 @@ extern crate walkdir;
 use std::fs;
 use std::io::Read;
 use std::str;
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::path::Path;
-use interpreter::parsing::BTreeMapProvider;
+use interpreter::HashMapProvider;
 use interpreter::util::position::Position;
 use interpreter::vm::{self, EvalError};
 
@@ -27,7 +27,7 @@ fn run_test_programs() {
 struct TestRunner {
     failed: u64,
     passed: u64,
-    results: BTreeMap<String, TestResult>,
+    results: HashMap<String, TestResult>,
 }
 
 impl TestRunner {
@@ -35,7 +35,7 @@ impl TestRunner {
         TestRunner {
             failed: 0,
             passed: 0,
-            results: BTreeMap::new(),
+            results: HashMap::new(),
         }
     }
 
@@ -88,7 +88,7 @@ fn run_test(source: &str) -> TestResult {
 }
 
 fn run_program(source: &str) -> Outcome {
-    use interpreter::parsing::SourceProvider;
+    use interpreter::SourceProvider;
     use interpreter::util::errors::Phase;
 
     let modules = parse_modules_from_source(source);
@@ -385,8 +385,8 @@ impl TestResult {
     }
 }
 
-fn parse_modules_from_source(source: &str) -> BTreeMapProvider {
-    let mut modules = BTreeMap::new();
+fn parse_modules_from_source(source: &str) -> HashMapProvider {
+    let mut modules = HashMap::new();
     let mut current_module = String::new();
     let mut module_name = "Main".to_string();
     for line in source.lines() {
@@ -400,5 +400,5 @@ fn parse_modules_from_source(source: &str) -> BTreeMapProvider {
         }
     }
     modules.insert(module_name, current_module);
-    BTreeMapProvider::new(modules)
+    HashMapProvider::new(modules)
 }

@@ -62,7 +62,7 @@ pub struct Vm {
 }
 
 impl Vm {
-    pub fn new(
+    pub(crate) fn new(
             globals: BTreeMap<Sym, GlobalValue>,
             instructions: Vec<Instruction>) -> Vm {
         Vm {

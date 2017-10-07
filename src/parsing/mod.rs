@@ -2,7 +2,7 @@ mod tokens;
 mod lexer;
 mod parser;
 
-use std::collections::{BTreeSet, BTreeMap};
+use std::collections::{BTreeSet, BTreeMap, HashMap};
 use ast::Name;
 use ast::parsed::Module;
 use util::CompileCtx;
@@ -12,15 +12,15 @@ pub trait SourceProvider {
     fn get_module_source(&self, name: &str) -> Result<&str, String>;
 }
 
-pub struct BTreeMapProvider(BTreeMap<String, String>);
+pub struct HashMapProvider(HashMap<String, String>);
 
-impl BTreeMapProvider {
-    pub fn new(modules: BTreeMap<String, String>) -> Self {
-        BTreeMapProvider(modules)
+impl HashMapProvider {
+    pub fn new(modules: HashMap<String, String>) -> Self {
+        HashMapProvider(modules)
     }
 }
 
-impl SourceProvider for BTreeMapProvider {
+impl SourceProvider for HashMapProvider {
     fn get_module_source(&self, name: &str) -> Result<&str, String> {
         match self.0.get(name) {
             Some(source) => Ok(source),

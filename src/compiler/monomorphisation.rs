@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use ast::{Sym, Symbol};
 use ast::typed::{self as t, ImplSym, ImplSource, Impls};
 use ast::monomorphised as m;
-use util::CompileCtx;
+use CompileCtx;
 
 
 #[derive(PartialEq, PartialOrd, Eq, Ord, Hash, Debug, Copy, Clone)]
@@ -308,7 +308,7 @@ fn make_constructors(types: &[t::TypeDecl]) -> Vec<m::Def> {
     defs
 }
 
-pub fn monomorphise(items: t::Items, ctx: &mut CompileCtx) -> m::Items {
+pub(crate) fn monomorphise(items: t::Items, ctx: &mut CompileCtx) -> m::Items {
     let mut defs = make_constructors(&items.types);
     let ctx = Solver::new(items, ctx);
     defs.extend(ctx.run());

@@ -131,9 +131,10 @@ pub mod rewriter {
 
 pub mod printer {
     use super::*;
-    use util::symbols::SymbolSource;
+    use symbols::SymbolSource;
 
 
+    #[allow(dead_code)]
     pub fn print_items(items: &Items, symbols: &SymbolSource) {
         let mut printer = Printer {
             indent: 0,
@@ -145,6 +146,7 @@ pub mod printer {
         }
     }
 
+    #[allow(dead_code)]
     pub fn print_expr(expr: &Expr, symbols: &SymbolSource) {
         let mut printer = Printer {
             indent: 0,

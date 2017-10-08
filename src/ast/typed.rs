@@ -2,7 +2,7 @@ use std::collections::{BTreeSet, BTreeMap};
 use std::fmt;
 use std::rc::Rc;
 use ast::{Node, Name, Literal, Sym, Symbol};
-use util::symbols::SymbolSource;
+use symbols::SymbolSource;
 
 
 #[derive(PartialEq, Eq, Debug, Clone)]
@@ -356,13 +356,6 @@ pub struct Def {
     pub module: Name,
 }
 
-impl Def {
-    pub fn substitute_inner(&mut self, substitution: &BTreeMap<u64, Type>) {
-        self.scheme.type_ = self.scheme.type_.map_vars(substitution);
-        self.value.value.substitute_inner(substitution);
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct SchemeVar {
     pub id: u64,
@@ -487,21 +480,16 @@ pub struct Items {
     pub symbol_types: BTreeMap<Sym, Scheme>,
 }
 
-impl Items {
-    pub fn new() {
-        Default::default()
-    }
-}
-
 #[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Hash, Copy, Clone)]
 pub struct ImplSym(pub u64);
 
 
 pub mod printer {
     use super::*;
-    use util::symbols::SymbolSource;
+    use symbols::SymbolSource;
 
 
+    #[allow(dead_code)]
     pub fn print_items(items: &Items, symbols: &SymbolSource) {
         let mut printer = Printer {
             indent: 0,

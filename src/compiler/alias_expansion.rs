@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 use ast::{Node, Name, Sym, Symbol};
 use ast::resolved::{Items, TypeDecl, Type, TypeAnnot};
 use compiler::util::{self, Graph};
-use util::CompileCtx;
-use util::position::Span;
+use position::Span;
+use CompileCtx;
 
 
 fn make_graph<'a, I: Iterator<Item=&'a TypeDecl>>(decls: I) -> Graph<'a, Sym> {
@@ -47,10 +47,10 @@ fn find_alias_cycles(items: &Items, ctx: &mut CompileCtx) -> Result<(), ()> {
             msg.push_str(".");
             msg
         };
-        let &(span, ref module) = &positions[cycle[0]];
-        ctx.errors
-            .alias_expansion_error(module)
-            .note(message, span)
+        let &(span, ref _module) = &positions[cycle[0]];
+        ctx.reporter
+            .alias_expansion_error(/*module*/ message.as_str(), span)
+            .span_note(message, span)
             .done();
         had_error = true
     }
@@ -70,7 +70,7 @@ struct Replacement {
 type Replacements = BTreeMap<Sym, Replacement>;
 
 fn check_args(
-                module: &Name,
+                _module: &Name,
                 span: Span,
                 name: Sym,
                 args_count: usize,
@@ -82,9 +82,9 @@ fn check_args(
                 ctx.symbols.symbol_name(name),
                 replacement.vars.len(),
                 args_count);
-            ctx.errors
-                .alias_expansion_error(module)
-                .note(msg, span)
+            ctx.reporter
+                .alias_expansion_error(/*module*/ msg.as_str(), span)
+                .span_note(msg, span)
                 .done();
             return false;
         }
@@ -371,7 +371,7 @@ fn expand_in_annotation(
     annot.type_.value.type_ = expanded;
 }
 
-pub fn expand_aliases(mut items: Items, ctx: &mut CompileCtx) -> Items {
+pub(crate) fn expand_aliases(mut items: Items, ctx: &mut CompileCtx) -> Items {
     if find_alias_cycles(&items, ctx).is_err() {
         return items;
     }

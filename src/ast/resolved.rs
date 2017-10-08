@@ -296,17 +296,13 @@ pub struct GroupedItems {
     pub fixities: BTreeMap<Sym, (Associativity, u64)>,
 }
 
-impl GroupedItems {
-    pub fn new() -> Items {
-        Default::default()
-    }
-}
-
 
 pub mod printer {
     use super::*;
-    use util::symbols::SymbolSource;
+    use symbols::SymbolSource;
 
+
+    #[allow(dead_code)]
     pub fn print_items(items: &Items, symbols: &SymbolSource) {
         let mut printer = Printer {
             indent: 0,

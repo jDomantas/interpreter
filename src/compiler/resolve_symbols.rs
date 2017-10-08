@@ -7,8 +7,8 @@ use ast::parsed::{
     TypeAlias, UnionType, Type, Expr, Pattern, Scheme, DoExpr,
 };
 use ast::resolved as r;
-use util::CompileCtx;
-use util::position::Span;
+use position::Span;
+use CompileCtx;
 
 
 #[derive(Debug, Clone, Default)]
@@ -157,7 +157,7 @@ impl fmt::Display for Kind {
     }
 }
 
-pub fn resolve_symbols(modules: &BTreeMap<Name, Module>, ctx: &mut CompileCtx) -> r::Items {
+pub(crate) fn resolve_symbols(modules: &BTreeMap<Name, Module>, ctx: &mut CompileCtx) -> r::Items {
     let mut resolver = Resolver::new(ctx);
     let mut items = BTreeMap::new();
     let mut exports = BTreeMap::new();
@@ -283,136 +283,136 @@ impl<'a> Resolver<'a> {
         self.ctx.symbols.fresh_artificial_sym()
     }
 
-    fn double_definition(&mut self, name: &str, span: Span, previous: Span, module: &Name) {
+    fn double_definition(&mut self, name: &str, span: Span, previous: Span, _module: &Name) {
         let message = format!("Item `{}` is defined multiple times.", name);
         let previous_message = "Note: previously defined here.";
-        self.ctx.errors
-            .symbol_error(module)
-            .note(message, span)
-            .note(previous_message, previous)
+        self.ctx.reporter
+            .symbol_error(message.as_str(), span)
+            .span_note(message, span)
+            .span_note(previous_message, previous)
             .done();
     }
 
-    fn duplicate_binding(&mut self, name: &str, span: Span, previous: Span, module: &Name) {
+    fn duplicate_binding(&mut self, name: &str, span: Span, previous: Span, _module: &Name) {
         let message = format!("Name `{}` is bound multiple times.", name);
         let previous_message = "Note: previously bound here.";
-        self.ctx.errors
-            .symbol_error(module)
-            .note(message, span)
-            .note(previous_message, previous)
+        self.ctx.reporter
+            .symbol_error(message.as_str(), span)
+            .span_note(message, span)
+            .span_note(previous_message, previous)
             .done();
     }
 
-    fn bad_export(&mut self, message: String, span: Span, module: &Name) {
-        self.ctx.errors
-            .symbol_error(module)
-            .note(message, span)
+    fn bad_export(&mut self, message: String, span: Span, _module: &Name) {
+        self.ctx.reporter
+            .symbol_error(message.as_str(), span)
+            .span_note(message, span)
             .done();
     }
 
-    fn module_double_import(&mut self, offending: &str, span: Span, previous: Span, module: &Name) {
+    fn module_double_import(&mut self, offending: &str, span: Span, previous: Span, _module: &Name) {
         let message = format!("Module `{}` is imported twice.", offending);
         let previous_message = "Note: previously imported here.";
-        self.ctx.errors
-            .symbol_error(module)
-            .note(message, span)
-            .note(previous_message, previous)
+        self.ctx.reporter
+            .symbol_error(message.as_str(), span)
+            .span_note(message, span)
+            .span_note(previous_message, previous)
             .done();
     }
 
-    fn double_import(&mut self, kind: Kind, item: &str, span: Span, previous: Span, module: &Name) {
+    fn double_import(&mut self, kind: Kind, item: &str, span: Span, previous: Span, _module: &Name) {
         let message = format!("{} `{}` is imported multiple times.", kind, item);
         let previous_message = "Note: previously imported here.";
-        self.ctx.errors
-            .symbol_error(module)
-            .note(message, span)
-            .note(previous_message, previous)
+        self.ctx.reporter
+            .symbol_error(message.as_str(), span)
+            .span_note(message, span)
+            .span_note(previous_message, previous)
             .done();
     }
 
-    fn double_export(&mut self, kind: Kind, item: &str, span: Span, previous: Span, module: &Name) {
+    fn double_export(&mut self, kind: Kind, item: &str, span: Span, previous: Span, _module: &Name) {
         let message = format!("{} `{}` is exported multiple times.", kind, item);
         let previous_message = "Note: previously exported here.";
-        self.ctx.errors
-            .symbol_error(module)
-            .note(message, span)
-            .note(previous_message, previous)
+        self.ctx.reporter
+            .symbol_error(message.as_str(), span)
+            .span_note(message, span)
+            .span_note(previous_message, previous)
             .done();
     }
 
-    fn double_fixity_decl(&mut self, name: &str, span: Span, previous: Span, module: &Name) {
+    fn double_fixity_decl(&mut self, name: &str, span: Span, previous: Span, _module: &Name) {
         let message = format!("Fixity of `{}` is declared twice.", name);
         let previous_message = "Note: previously declared here.";
-        self.ctx.errors
-            .symbol_error(module)
-            .note(message, span)
-            .note(previous_message, previous)
+        self.ctx.reporter
+            .symbol_error(message.as_str(), span)
+            .span_note(message, span)
+            .span_note(previous_message, previous)
             .done();
     }
 
-    fn double_type_annotation(&mut self, name: &str, span: Span, previous: Span, module: &Name) {
+    fn double_type_annotation(&mut self, name: &str, span: Span, previous: Span, _module: &Name) {
         let message = format!("Type of `{}` is declared twice.", name);
         let previous_message = "Note: previously declared here.";
-        self.ctx.errors
-            .symbol_error(module)
-            .note(message, span)
-            .note(previous_message, previous)
+        self.ctx.reporter
+            .symbol_error(message.as_str(), span)
+            .span_note(message, span)
+            .span_note(previous_message, previous)
             .done();
     }
 
-    fn not_exported(&mut self, item: &str, by: &str, span: Span, module: &Name) {
+    fn not_exported(&mut self, item: &str, by: &str, span: Span, _module: &Name) {
         let message = format!("Item `{}` is not exported by `{}`.", item, by);
-        self.ctx.errors
-            .symbol_error(module)
-            .note(message, span)
+        self.ctx.reporter
+            .symbol_error(message.as_str(), span)
+            .span_note(message, span)
             .done();
     }
 
-    fn subitem_not_exported(&mut self, item: &str, parent: &str, by: &str, span: Span, module: &Name) {
+    fn subitem_not_exported(&mut self, item: &str, parent: &str, by: &str, span: Span, _module: &Name) {
         let message = format!("Module `{}` does not export `{}` as subitem of `{}`.", by, item, parent);
-        self.ctx.errors
-            .symbol_error(module)
-            .note(message, span)
+        self.ctx.reporter
+            .symbol_error(message.as_str(), span)
+            .span_note(message, span)
             .done();
     }
 
-    fn no_subitems(&mut self, item: &str, by: &str, span: Span, module: &Name) {
+    fn no_subitems(&mut self, item: &str, by: &str, span: Span, _module: &Name) {
         let message = format!("Module `{}` does not export any subitems of `{}`.", by, item);
-        self.ctx.errors
-            .symbol_error(module)
-            .note(message, span)
+        self.ctx.reporter
+            .symbol_error(message.as_str(), span)
+            .span_note(message, span)
             .done();
     }
 
-    fn unknown_symbol(&mut self, kind: Kind, symbol: &Node<p::Symbol>, module: &Name) {
+    fn unknown_symbol(&mut self, kind: Kind, symbol: &Node<p::Symbol>, _module: &Name) {
         let message = format!("Unknown {}: `{}`.", kind, symbol.value.clone().full_name());
-        self.ctx.errors
-            .symbol_error(module)
-            .note(message, symbol.span)
+        self.ctx.reporter
+            .symbol_error(message.as_str(), symbol.span)
+            .span_note(message, symbol.span)
             .done();
     }
 
-    fn unknown_type_var(&mut self, name: &str, span: Span, module: &Name) {
+    fn unknown_type_var(&mut self, name: &str, span: Span, _module: &Name) {
         let message = format!("Unknown type var: `{}`.", name);
-        self.ctx.errors
-            .symbol_error(module)
-            .note(message, span)
+        self.ctx.reporter
+            .symbol_error(message.as_str(), span)
+            .span_note(message, span)
             .done();
     }
 
-    fn unknown_local_symbol(&mut self, kind: Kind, symbol: &Node<String>, module: &Name) {
+    fn unknown_local_symbol(&mut self, kind: Kind, symbol: &Node<String>, _module: &Name) {
         let message = format!("Unknown local {}: `{}`.", kind, symbol.value);
-        self.ctx.errors
-            .symbol_error(module)
-            .note(message, symbol.span)
+        self.ctx.reporter
+            .symbol_error(message.as_str(), symbol.span)
+            .span_note(message, symbol.span)
             .done();
     }
 
-    fn unknown_module(&mut self, m: &str, span: Span, module: &Name) {
+    fn unknown_module(&mut self, m: &str, span: Span, _module: &Name) {
         let message = format!("Unknown module: `{}`.", m);
-        self.ctx.errors
-            .symbol_error(module)
-            .note(message, span)
+        self.ctx.reporter
+            .symbol_error(message.as_str(), span)
+            .span_note(message, span)
             .done();
     }
     
@@ -1230,9 +1230,9 @@ impl<'a> Resolver<'a> {
                         if !symbols.contains_key(name.as_str()) {
                             // symbol required in trait is missing in impl
                             let message = format!("Missing impl of `{}`.", name);
-                            self.ctx.errors
-                                .symbol_error(&ctx.module)
-                                .note(message, impl_.scheme.value.type_.span)
+                            self.ctx.reporter
+                                .symbol_error(/*&ctx.module,*/ message.as_str(), impl_.scheme.value.type_.span)
+                                .span_note(message, impl_.scheme.value.type_.span)
                                 .done();
                         }
                     }
@@ -1957,7 +1957,7 @@ impl<'a> Resolver<'a> {
     fn check_dupe_vars(
                         &mut self, 
                         vars: &[Node<Sym>],
-                        ctx: &Context) {
+                        _ctx: &Context) {
         for (index, first) in vars.iter().enumerate() {
             for second in vars.iter().skip(index + 1) {
                 let first_name = self.ctx.symbols.symbol_name(first.value);
@@ -1965,10 +1965,10 @@ impl<'a> Resolver<'a> {
                 if first_name == second_name {
                     let message = format!(
                         "Type variable `{}` is defined twice.", first_name);
-                    self.ctx.errors
-                        .symbol_error(&ctx.module)
-                        .note(message, second.span)
-                        .note("Note: previously defined here.", first.span)
+                    self.ctx.reporter
+                        .symbol_error(/*&ctx.module*/ message.as_str(), second.span)
+                        .span_note(message, second.span)
+                        .span_note("Note: previously defined here.", first.span)
                         .done();
                 }
             }

@@ -1,5 +1,5 @@
 use ast::{Node, Literal, Associativity};
-use util::position::Span;
+use position::Span;
 
 
 #[derive(Debug, Clone)]

@@ -3,6 +3,7 @@ use ast::Sym;
 
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum Instruction {
     NoOp,
     PushValue(Value),
@@ -53,12 +54,6 @@ pub enum Instruction {
     StrSubstring,
     StrLe,
     StrEq,
-}
-
-#[derive(Debug)]
-pub struct Function {
-    pub arg_count: usize,
-    pub instructions: Vec<Instruction>,
 }
 
 #[derive(Debug)]

@@ -5,7 +5,7 @@ mod parser;
 use std::collections::{BTreeSet, BTreeMap, HashMap};
 use ast::Name;
 use ast::parsed::Module;
-use util::CompileCtx;
+use CompileCtx;
 
 
 pub trait SourceProvider {
@@ -50,13 +50,17 @@ impl<'a, 'b, T: 'a + SourceProvider> SourceProvider for WrappingProvider<'a, 'b,
     }
 }
 
-pub fn parse_module(source: &str, module: Name, require_def: bool, ctx: &mut CompileCtx) -> Option<Module> {
+fn parse_module(source: &str, module: Name, require_def: bool, ctx: &mut CompileCtx) -> Option<Module> {
     let tokens = lexer::lex(source, module.clone(), ctx);
     let module = parser::parse_module(tokens.into_iter(), module, require_def, ctx);
     module
 }
 
-pub fn parse_modules<T: SourceProvider>(main: &str, provider: &T, ctx: &mut CompileCtx) -> BTreeMap<Name, Module> {
+pub(crate) fn parse_modules<T: SourceProvider>(
+    main: &str,
+    provider: &T,
+    ctx: &mut CompileCtx
+) -> BTreeMap<Name, Module> {
     let provider = WrappingProvider {
         inner: provider,
         main: main,
@@ -88,9 +92,9 @@ pub fn parse_modules<T: SourceProvider>(main: &str, provider: &T, ctx: &mut Comp
                     }
                 }
                 Err(message) => {
-                    ctx.errors
-                        .parse_error(&Name::from_string(module.name().into()))
-                        .note(message, import.value.name.span)
+                    ctx.reporter
+                        .parse_error(message.as_str(), import.value.name.span)
+                        .span_note(message, import.value.name.span)
                         .done();
                 }
             }

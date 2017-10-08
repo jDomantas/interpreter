@@ -5,9 +5,9 @@ use ast::{Node, NodeView, Name, Literal, Symbol, Sym};
 use ast::resolved as r;
 use ast::typed::{self as t, Type, Scheme, SchemeVar, ImplSym, ImplDef, Impls};
 use compiler::{builtins, util};
-use util::CompileCtx;
-use util::position::Span;
-use util::symbols::SymbolSource;
+use position::Span;
+use symbols::SymbolSource;
+use CompileCtx;
 
 
 #[derive(Debug, Copy, Clone)]
@@ -210,15 +210,15 @@ impl<'a, 'b, 'c> InferCtx<'a, 'b, 'c> {
                         let (ty, args_types) = self.instantiate_pattern_ty(sym);
                         if args.len() != args_types.len() {
                             // TODO: maybe extract this into its own pass?
-                            let module = self.current_module.as_ref().unwrap();
+                            let _module = self.current_module.as_ref().unwrap();
                             let msg = format!(
                                 "Pattern `{}` takes {} arguments, but here it has {}.",
                                 self.ctx.symbols.symbol_name(sym),
                                 args_types.len(),
                                 args.len());
-                            self.ctx.errors
-                                .pattern_error(module)
-                                .note(msg, pattern.span)
+                            self.ctx.reporter
+                                .pattern_error(msg.as_str(), pattern.span) // module
+                                .span_note(msg, pattern.span)
                                 .done();
                             (t::Pattern::Wildcard, Type::Any)
                         } else {
@@ -921,7 +921,7 @@ impl<'a, 'b> Solver<'a, 'b> {
         let type1 = type1.display(&self.ctx.symbols);
         let type2 = self.do_substitutions(&constraint.1);
         let type2 = type2.display(&self.ctx.symbols);
-        let module = &constraint.3;
+        let _module = &constraint.3;
         match constraint.2 {
             ConstraintSource::AlwaysStatisfied => {
                 panic!("failed to solve constraint \
@@ -932,9 +932,9 @@ impl<'a, 'b> Solver<'a, 'b> {
                     "Remaining statements have type `{}`, \
                     while it should be `m a`.",
                     type1);
-                self.ctx.errors
-                    .type_error(module)
-                    .note(msg, span)
+                self.ctx.reporter
+                    .type_error(msg.as_str(), span) // module
+                    .span_note(msg, span)
                     .done();
             }
             ConstraintSource::Annotated(sym, def_span, annot_span) => {
@@ -945,10 +945,10 @@ impl<'a, 'b> Solver<'a, 'b> {
                 let msg2 = format!(
                     "but annotation says it should have type `{}`.",
                     type2);
-                self.ctx.errors
-                    .type_error(module)
-                    .note(msg1, def_span)
-                    .note(msg2, annot_span)
+                self.ctx.reporter
+                    .type_error(msg1.as_str(), def_span) // module
+                    .span_note(msg1, def_span)
+                    .span_note(msg2, annot_span)
                     .done();
             }
             ConstraintSource::BindRest(span) => {
@@ -957,9 +957,9 @@ impl<'a, 'b> Solver<'a, 'b> {
                     while expected type was `{}`.",
                     type1,
                     type2);
-                self.ctx.errors
-                    .type_error(module)
-                    .note(msg, span)
+                self.ctx.reporter
+                    .type_error(msg.as_str(), span) // module
+                    .span_note(msg, span)
                     .done();
             }
             ConstraintSource::BindSource(span) => {
@@ -967,18 +967,18 @@ impl<'a, 'b> Solver<'a, 'b> {
                     "Value that is being unwrapped has type `{}`, while it \
                     should be `m a`",
                     type1);
-                self.ctx.errors
-                    .type_error(module)
-                    .note(msg, span)
+                self.ctx.reporter
+                    .type_error(msg.as_str(), span) // module
+                    .span_note(msg, span)
                     .done();
             }
             ConstraintSource::Function(span) => {
                 let msg1 = format!(
                     "This expression has type `{}`, and cannot be used as a function.",
                     type1);
-                self.ctx.errors
-                    .type_error(module)
-                    .note(msg1, span)
+                self.ctx.reporter
+                    .type_error(msg1.as_str(), span) // module
+                    .span_note(msg1, span)
                     .done();
             }
             ConstraintSource::FunctionArg(index, fn_name, span) => {
@@ -990,9 +990,9 @@ impl<'a, 'b> Solver<'a, 'b> {
                     number_suffix(index + 1),
                     type1,
                     type2);
-                self.ctx.errors
-                    .type_error(module)
-                    .note(msg, span)
+                self.ctx.reporter
+                    .type_error(msg.as_str(), span) // module
+                    .span_note(msg, span)
                     .done();
             }
             ConstraintSource::IfBranches(first_span, second_span) => {
@@ -1002,19 +1002,19 @@ impl<'a, 'b> Solver<'a, 'b> {
                 let msg2 = format!(
                     "while else branch has type `{}`,",
                     type2);
-                self.ctx.errors
-                    .type_error(module)
-                    .note(msg1, first_span)
-                    .note(msg2, second_span)
+                self.ctx.reporter
+                    .type_error(msg1.as_str(), first_span) // module
+                    .span_note(msg1, first_span)
+                    .span_note(msg2, second_span)
                     .done();
             }
             ConstraintSource::IfCondition(span) => {
                 let msg = format!(
                     "Condition has type `{}`, when it should be `Bool`.",
                     type1);
-                self.ctx.errors
-                    .type_error(module)
-                    .note(msg, span)
+                self.ctx.reporter
+                    .type_error(msg.as_str(), span) // module
+                    .span_note(msg, span)
                     .done();
             }
             ConstraintSource::InfixOperator(span) => {
@@ -1022,9 +1022,9 @@ impl<'a, 'b> Solver<'a, 'b> {
                     "Infix operator has type `{}`, when it should be a \
                     function with two parameters.",
                     type1);
-                self.ctx.errors
-                    .type_error(module)
-                    .note(msg, span)
+                self.ctx.reporter
+                    .type_error(msg.as_str(), span) // module
+                    .span_note(msg, span)
                     .done();
             }
             ConstraintSource::ListItems(first_index, first_span, second_span) => {
@@ -1038,10 +1038,10 @@ impl<'a, 'b> Solver<'a, 'b> {
                     first_index + 2,
                     number_suffix(first_index + 2),
                     type2);
-                self.ctx.errors
-                    .type_error(module)
-                    .note(msg1, first_span)
-                    .note(msg2, second_span)
+                self.ctx.reporter
+                    .type_error(msg1.as_str(), first_span) // module
+                    .span_note(msg1, first_span)
+                    .span_note(msg2, second_span)
                     .done();
             }
             ConstraintSource::MatchBranches(first_index, first_span, second_span) => {
@@ -1055,10 +1055,10 @@ impl<'a, 'b> Solver<'a, 'b> {
                     first_index + 2,
                     number_suffix(first_index + 2),
                     type2);
-                self.ctx.errors
-                    .type_error(module)
-                    .note(msg1, first_span)
-                    .note(msg2, second_span)
+                self.ctx.reporter
+                    .type_error(msg1.as_str(), first_span) // module
+                    .span_note(msg1, first_span)
+                    .span_note(msg2, second_span)
                     .done();
             }
             ConstraintSource::MatchedValue(span) => {
@@ -1067,9 +1067,9 @@ impl<'a, 'b> Solver<'a, 'b> {
                     while matched value has type `{}`.",
                     type2,
                     type1);
-                self.ctx.errors
-                    .type_error(module)
-                    .note(msg, span)
+                self.ctx.reporter
+                    .type_error(msg.as_str(), span) // module
+                    .span_note(msg, span)
                     .done();
             }
             ConstraintSource::Infered(sym, span) => {
@@ -1079,9 +1079,9 @@ impl<'a, 'b> Solver<'a, 'b> {
                     type1,
                     self.ctx.symbols.symbol_name(sym),
                     type2);
-                self.ctx.errors
-                    .type_error(module)
-                    .note(msg, span)
+                self.ctx.reporter
+                    .type_error(msg.as_str(), span) // module
+                    .span_note(msg, span)
                     .done();
             }
         }
@@ -1421,27 +1421,6 @@ fn collect_trait_item_types(items: &r::GroupedItems) -> BTreeMap<Sym, (Scheme, S
     result
 }
 
-fn collect_resolved_type_vars(type_: &r::Type, vars: &mut BTreeSet<u64>) {
-    match *type_ {
-        r::Type::Any |
-        r::Type::SelfType |
-        r::Type::Concrete(_) => { }
-        r::Type::Function(ref a, ref b) |
-        r::Type::Apply(ref a, ref b) => {
-            collect_resolved_type_vars(&a.value, vars);
-            collect_resolved_type_vars(&b.value, vars);
-        }
-        r::Type::Tuple(ref items) => {
-            for item in items {
-                collect_resolved_type_vars(&item.value, vars);
-            }
-        }
-        r::Type::Var(Sym(var)) => {
-            vars.insert(var);
-        }
-    }
-}
-
 fn make_var_mapping(a: &Scheme, b: &Scheme) -> Option<BTreeMap<u64, u64>> {
     fn unify(a: &Type, b: &Type, mapping: &mut BTreeMap<u64, u64>) -> bool {
         match (a, b) {
@@ -1560,7 +1539,7 @@ fn infer_impl(
     }
 }
 
-pub fn infer_types(mut items: r::GroupedItems, ctx: &mut CompileCtx) -> t::Items {
+pub(crate) fn infer_types(mut items: r::GroupedItems, ctx: &mut CompileCtx) -> t::Items {
     let pattern_types = collect_pattern_types(&items);
     let trait_item_types = collect_trait_item_types(&items);
     let impl_item_types = make_impl_annotations(&items, &trait_item_types);
@@ -1623,9 +1602,10 @@ pub fn infer_types(mut items: r::GroupedItems, ctx: &mut CompileCtx) -> t::Items
                 let msg2 = format!(
                     "while annotation says it should be `{}`.",
                     scheme.display(&ctx.symbols));
-                ctx.errors.type_error(&annot.value.module)
-                    .note(msg1, def.sym.span)
-                    .note(msg2, annot.value.value.span)
+                ctx.reporter
+                    .type_error(msg1.as_str(), def.sym.span) // &annot.value.module
+                    .span_note(msg1, def.sym.span)
+                    .span_note(msg2, annot.value.value.span)
                     .done();
             }
         }
@@ -1641,9 +1621,10 @@ pub fn infer_types(mut items: r::GroupedItems, ctx: &mut CompileCtx) -> t::Items
                 let msg2 = format!(
                     "while annotation says it should be `{}`.",
                     scheme.display(&ctx.symbols));
-                ctx.errors.type_error(&def.def.module)
-                    .note(msg1, def.def.sym.span)
-                    .note(msg2, span)
+                ctx.reporter
+                    .type_error(msg1.as_str(), def.def.sym.span) // &def.def.module
+                    .span_note(msg1, def.def.sym.span)
+                    .span_note(msg2, span)
                     .done();
             }
         }

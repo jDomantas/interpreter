@@ -3,8 +3,8 @@ extern crate interpreter;
 use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
-use interpreter::util::position::Span;
-use interpreter::util::errors::Error;
+use interpreter::position::Span;
+use interpreter::diagnostics::Diagnostic;
 
 
 fn main() {
@@ -18,29 +18,27 @@ fn run(source: &str) {
     use interpreter::HashMapProvider;
 
     let modules = HashMapProvider::new(HashMap::new());
-    let mut vm = match interpreter::compile(&modules, source) {
-        Ok(vm) => vm,
-        Err(errors) => {
-            for err in errors.into_error_list() {
-                format_error(source, &err);
-            }
-            return;
-        }
+    let result = interpreter::compile(&modules, source);
+    for diag in result.diagnostics {
+        format_error(source, &diag);
+    }
+
+    let mut vm = match result.vm {
+        Some(vm) => vm,
+        None => return,
     };
 
     let res = vm.get_main();
     println!("res: {:#?}", res);
 }
 
-fn format_error(source: &str, error: &Error) {
+fn format_error(source: &str, error: &Diagnostic<Span>) {
     assert!(!error.notes.is_empty());
-    let mut first = true;
     for note in &error.notes {
-        if first {
-            println!("Error: {}", note.message);
-            first = false;
+        if let Some(ref msg) = note.message {
+            println!("Error: {}", msg);
         } else {
-            println!("Note: {}", note.message);
+            println!("No note");
         }
         display_span(source, note.span);
     }

@@ -2,7 +2,7 @@ use std::collections::{BTreeSet, BTreeMap};
 use ast::Sym;
 use ast::monomorphised::{Expr, Pattern, CaseBranch, Def, Items};
 use ast::monomorphised::rewriter::{self, Rewriter};
-use util::CompileCtx;
+use CompileCtx;
 
 
 fn replace_with_inner<T, F>(value: &mut T, dummy: T, select: F)
@@ -460,7 +460,7 @@ impl Rewriter for RemoveEmptyLets {
     }
 }
 
-pub fn optimise(items: &mut Items, ctx: &mut CompileCtx) {
+pub(crate) fn optimise(items: &mut Items, ctx: &mut CompileCtx) {
     SimplifyMatching.rewrite_items(items);
     SimplifyRenames::default().rewrite_items(items);
     JoinLambdas.rewrite_items(items);

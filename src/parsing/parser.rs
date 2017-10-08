@@ -7,8 +7,8 @@ use ast::parsed::{
     ExposedItem, ModuleDef, Import, Module, DoExpr,
 };
 use parsing::tokens::{Token, TokenKind};
-use util::CompileCtx;
-use util::position::{Position, Span, DUMMY_SPAN};
+use position::{Position, Span, DUMMY_SPAN};
+use CompileCtx;
 
 
 #[derive(PartialEq, Eq)]
@@ -42,12 +42,14 @@ impl<T> PartialResult<T> {
     }
 }
 
-pub fn parse_module<I>(
-                        tokens: I,
-                        module: Name,
-                        require_def: bool,
-                        ctx: &mut CompileCtx) -> Option<Module>
-        where I: Iterator<Item=Node<Token>> {
+pub(crate) fn parse_module<I>(
+    tokens: I,
+    module: Name,
+    require_def: bool,
+    ctx: &mut CompileCtx,
+) -> Option<Module>
+    where I: Iterator<Item=Node<Token>> 
+{
     let mut parser = Parser::new(tokens, module, ctx);
     let module = parser.module(require_def).ok();
     debug_assert!(parser.is_at_end());
@@ -124,18 +126,18 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
             message.push_str(&format!(" Current indent is {}, align: {}.", self.current_indent, self.accept_aligned));
         }
 
-        self.ctx.errors
-            .parse_error(&self.module)
-            .note(message, span)
+        self.ctx.reporter
+            .parse_error(message.as_str(), span)
+            .span_note(message, span)
             .done();
     }
 
     fn bad_module_name(&mut self) {
         let span = self.previous_span();
         let message = format!("Expected to find module `{}`", self.module);
-        self.ctx.errors
-            .parse_error(&self.module)
-            .note(message, span)
+        self.ctx.reporter
+            .parse_error(message.as_str(), span)
+            .span_note(message, span)
             .done();
     }
 

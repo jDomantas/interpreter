@@ -4,8 +4,8 @@ use std::fmt;
 use ast::{Node, Name, Sym, Symbol};
 use ast::resolved::{TypeDecl, Type, Items, Trait, TypeAnnot, Scheme, Impl};
 use compiler::util::{self, Graph};
-use util::CompileCtx;
-use util::position::Span;
+use position::Span;
+use CompileCtx;
 
 
 #[derive(PartialEq, Eq, Debug, Clone)]
@@ -119,7 +119,7 @@ impl<'a, 'b> InferCtx<'a, 'b> {
     fn unsolved_constraint(&mut self, constraint: Constraint) {
         let mut kinds = [constraint.0, constraint.1];
         rename_vars(&mut kinds);
-        let (message, module, span) = match constraint.2 {
+        let (message, _module, span) = match constraint.2 {
             ConstraintSource::ShouldNotFail => {
                 panic!("failed to solve kind constraint \
                         that should not have failed")
@@ -139,30 +139,33 @@ impl<'a, 'b> InferCtx<'a, 'b> {
                 (msg, module, f.span)
             }
         };
-        self.ctx.errors
-            .kind_error(module)
-            .note(message, span)
+        self.ctx.reporter
+            .kind_error(message.as_str(), span) // module
+            .span_note(message, span)
             .done();
     }
 
-    fn invalid_self(&mut self, span: Span, module: &Name) {
-        self.ctx.errors
-            .kind_error(module)
-            .note("`self` type can only be used in trait definitions.", span)
+    fn invalid_self(&mut self, span: Span, _module: &Name) {
+        let msg = "`self` type can only be used in trait definitions.";
+        self.ctx.reporter
+            .kind_error(msg, span) // module
+            .span_note(msg, span)
             .done();
     }
 
-    fn missing_self(&mut self, span: Span, module: &Name) {
-        self.ctx.errors
-            .kind_error(module)
-            .note("`self` must be mentioned at least once in every trait member.", span)
+    fn missing_self(&mut self, span: Span, _module: &Name) {
+        let msg = "`self` must be mentioned at least once in every trait member.";
+        self.ctx.reporter
+            .kind_error(msg, span) // module
+            .span_note(msg, span)
             .done();
     }
 
-    fn unused_var(&mut self, span: Span, module: &Name) {
-        self.ctx.errors
-            .kind_error(module)
-            .note("Constrained type variable must be used in implementing type.", span)
+    fn unused_var(&mut self, span: Span, _module: &Name) {
+        let msg = "Constrained type variable must be used in implementing type.";
+        self.ctx.reporter
+            .kind_error(msg, span) // module
+            .span_note(msg, span)
             .done();
     }
 
@@ -384,7 +387,7 @@ impl<'a, 'b> InferCtx<'a, 'b> {
         }
     }
 
-    fn add_trait_bounds(&mut self, bounds: &'a [(Node<Sym>, Node<Symbol>)], module: &'a Name) {
+    fn add_trait_bounds(&mut self, bounds: &'a [(Node<Sym>, Node<Symbol>)], _module: &'a Name) {
         for &(ref var, ref trait_) in bounds {
             let trait_name = match trait_.value {
                 Symbol::Known(sym) => sym,
@@ -403,9 +406,9 @@ impl<'a, 'b> InferCtx<'a, 'b> {
                                 self.ctx.symbols.symbol_name(var.value),
                                 kind,
                                 entry.get());
-                            self.ctx.errors
-                                .kind_error(module)
-                                .note(message, var.span)
+                            self.ctx.reporter
+                                .kind_error(message.as_str(), var.span) // module
+                                .span_note(message, var.span)
                                 .done();
                         }
                         entry.insert(Kind::Any);
@@ -454,9 +457,9 @@ impl<'a, 'b> InferCtx<'a, 'b> {
                         self.ctx.symbols.symbol_name(trait_.name.value),
                         self_kind,
                         kind);
-                    self.ctx.errors
-                        .kind_error(&trait_.module)
-                        .note(message, base_trait.span)
+                    self.ctx.reporter
+                        .kind_error(message.as_str(), base_trait.span) // &trait_.module
+                        .span_note(message, base_trait.span)
                         .done();
                 }
             }
@@ -493,9 +496,9 @@ impl<'a, 'b> InferCtx<'a, 'b> {
                             "Inferred kind `{}` for this type, but trait expected it to be `{}`.",
                             kind,
                             trait_);
-                        self.ctx.errors
-                            .kind_error(&impl_.module)
-                            .note(message, impl_.scheme.value.type_.span)
+                        self.ctx.reporter
+                            .kind_error(message.as_str(), impl_.scheme.value.type_.span) // &impl_.module
+                            .span_note(message, impl_.scheme.value.type_.span)
                             .done();
                     }
                 }
@@ -583,7 +586,7 @@ fn make_graph<'a, I: Iterator<Item=&'a TypeDecl>>(decls: I) -> Graph<'a, Sym> {
     Graph::new(nodes)
 }
 
-pub fn find_kind_errors(items: &Items, ctx: &mut CompileCtx) {
+pub(crate) fn find_kind_errors(items: &Items, ctx: &mut CompileCtx) {
     let graph = make_graph(items.types.iter());
     let components = graph.to_strongly_connected_components();
     let table = items.types.iter().map(|decl| (decl.name(), decl)).collect::<BTreeMap<_, _>>();

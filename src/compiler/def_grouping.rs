@@ -123,7 +123,7 @@ fn group_in_expr(expr: &mut Node<Expr>) {
         Expr::Let(ref mut defs, ref mut val) => {
             group_in_expr(val);
             let mut defs_vec = Vec::new();
-            let mut result = Node::new(Expr::Tuple(Vec::new()), ::util::position::DUMMY_SPAN);
+            let mut result = Node::new(Expr::Tuple(Vec::new()), ::position::DUMMY_SPAN);
             ::std::mem::swap(&mut defs_vec, defs);
             ::std::mem::swap(&mut result, val);
             let defs_vec = group_let_defs(defs_vec);

@@ -1,12 +1,13 @@
-use std::fmt;
-use std::rc::Rc;
-use util::position::Span;
-pub use util::symbols::Sym;
-
 pub mod parsed;
 pub mod resolved;
 pub mod typed;
 pub mod monomorphised;
+
+use std::fmt;
+use std::rc::Rc;
+use position::Span;
+pub use symbols::Sym;
+
 
 #[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Hash, Copy, Clone)]
 pub enum Symbol {
@@ -52,7 +53,7 @@ impl<T> NodeView<T> for T {
     }
 
     fn get_span(&self) -> Span {
-        ::util::position::DUMMY_SPAN
+        ::position::DUMMY_SPAN
     }
 }
 

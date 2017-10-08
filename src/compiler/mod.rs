@@ -14,42 +14,42 @@ mod util;
 use std::collections::BTreeMap;
 use ast::Name;
 use ast::parsed::Module;
-use util::CompileCtx;
 use vm::Vm;
+use CompileCtx;
 
 
-pub fn compile(modules: &BTreeMap<Name, Module>, ctx: &mut CompileCtx)
+pub(crate) fn compile(modules: &BTreeMap<Name, Module>, ctx: &mut CompileCtx)
     -> Result<Vm, ()>
 {
     let items = resolve_symbols::resolve_symbols(modules, ctx);
-    if ctx.errors.have_errors() {
+    if ctx.reporter.have_errors() {
         return Err(());
     }
 
     let items = alias_expansion::expand_aliases(items, ctx);
-    if ctx.errors.have_errors() {
+    if ctx.reporter.have_errors() {
         return Err(());
     }
 
     let items = precedence::fix_items(items, ctx);
-    if ctx.errors.have_errors() {
+    if ctx.reporter.have_errors() {
         return Err(());
     }
 
     kind_check::find_kind_errors(&items, ctx);
-    if ctx.errors.have_errors() {
+    if ctx.reporter.have_errors() {
         return Err(());
     }
     
     let items = def_grouping::group_items(items);
 
     let mut items = type_check::infer_types(items, ctx);
-    if ctx.errors.have_errors() {
+    if ctx.reporter.have_errors() {
         return Err(());
     }
 
     trait_check::check_items(&mut items, ctx);
-    if ctx.errors.have_errors() {
+    if ctx.reporter.have_errors() {
         return Err(());
     }
 

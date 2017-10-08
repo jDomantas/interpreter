@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use ast::{Node, Associativity, Name, Sym, Symbol};
 use ast::resolved::{Expr, Pattern, Def, Impl, Items, CaseBranch};
-use util::CompileCtx;
+use CompileCtx;
 
 
 struct Context<'a, 'b> {
@@ -56,9 +56,10 @@ impl<'a, 'b> Context<'a, 'b> {
                 a2.as_str())
         };
         let span = left.span.merge(right.span);
-        self.ctx.errors
-            .fixity_error(self.current_module.as_ref().unwrap())
-            .note(message, span)
+        self.ctx.reporter
+                //self.current_module.as_ref().unwrap()
+            .fixity_error(message.as_str(), span)
+            .span_note(message, span)
             .done();
     }
 
@@ -286,7 +287,7 @@ fn collect_pattern(pat: Node<Pattern>, ops: &mut Vec<Node<Symbol>>, pats: &mut V
     }
 }
 
-pub fn fix_items(items: Items, ctx: &mut CompileCtx) -> Items {
+pub(crate) fn fix_items(items: Items, ctx: &mut CompileCtx) -> Items {
     let Items { types, items, traits, impls, annotations, fixities } = items;
     let (items, impls) = {
         let mut ctx = Context::new(&fixities, ctx);

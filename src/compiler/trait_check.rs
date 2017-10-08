@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use ast::{Name, Node, Sym, Symbol};
 use ast::typed::{Expr, Impl, Impls, Items, Scheme, ImplSource, Type, Def};
 use compiler::builtins;
-use util::CompileCtx;
-use util::position::Span;
+use position::Span;
+use CompileCtx;
 
 
 /// Make mapping from variables in principal type to types in concrete type.
@@ -49,11 +49,6 @@ struct Bound<'a> {
     trait_: Sym,
 }
 
-struct Location {
-    span: Span,
-    module: Name,
-}
-
 /// Get trait bounds that types in concrete type have to statisfy to allow
 /// instantiating principal type as concrete.
 fn get_trait_bounds<'a>(principal: &Scheme, concrete: &'a Type) -> Option<Vec<Bound<'a>>> {
@@ -84,21 +79,6 @@ struct SolverCtx<'a, 'b> {
 }
 
 impl<'a, 'b> SolverCtx<'a, 'b> {
-    fn new(
-            impls: &'a [Impl],
-            ctx: &'b mut CompileCtx,
-            known_impls: &'a BTreeSet<(u64, Sym)>,
-            symbol_types: &'a BTreeMap<Sym, Scheme>,
-            module: Name) -> Self {
-        SolverCtx {
-            impls,
-            ctx,
-            known_impls,
-            symbol_types,
-            module,
-        }
-    }
-
     fn solve_constraint(&mut self, type_: &Type, trait_: Sym, span: Span) -> Option<ImplSource> {
         match *type_ {
             Type::Any => None,
@@ -111,9 +91,9 @@ impl<'a, 'b> SolverCtx<'a, 'b> {
                         "Type `t{}` does not implement trait `{}`.",
                         var,
                         self.ctx.symbols.symbol_name(trait_));
-                    self.ctx.errors
-                        .trait_error(&self.module)
-                        .note(msg, span)
+                    self.ctx.reporter
+                        .trait_error(msg.as_str(), span) // &self.module
+                        .span_note(msg, span)
                         .done();
                     None
                 }
@@ -177,9 +157,9 @@ impl<'a, 'b> SolverCtx<'a, 'b> {
                     "Type `{}` does not implement trait `{}`.",
                     t.display(&self.ctx.symbols),
                     self.ctx.symbols.symbol_name(trait_));
-                self.ctx.errors
-                    .trait_error(&self.module)
-                    .note(msg, span)
+                self.ctx.reporter
+                    .trait_error(msg.as_str(), span) // &self.module
+                    .span_note(msg, span)
                     .done();
                 None
             }
@@ -314,7 +294,7 @@ impl<'a, 'b> GlobalSolver<'a, 'b> {
     }
 }
 
-pub fn check_items(items: &mut Items, ctx: &mut CompileCtx) {
+pub(crate) fn check_items(items: &mut Items, ctx: &mut CompileCtx) {
     let checked_impls = {
         let mut solver = GlobalSolver::new(
             &items.impls,

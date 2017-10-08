@@ -3,11 +3,11 @@ use std::iter::Peekable;
 use ast::{Node, Name};
 use ast::parsed::Symbol;
 use parsing::tokens::Token;
-use util::position::{Position, Span};
-use util::CompileCtx;
+use position::{Position, Span};
+use CompileCtx;
 
 
-pub fn lex(source: &str, module: Name, ctx: &mut CompileCtx) -> Vec<Node<Token>> {
+pub(crate) fn lex(source: &str, module: Name, ctx: &mut CompileCtx) -> Vec<Node<Token>> {
     let mut lexer = Lexer::new(source, module, ctx);
     let mut tokens = Vec::new();
     while let Some(token) = lexer.next_token() {
@@ -25,7 +25,7 @@ struct Lexer<'a, 'b> {
     eof_position: Position,
     panicking: bool,
     ctx: &'b mut CompileCtx,
-    module: Name,
+    _module: Name,
 }
 
 impl<'a, 'b> Lexer<'a, 'b> {
@@ -40,14 +40,14 @@ impl<'a, 'b> Lexer<'a, 'b> {
             eof_position: Position::new(1, 1),
             panicking: false,
             ctx,
-            module,
+            _module: module,
         }
     }
 
     fn error(&mut self, message: &str, span: Span) {
-        self.ctx.errors
-            .parse_error(&self.module)
-            .note(message, span)
+        self.ctx.reporter
+            .parse_error(message, span)
+            .span_note(message, span)
             .done();
     }
 

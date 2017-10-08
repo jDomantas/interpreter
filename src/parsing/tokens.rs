@@ -63,7 +63,6 @@ impl Token {
 pub enum TokenKind {
     Token(Token),
     Ident,
-    UnqualifiedName,
     VarName,
     TagName,
     Literal,
@@ -76,7 +75,6 @@ impl TokenKind {
     pub fn to_string(&self) -> &'static str {
         match *self {
             TokenKind::Ident => "identifier",
-            TokenKind::UnqualifiedName => "unqualified name",
             TokenKind::VarName => "lowercase name",
             TokenKind::TagName => "uppercase name",
             TokenKind::Literal => "literal",
@@ -138,12 +136,6 @@ impl TokenKind {
             Token::Ident(ref ident) => {
                 match *self {
                     TokenKind::Ident => true,
-                    TokenKind::UnqualifiedName => {
-                        match *ident {
-                            Symbol::Qualified(_, _) => false,
-                            Symbol::Unqualified(_) => true,
-                        }
-                    }
                     TokenKind::VarName => {
                         match *ident {
                             Symbol::Qualified(_, _) => false,

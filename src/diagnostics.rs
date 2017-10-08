@@ -25,6 +25,14 @@ pub struct Diagnostic<Loc> {
     pub notes: Vec<Note<Loc>>,
 }
 
+impl<Loc: Ord> Diagnostic<Loc> {
+    pub fn ordering(&self, other: &Self) -> ::std::cmp::Ordering {
+        let by_phase = self.phase.cmp(&other.phase);
+        let by_position = self.primary_span.cmp(&other.primary_span);
+        by_phase.then(by_position)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Note<Loc> {
     pub span: Loc,

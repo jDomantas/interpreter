@@ -20,7 +20,7 @@ impl Position {
     }
 }
 
-#[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy, Hash)]
 pub struct Span {
     pub start: Position,
     pub end: Position,

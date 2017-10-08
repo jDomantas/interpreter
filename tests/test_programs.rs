@@ -7,7 +7,7 @@ use std::str;
 use std::collections::HashMap;
 use std::path::Path;
 use interpreter::HashMapProvider;
-use interpreter::util::position::Position;
+use interpreter::position::Position;
 use interpreter::vm::{self, EvalError};
 
 
@@ -89,51 +89,50 @@ fn run_test(source: &str) -> TestResult {
 
 fn run_program(source: &str) -> Outcome {
     use interpreter::SourceProvider;
-    use interpreter::util::errors::Phase;
+    use interpreter::diagnostics::Phase;
 
     let modules = parse_modules_from_source(source);
     let main = modules.get_module_source("Main").unwrap();
 
-    match interpreter::compile(&modules, main) {
-        Ok(mut vm) => {
-            match vm.get_main() {
-                Ok(value) => Outcome::Ok(value),
-                Err(err) => Outcome::EvalError(err),
-            }
+    let result = interpreter::compile(&modules, main);
+    if let Some(mut vm) = result.vm {
+        match vm.get_main() {
+            Ok(value) => Outcome::Ok(value),
+            Err(err) => Outcome::EvalError(err),
         }
-        Err(errors) => {
-            let errors = errors.into_error_list();
-            let err = errors[0].clone();
-            let pos = err.notes[0].span.start;
-            let message = err.notes[0].message.clone();
-            return match err.phase {
-                Phase::Parsing => Outcome::ParseError(pos, message),
-                Phase::SymbolResolution => {
-                    let errors = errors
-                        .into_iter()
-                        .map(|e| {
-                            assert_eq!(e.phase, Phase::SymbolResolution);
-                            (e.notes[0].span.start, e.notes[0].message.clone())
-                        })
-                        .collect();
-                    Outcome::SymbolError(errors)
-                }
-                Phase::TypeAliasExpansion => {
-                    let errors = errors
-                        .into_iter()
-                        .map(|e| {
-                            assert_eq!(e.phase, Phase::TypeAliasExpansion);
-                            (e.notes[0].span.start, e.notes[0].message.clone())
-                        })
-                        .collect();
-                    Outcome::AliasError(errors)
-                }
-                Phase::FixityResolution => Outcome::FixityError(pos, message),
-                Phase::KindChecking => Outcome::KindError(pos, message),
-                Phase::TypeChecking => Outcome::TypeError(pos, message),
-                Phase::TraitChecking => Outcome::TraitError(pos, message),
-                Phase::PatternError => unimplemented!(),
-            };
+    } else {
+        let mut errors = result.diagnostics;
+        errors.sort_by(interpreter::diagnostics::Diagnostic::ordering);
+        let err = errors[0].clone();
+        let pos = err.primary_span.unwrap().start;
+        let message = err.message.clone();
+        match err.phase {
+            Phase::Parsing => Outcome::ParseError(pos, message),
+            Phase::SymbolResolution => {
+                let errors = errors
+                    .into_iter()
+                    .map(|e| {
+                        assert_eq!(e.phase, Phase::SymbolResolution);
+                        (e.primary_span.unwrap().start, e.message.clone())
+                    })
+                    .collect();
+                Outcome::SymbolError(errors)
+            }
+            Phase::TypeAliasExpansion => {
+                let errors = errors
+                    .into_iter()
+                    .map(|e| {
+                        assert_eq!(e.phase, Phase::TypeAliasExpansion);
+                        (e.primary_span.unwrap().start, e.message)
+                    })
+                    .collect();
+                Outcome::AliasError(errors)
+            }
+            Phase::FixityResolution => Outcome::FixityError(pos, message),
+            Phase::KindChecking => Outcome::KindError(pos, message),
+            Phase::TypeChecking => Outcome::TypeError(pos, message),
+            Phase::TraitChecking => Outcome::TraitError(pos, message),
+            Phase::PatternError => unimplemented!(),
         }
     }
 }

@@ -2000,7 +2000,7 @@ mod tests {
     use parsing::lexer::lex;
     use ast::{Literal, Name};
     use ast::parsed::{Expr, Pattern, Type, Scheme, LetDecl, Def, TypeAnnot, Symbol, DoExpr};
-    use util::CompileCtx;
+    use CompileCtx;
     use super::Parser;
 
     fn write_symbol(symbol: &Symbol, output: &mut String) {
@@ -2295,12 +2295,12 @@ mod tests {
         let mut ctx = CompileCtx::new();
         let name = Name::from_string("<test>".into());
         let tokens = lex(source, name.clone(), &mut ctx);
-        assert!(!ctx.errors.have_errors());
+        assert!(!ctx.reporter.have_errors());
         let expr = {
             let mut parser = Parser::new(tokens.into_iter(), name, &mut ctx);
             parser.expr(false).ok().unwrap()
         };
-        assert!(!ctx.errors.have_errors());
+        assert!(!ctx.reporter.have_errors());
         let mut printed = String::new();
         write_expr(&expr.value, &mut printed);
         assert_eq!(expected, printed);
@@ -2310,12 +2310,12 @@ mod tests {
         let mut ctx = CompileCtx::new();
         let name = Name::from_string("<test>".into());
         let tokens = lex(source, name.clone(), &mut ctx);
-        assert!(!ctx.errors.have_errors());
+        assert!(!ctx.reporter.have_errors());
         let pattern = {
             let mut parser = Parser::new(tokens.into_iter(), name, &mut ctx);
             parser.pattern().ok().unwrap()
         };
-        assert!(!ctx.errors.have_errors());
+        assert!(!ctx.reporter.have_errors());
         let mut printed = String::new();
         write_pattern(&pattern.value, &mut printed);
         assert_eq!(expected, printed);

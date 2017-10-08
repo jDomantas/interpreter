@@ -23,10 +23,7 @@ pub struct CompileResult {
 pub fn compile<S>(provider: &S, main: &str) -> CompileResult
     where S: SourceProvider
 {
-    let mut ctx = CompileCtx {
-        reporter: Reporter::new(),
-        symbols: SymbolSource::new(),
-    };
+    let mut ctx = CompileCtx::new();
 
     let modules = parsing::parse_modules(main, provider, &mut ctx);
     let vm = compiler::compile(&modules, &mut ctx).ok();
@@ -40,4 +37,13 @@ pub fn compile<S>(provider: &S, main: &str) -> CompileResult
 struct CompileCtx {
     reporter: Reporter,
     symbols: SymbolSource,
+}
+
+impl CompileCtx {
+    fn new() -> CompileCtx {
+        CompileCtx {
+            reporter: Reporter::new(),
+            symbols: SymbolSource::new(),
+        }
+    }
 }

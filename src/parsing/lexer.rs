@@ -460,14 +460,14 @@ mod tests {
     use ast::parsed::Symbol;
     use parsing::tokens::Token;
     use parsing::lexer::lex;
-    use util::CompileCtx;
-    use util::position::{Position, Span};
+    use position::{Position, Span};
+    use CompileCtx;
 
     fn lex_no_positions(source: &str) -> Vec<Token> {
         let mut ctx = CompileCtx::new();
         let name = Name::from_string("<test>".into());
         let tokens = lex(source, name, &mut ctx);
-        assert!(!ctx.errors.have_errors());
+        assert!(!ctx.reporter.have_errors());
         tokens.into_iter().map(|tok| tok.value).collect()
     }
 
@@ -526,7 +526,7 @@ mod tests {
         let mut ctx = CompileCtx::new();
         let name = Name::from_string("<test>".into());
         let tokens = lex("a =\n1", name, &mut ctx);
-        assert!(!ctx.errors.have_errors());
+        assert!(!ctx.reporter.have_errors());
         assert_eq!(tokens, vec![
             Node {
                 value: Token::Ident(Symbol::Unqualified("a".to_string())),

@@ -1,4 +1,4 @@
--- expect symbol errors: 1:29 2:24
+-- expect symbol errors: 2:24 1:29
 import Other exposing (Foo(..))
 
 -- module: Other

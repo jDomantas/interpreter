@@ -3,8 +3,7 @@ extern crate interpreter;
 use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
-use interpreter::position::Span;
-use interpreter::diagnostics::Diagnostic;
+use interpreter::diagnostics::{Diagnostic, Span};
 
 
 fn main() {
@@ -40,18 +39,18 @@ fn format_error(source: &str, error: &Diagnostic<Span>) {
         } else {
             println!("No note");
         }
-        display_span(source, note.span);
+        display_span(source, &note.span);
     }
     println!("");
 }
 
-fn display_span(source: &str, span: Span) {
+fn display_span(source: &str, span: &Span) {
     let _line = if span.start.line == 0 { 0 } else { span.start.line - 1 };
     println!("Error position: {}:{} to {}:{}",
         span.start.line,
-        span.start.column,
+        span.start.col,
         span.end.line,
-        span.end.column);
+        span.end.col);
     let _ = source;
     /*let line = source.lines().skip(line).next().unwrap();
     println!("{: >5} | {}", span.start.line, line);

@@ -1,13 +1,13 @@
 use std::cmp::Ordering;
 use std::iter::Peekable;
-use ast::{Node, Name, Literal, Associativity};
+use codemap::Span;
+use ast::{Node, Literal, Associativity};
 use ast::parsed::{
     Expr, Pattern, CaseBranch, LetDecl, Decl, Def, TypeAnnot, Scheme, Type,
     TypeAlias, UnionType, UnionCase, Symbol, Trait, Impl, ItemList,
     ExposedItem, ModuleDef, Import, Module, DoExpr,
 };
-use parsing::tokens::{Token, TokenKind};
-use position::Span;
+use parsing::tokens::{Token, TokenKind, WithLayout};
 use CompileCtx;
 
 
@@ -44,11 +44,11 @@ impl<T> PartialResult<T> {
 
 pub(crate) fn parse_module<I>(
     tokens: I,
-    module: Name,
+    module: &str,
     require_def: bool,
     ctx: &mut CompileCtx,
 ) -> Option<Module>
-    where I: Iterator<Item=Node<Token>> 
+    where I: Iterator<Item=WithLayout<Token>> 
 {
     let mut parser = Parser::new(tokens, module, ctx);
     let module = parser.module(require_def).ok();
@@ -62,19 +62,19 @@ type ExprNode = Node<Expr>;
 type PatternNode = Node<Pattern>;
 type TypeNode = Node<Type>;
 
-struct Parser<'a, I: Iterator<Item=Node<Token>>> {
-    next_token: Option<Node<Token>>,
+struct Parser<'a, I: Iterator<Item=WithLayout<Token>>> {
+    next_token: Option<WithLayout<Token>>,
     tokens: Peekable<I>,
     expected_tokens: Vec<TokenKind>,
     ctx: &'a mut CompileCtx,
     current_indent: usize,
     accept_aligned: bool,
     last_token_span: Option<Span>,
-    module: Name,
+    module: &'a str,
 }
 
-impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
-    fn new(mut tokens: I, module: Name, ctx: &'a mut CompileCtx) -> Self {
+impl<'a, I: Iterator<Item=WithLayout<Token>>> Parser<'a, I> {
+    fn new(mut tokens: I, module: &'a str, ctx: &'a mut CompileCtx) -> Self {
         let next_token = tokens.next();
         Parser {
             next_token: next_token,
@@ -92,8 +92,8 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
         let (token, span) = match self.next_token {
             // don't report errors on error tokens,
             // these will be reported by lexer
-            Some(Node { value: Token::Error, .. }) => return,
-            Some(Node { ref value, span }) => (value, span),
+            Some(WithLayout { value: Token::Error, .. }) => return,
+            Some(WithLayout { ref value, span, .. }) => (value, span),
             _ => panic!("skipped EndOfInput token"),
         };
 
@@ -147,14 +147,14 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
 
     fn next_span(&self) -> Span {
         match self.next_token {
-            Some(Node { span, .. }) => span,
+            Some(WithLayout { span, .. }) => span,
             _ => panic!("skipped EndOfInput token"),
         }
     }
 
     fn align_on_next(&mut self) -> usize {
         let token_column = self.peek()
-            .map(|s| s.span.start.column)
+            .map(|s| s.col)
             .unwrap_or(self.current_indent);
 
         let old_indent = self.current_indent;
@@ -165,7 +165,7 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
     fn skip_to_aligned(&mut self) -> bool {
         let indent = self.current_indent;
         match self.next_token {
-            Some(Node { value: Token::EndOfInput, .. }) => {
+            Some(WithLayout { value: Token::EndOfInput, .. }) => {
                 return false;
             }
             _ => { }
@@ -174,14 +174,13 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
         self.consume();
         loop {
             match self.next_token {
-                Some(Node { value: Token::EndOfInput, .. }) => {
+                Some(WithLayout { value: Token::EndOfInput, .. }) => {
                     return false;
                 }
-                Some(Node { ref span, .. }) => {
-                    let column = span.start.column;
-                    if column < indent {
+                Some(WithLayout { col, .. }) => {
+                    if col < indent {
                         return false;
-                    } else if column == indent {
+                    } else if col == indent {
                         return true;
                     }
                 }
@@ -201,16 +200,15 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
         }
     }
 
-    fn peek(&self) -> Option<&Node<Token>> {
+    fn peek(&self) -> Option<&WithLayout<Token>> {
         match self.next_token {
             Some(ref token) => {
-                let token_column = token.span.start.column;
                 let order = if self.accept_aligned {
                     Ordering::Equal
                 } else {
                     Ordering::Greater
                 };
-                if token_column.cmp(&self.current_indent) == order {
+                if token.col.cmp(&self.current_indent) == order {
                     Some(token)
                 } else {
                     None
@@ -222,7 +220,7 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
         }
     }
 
-    fn peek2(&mut self) -> Option<&Node<Token>> {
+    fn peek2(&mut self) -> Option<&WithLayout<Token>> {
         // next token might be too much to the left or missing altogehter
         // so first we have to make sure it is there
         if self.peek().is_none() {
@@ -231,7 +229,7 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
 
         match self.tokens.peek() {
             Some(token) => {
-                if token.span.start.column > self.current_indent {
+                if token.col > self.current_indent {
                     Some(token)
                 } else {
                     None
@@ -243,7 +241,7 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
         }
     }
 
-    fn consume(&mut self) -> Option<Node<Token>> {
+    fn consume(&mut self) -> Option<WithLayout<Token>> {
         if let Some(span) = self.peek().map(|t| t.span){
             self.last_token_span = Some(span);
         }
@@ -281,12 +279,12 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
     fn eat_symbol(&mut self) -> Option<Node<Symbol>> {
         self.expected_tokens.push(TokenKind::Ident);
         match self.peek() {
-            Some(&Node { value: Token::Ident(_), .. }) => { }
+            Some(&WithLayout { value: Token::Ident(_), .. }) => { }
             _ => return None,
         }
 
         match self.consume() {
-            Some(Node { value: Token::Ident(ident), span }) => {
+            Some(WithLayout { value: Token::Ident(ident), span, .. }) => {
                 Some(Node::new(ident, span))
             }
             _ => {
@@ -298,12 +296,12 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
     fn eat_unqualified_name(&mut self) -> Option<Node<String>> {
         self.expected_tokens.push(TokenKind::Ident);
         match self.peek() {
-            Some(&Node { value: Token::Ident(Symbol::Unqualified(_)), .. }) => { }
+            Some(&WithLayout { value: Token::Ident(Symbol::Unqualified(_)), .. }) => { }
             _ => return None,
         }
 
         match self.consume() {
-            Some(Node { value: Token::Ident(Symbol::Unqualified(name)), span }) => {
+            Some(WithLayout { value: Token::Ident(Symbol::Unqualified(name)), span, .. }) => {
                 Some(Node::new(name, span))
             }
             _ => {
@@ -314,7 +312,7 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
 
     fn eat_cased_name(&mut self, uppercase: bool) -> Option<Node<String>> {
         match self.peek() {
-            Some(&Node { value: Token::Ident(Symbol::Unqualified(ref name)), .. }) => {
+            Some(&WithLayout { value: Token::Ident(Symbol::Unqualified(ref name)), .. }) => {
                 if name.chars().nth(0).unwrap().is_uppercase() != uppercase {
                     return None;
                 }
@@ -325,7 +323,7 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
         }
 
         match self.consume() {
-            Some(Node { value: Token::Ident(Symbol::Unqualified(name)), span }) => {
+            Some(WithLayout { value: Token::Ident(Symbol::Unqualified(name)), span, .. }) => {
                 debug_assert_eq!(name.chars().nth(0).unwrap().is_uppercase(), uppercase);
                 Some(Node::new(name, span))
             }
@@ -348,28 +346,28 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
     fn eat_literal(&mut self) -> Option<Node<Literal>> {
         self.expected_tokens.push(TokenKind::Literal);
         match self.peek() {
-            Some(&Node { value: Token::Int(_), .. }) |
-            Some(&Node { value: Token::Float(_), .. }) |
-            Some(&Node { value: Token::Char(_), .. }) |
-            Some(&Node { value: Token::Str(_), .. }) |
-            Some(&Node { value: Token::Bool(_), .. }) => { }
+            Some(&WithLayout { value: Token::Int(_), .. }) |
+            Some(&WithLayout { value: Token::Float(_), .. }) |
+            Some(&WithLayout { value: Token::Char(_), .. }) |
+            Some(&WithLayout { value: Token::Str(_), .. }) |
+            Some(&WithLayout { value: Token::Bool(_), .. }) => { }
             _ => return None,
         }
 
         match self.consume() {
-            Some(Node { value: Token::Int(int), span }) => {
+            Some(WithLayout { value: Token::Int(int), span, .. }) => {
                 Some(Node::new(Literal::Int(int), span))
             }
-            Some(Node { value: Token::Float(float), span }) => {
+            Some(WithLayout { value: Token::Float(float), span, .. }) => {
                 Some(Node::new(Literal::Float(float), span))
             }
-            Some(Node { value: Token::Bool(b), span }) => {
+            Some(WithLayout { value: Token::Bool(b), span, .. }) => {
                 Some(Node::new(Literal::Bool(b), span))
             }
-            Some(Node { value: Token::Char(c), span }) => {
+            Some(WithLayout { value: Token::Char(c), span, .. }) => {
                 Some(Node::new(Literal::Char(c), span))
             }
-            Some(Node { value: Token::Str(s), span }) => {
+            Some(WithLayout { value: Token::Str(s), span, .. }) => {
                 Some(Node::new(Literal::Str(s), span))
             }
             _ => {
@@ -381,12 +379,12 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
     fn eat_operator(&mut self) -> Option<Node<Symbol>> {
         self.expected_tokens.push(TokenKind::Operator);
         match self.peek() {
-            Some(&Node { value: Token::Operator(_), .. }) => { }
+            Some(&WithLayout { value: Token::Operator(_), .. }) => { }
             _ => return None,
         }
 
         match self.consume() {
-            Some(Node { value: Token::Operator(op), span }) => {
+            Some(WithLayout { value: Token::Operator(op), span, .. }) => {
                 Some(Node::new(op, span))
             }
             _ => {
@@ -398,12 +396,12 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
     fn eat_unqualified_operator(&mut self) -> Option<Node<String>> {
         self.expected_tokens.push(TokenKind::UnqualifiedOperator);
         match self.peek() {
-            Some(&Node { value: Token::Operator(Symbol::Unqualified(_)), .. }) => { }
+            Some(&WithLayout { value: Token::Operator(Symbol::Unqualified(_)), .. }) => { }
             _ => return None,
         }
 
         match self.consume() {
-            Some(Node { value: Token::Operator(Symbol::Unqualified(op)), span }) => {
+            Some(WithLayout { value: Token::Operator(Symbol::Unqualified(op)), span, .. }) => {
                 Some(Node::new(op, span))
             }
             _ => {
@@ -900,11 +898,11 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
 
     fn let_decl(&mut self, allow_type: bool) -> PartialResult<Node<LetDecl>> {
         let is_paren = match self.peek() {
-            Some(&Node { value: Token::OpenParen, .. }) => true,
+            Some(&WithLayout { value: Token::OpenParen, .. }) => true,
             _ => false,
         };
         let is_op = match self.peek2() {
-            Some(&Node { value: Token::Operator(_), .. }) => true,
+            Some(&WithLayout { value: Token::Operator(_), .. }) => true,
             _ => false,
         };
 
@@ -1365,7 +1363,7 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
         let span = self.previous_span();
 
         match self.peek() {
-            Some(&Node { value: Token::Int(_), .. }) => { }
+            Some(&WithLayout { value: Token::Int(_), .. }) => { }
             _ => {
                 self.expected_tokens.push(TokenKind::Int);
                 self.emit_error();
@@ -1374,7 +1372,7 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
         }
 
         let precedence = match self.consume() {
-            Some(Node { value: Token::Int(precedence), span }) => {
+            Some(WithLayout { value: Token::Int(precedence), span, .. }) => {
                 Node::new(precedence, span)
             }
             _ => {
@@ -1818,7 +1816,7 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
             }
         };
 
-        if &name.value != self.module.as_str() {
+        if &name.value != self.module {
             self.bad_module_name();
             return Err(());
         }
@@ -1890,7 +1888,7 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
                 }
             }
         } else {
-            ModuleDef::Implicit { name: self.module.to_string() }
+            ModuleDef::Implicit { name: self.module.into() }
         };
 
         let mut imports = Vec::new();
@@ -1954,7 +1952,7 @@ fn operator_left_section(operator: Node<Symbol>, expr: ExprNode, span: Span) -> 
 #[cfg(test)]
 mod tests {
     use parsing::lexer::lex;
-    use ast::{Literal, Name};
+    use ast::Literal;
     use ast::parsed::{Expr, Pattern, Type, Scheme, LetDecl, Def, TypeAnnot, Symbol, DoExpr};
     use CompileCtx;
     use super::Parser;
@@ -2249,11 +2247,11 @@ mod tests {
 
     fn check_expr(source: &str, expected: &str) {
         let mut ctx = CompileCtx::new();
-        let name = Name::from_string("<test>".into());
-        let tokens = lex(source, name.clone(), &mut ctx);
+        let file = ctx.codemap.add_file("<test>".into(), source.into());
+        let tokens = lex(&file, &mut ctx);
         assert!(!ctx.reporter.have_errors());
         let expr = {
-            let mut parser = Parser::new(tokens.into_iter(), name, &mut ctx);
+            let mut parser = Parser::new(tokens.into_iter(), "<test>", &mut ctx);
             parser.expr(false).ok().unwrap()
         };
         assert!(!ctx.reporter.have_errors());
@@ -2264,11 +2262,11 @@ mod tests {
 
     fn check_pattern(source: &str, expected: &str) {
         let mut ctx = CompileCtx::new();
-        let name = Name::from_string("<test>".into());
-        let tokens = lex(source, name.clone(), &mut ctx);
+        let file = ctx.codemap.add_file("<test>".into(), source.into());
+        let tokens = lex(&file, &mut ctx);
         assert!(!ctx.reporter.have_errors());
         let pattern = {
-            let mut parser = Parser::new(tokens.into_iter(), name, &mut ctx);
+            let mut parser = Parser::new(tokens.into_iter(), "<test>", &mut ctx);
             parser.pattern().ok().unwrap()
         };
         assert!(!ctx.reporter.have_errors());

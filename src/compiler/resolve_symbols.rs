@@ -1,13 +1,13 @@
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 use std::fmt;
+use codemap::Span;
 use ast::{Node, Name, Sym, Symbol};
 use ast::parsed::{
     self as p, Module, Decl, LetDecl, ItemList, Impl, Def, Trait,
     TypeAlias, UnionType, Type, Expr, Pattern, Scheme, DoExpr, ModuleDef,
 };
 use ast::resolved as r;
-use position::Span;
 use CompileCtx;
 
 

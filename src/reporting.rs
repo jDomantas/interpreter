@@ -1,4 +1,4 @@
-use position::Span;
+use codemap::Span;
 use diagnostics::{Severity, Phase, Diagnostic, Note};
 
 

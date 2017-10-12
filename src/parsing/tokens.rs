@@ -1,3 +1,4 @@
+use codemap::Span;
 use ast::parsed::Symbol;
 
 
@@ -164,6 +165,22 @@ impl TokenKind {
                     _ => false,
                 }
             }
+        }
+    }
+}
+
+pub struct WithLayout<T> {
+    pub value: T,
+    pub span: Span,
+    pub col: usize,
+}
+
+impl<T> WithLayout<T> {
+    pub fn map<U, F: FnOnce(T) -> U>(self, f: F) -> WithLayout<U> {
+        WithLayout {
+            value: f(self.value),
+            span: self.span,
+            col: self.col,
         }
     }
 }

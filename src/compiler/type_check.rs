@@ -1,11 +1,11 @@
 use std::collections::{BTreeSet, BTreeMap};
 use std::mem;
 use std::rc::Rc;
+use codemap::Span;
 use ast::{Node, Name, Literal, Symbol, Sym};
 use ast::resolved as r;
 use ast::typed::{self as t, Type, Scheme, SchemeVar, ImplSym, ImplDef, Impls};
 use compiler::{builtins, util};
-use position::Span;
 use symbols::SymbolSource;
 use CompileCtx;
 

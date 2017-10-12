@@ -1,15 +1,16 @@
+extern crate codemap;
+
 mod ast;
 mod symbols;
 mod parsing;
 mod compiler;
 mod reporting;
-pub mod position;
 pub mod diagnostics;
 pub mod vm;
 
+use codemap::CodeMap;
 pub use parsing::{SourceProvider, HashMapProvider};
-use diagnostics::Diagnostic;
-use position::Span;
+use diagnostics::{Diagnostic, Diagnostics, Span};
 use reporting::Reporter;
 use symbols::SymbolSource;
 use vm::Vm;
@@ -28,15 +29,21 @@ pub fn compile<S>(provider: &S, main: &str) -> CompileResult
     let modules = parsing::parse_modules(main, provider, &mut ctx);
     let vm = compiler::compile(&modules, &mut ctx).ok();
 
+    let diagnostics = Diagnostics {
+        raw_diagnostics: ctx.reporter.into_diagnostics(),
+        codemap: ctx.codemap,
+    };
+
     CompileResult {
         vm,
-        diagnostics: ctx.reporter.into_diagnostics(),
+        diagnostics: diagnostics.into_diagnostics(),
     }
 }
 
 struct CompileCtx {
     reporter: Reporter,
     symbols: SymbolSource,
+    codemap: CodeMap,
 }
 
 impl CompileCtx {
@@ -44,6 +51,7 @@ impl CompileCtx {
         CompileCtx {
             reporter: Reporter::new(),
             symbols: SymbolSource::new(),
+            codemap: CodeMap::new(),
         }
     }
 }

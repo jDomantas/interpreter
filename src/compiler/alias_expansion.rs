@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
+use codemap::Span;
 use ast::{Node, Name, Sym, Symbol};
 use ast::resolved::{Items, TypeDecl, Type, TypeAnnot};
 use compiler::util::{self, Graph};
-use position::Span;
 use CompileCtx;
 
 

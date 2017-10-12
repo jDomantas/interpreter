@@ -1,10 +1,10 @@
 use std::collections::{BTreeSet, BTreeMap};
 use std::collections::btree_map::Entry;
 use std::fmt;
+use codemap::Span;
 use ast::{Node, Name, Sym, Symbol};
 use ast::resolved::{TypeDecl, Type, Items, Trait, TypeAnnot, Scheme, Impl};
 use compiler::util::{self, Graph};
-use position::Span;
 use CompileCtx;
 
 

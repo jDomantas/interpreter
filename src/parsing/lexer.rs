@@ -1,14 +1,13 @@
 use std::str::{Chars, FromStr};
 use std::iter::Peekable;
-use ast::{Node, Name};
+use codemap::{File, Span};
 use ast::parsed::Symbol;
-use parsing::tokens::Token;
-use position::{Position, Span};
+use parsing::tokens::{WithLayout, Token};
 use CompileCtx;
 
 
-pub(crate) fn lex(source: &str, module: Name, ctx: &mut CompileCtx) -> Vec<Node<Token>> {
-    let mut lexer = Lexer::new(source, module, ctx);
+pub(crate) fn lex(file: &File, ctx: &mut CompileCtx) -> Vec<WithLayout<Token>> {
+    let mut lexer = Lexer::new(file.source(), file.span, ctx);
     let mut tokens = Vec::new();
     while let Some(token) = lexer.next_token() {
         tokens.push(token);
@@ -17,30 +16,28 @@ pub(crate) fn lex(source: &str, module: Name, ctx: &mut CompileCtx) -> Vec<Node<
     tokens
 }
 
-struct Lexer<'a, 'b> {
+struct Lexer<'a> {
     source: Peekable<Chars<'a>>,
+    current_offset: u64,
+    span: Span,
     current: Option<char>,
-    line: usize,
     column: usize,
-    eof_position: Position,
     panicking: bool,
-    ctx: &'b mut CompileCtx,
-    _module: Name,
+    ctx: &'a mut CompileCtx,
 }
 
-impl<'a, 'b> Lexer<'a, 'b> {
-    fn new(source: &'a str, module: Name, ctx: &'b mut CompileCtx) -> Self {
+impl<'a> Lexer<'a> {
+    fn new(source: &'a str, span: Span, ctx: &'a mut CompileCtx) -> Self {
         let mut chars = source.chars();
         let current = chars.next();
         Lexer {
             source: chars.peekable(),
+            current_offset: 0,
+            span,
             current,
-            line: 1,
             column: 1,
-            eof_position: Position::new(1, 1),
             panicking: false,
             ctx,
-            _module: module,
         }
     }
 
@@ -62,11 +59,12 @@ impl<'a, 'b> Lexer<'a, 'b> {
     fn advance(&mut self) {
         match self.current {
             Some('\n') => {
-                self.line += 1;
                 self.column = 1;
+                self.current_offset += 1;
             }
             Some(_) => {
                 self.column += 1;
+                self.current_offset += 1;
             }
             None => { }
         }
@@ -88,14 +86,24 @@ impl<'a, 'b> Lexer<'a, 'b> {
         }
     }
 
-    fn current_position(&self) -> Position {
-        Position::new(self.line, self.column)
+    fn start_span(&self) -> u64 {
+        self.current_offset
     }
 
-    fn single_char_token(&mut self, tok: Token) -> Node<Token> {
-        let pos = self.current_position();
+    fn end_span(&self, start: u64) -> Span {
+        self.span.subspan(start, self.current_offset as u64)
+    }
+
+    fn single_char_token(&mut self, tok: Token) -> WithLayout<Token> {
+        let start = self.start_span();
+        let col = self.column;
         self.advance();
-        Node::new(tok, pos.span_to(pos))
+        let span = self.end_span(start);
+        WithLayout {
+            value: tok,
+            span,
+            col,
+        }
     }
 
     fn skip_line_comment(&mut self) {
@@ -110,10 +118,10 @@ impl<'a, 'b> Lexer<'a, 'b> {
     }
 
     fn skip_block_comment(&mut self) {
-        let start = self.current_position();
+        let start = self.start_span();
         assert_eq!(self.consume(), Some('{'));
         assert_eq!(self.consume(), Some('-'));
-        let opened_at = start.span_to(self.current_position());
+        let opened_at = self.end_span(start);
         let mut nesting = 1_usize;
         loop {
             match self.consume() {
@@ -139,48 +147,64 @@ impl<'a, 'b> Lexer<'a, 'b> {
         }
     }
 
-    fn collect_chars<F: FnMut(char) -> bool>(&mut self, mut can_take: F) -> (String, Span) {
-        let start = self.current_position();
-        let mut end = self.current_position();
+    fn collect_chars<F>(&mut self, mut can_take: F) -> WithLayout<String>
+        where F: FnMut(char) -> bool
+    {
+        let start = self.start_span();
+        let mut span = self.end_span(start);
+        let col = self.column;
         let mut ident = String::new();
         while let Some(ch) = self.peek() {
             if can_take(ch) {
-                end = self.current_position();
                 ident.push(ch);
                 self.advance();
+                span = self.end_span(start);
             } else {
+                span = self.end_span(start);
                 break;
             }
         }
 
         assert!(!ident.is_empty());
-        (ident, start.span_to(end))
+        WithLayout {
+            value: ident,
+            span,
+            col,
+        }
     }
 
-    fn lex_number(&mut self) -> Node<Token> {
-        let (number, span) = self.collect_chars(|ch| {
+    fn lex_number(&mut self) -> WithLayout<Token> {
+        let WithLayout { value: number, span, col } = self.collect_chars(|ch| {
             is_symbol_char(ch) || ch == '.'
         });
         debug_assert!(!number.is_empty());
 
-        if let Ok(number) = u64::from_str(&number) {
-            return Node::new(Token::Int(number), span);
-        }
+        let tok = if let Ok(number) = u64::from_str(&number) {
+            Token::Int(number)
+        } else if let Ok(number) = f64::from_str(&number) {
+            Token::Float(number)
+        } else {
+            self.error("Invalid number literal.", span);
+            Token::Error
+        };
 
-        if let Ok(number) = f64::from_str(&number) {
-            return Node::new(Token::Float(number), span);
+        WithLayout {
+            value: tok,
+            span,
+            col,
         }
-        
-        self.error("Invalid number literal.", span);
-        Node::new(Token::Error, span)
     }
 
-    fn lex_ident(&mut self) -> Node<Token> {
-        let (mut name, mut span) = self.collect_chars(is_symbol_char);
+    fn lex_ident(&mut self) -> WithLayout<Token> {
+        let WithLayout {
+            value: mut name,
+            mut span,
+            col,
+        } = self.collect_chars(is_symbol_char);
         debug_assert!(!name.is_empty());
 
         if let Some(token) = ident_keyword(&name) {
-            return Node::new(token, span);
+            return WithLayout { value: token, span, col };
         }
 
         let mut path = String::new();
@@ -188,11 +212,19 @@ impl<'a, 'b> Lexer<'a, 'b> {
         while self.check('.') {
             match self.peek() {
                 Some(ch) if is_symbol_char(ch) && !ch.is_digit(10) => {
-                    let (segment, segment_span) = self.collect_chars(is_symbol_char);
+                    let WithLayout {
+                        value: segment,
+                        span: segment_span,
+                        ..
+                    } = self.collect_chars(is_symbol_char);
                     debug_assert!(!segment.is_empty());
                     if ident_keyword(&segment).is_some() {
                         self.error("Path segment is a keyword.", segment_span);
-                        return Node::new(Token::Error, span);
+                        return WithLayout {
+                            value: Token::Error,
+                            span,
+                            col,
+                        };
                     }
                     if !path.is_empty() {
                         path.push('.');
@@ -202,9 +234,16 @@ impl<'a, 'b> Lexer<'a, 'b> {
                     span = span.merge(segment_span);
                 }
                 _ => {
-                    let error_span = self.current_position().span_to(self.current_position());
+                    let error_span = self.span.subspan(
+                        self.current_offset,
+                        self.current_offset,
+                    );
                     self.error("Expected path segment after dot.", error_span);
-                    return Node::new(Token::Error, span);
+                    return WithLayout {
+                        value: Token::Error,
+                        span,
+                        col,
+                    };
                 }
             }
         }
@@ -215,75 +254,108 @@ impl<'a, 'b> Lexer<'a, 'b> {
             Symbol::Qualified(path, name)
         };
 
-        Node::new(Token::Ident(symbol), span)
+        WithLayout {
+            value: Token::Ident(symbol),
+            span,
+            col,
+        }
     }
 
-    fn lex_operator(&mut self) -> Node<Token> {
-        let (op, span) = self.collect_chars(is_operator_char);
+    fn lex_operator(&mut self) -> WithLayout<Token> {
+        let WithLayout {
+            value: op,
+            span,
+            col,
+        } = self.collect_chars(is_operator_char);
         debug_assert!(!op.is_empty());
 
-        if self.peek() == Some('}') && op.chars().next_back() == Some('-') {
-            let end_position = self.current_position();
-            let start_position = Position {
-                line: end_position.line,
-                column: end_position.column - 1,
-            };
-            let error_span = start_position.span_to(end_position);
-            self.error("Unexpected end of block comment.", error_span);
+        let tok = if self.peek() == Some('}') && op.chars().next_back() == Some('-') {
+            let span = self.span.subspan(
+                self.current_offset - 1,
+                self.current_offset + 1,
+            );
+            self.error("Unexpected end of block comment.", span);
             self.consume();
-            return Node::new(Token::Error, span);
-        }
+            Token::Error
+        } else {
+            Token::Operator(Symbol::Unqualified(op))
+        };
 
-        Node::new(Token::Operator(Symbol::Unqualified(op)), span)
+        WithLayout {
+            value: tok,
+            span,
+            col,
+        }
     }
 
-    fn lex_string_literal(&mut self) -> Node<Token> {
-        let start = self.current_position();
+    fn lex_string_literal(&mut self) -> WithLayout<Token> {
+        let start = self.start_span();
+        let col = self.column;
         assert_eq!(self.consume(), Some('"'));
-        let span = start.span_to(self.current_position());
+        let span = self.end_span(start);
         if self.check('"') {
-            return Node::new(Token::Str(String::new()), span);
+            return WithLayout {
+                value: Token::Str(String::new()),
+                span,
+                col,
+            };
         }
-        let (string, _) = self.collect_chars(|c| c != '"');
-        let span = start.span_to(self.current_position());
-        match self.consume() {
+        let string = self.collect_chars(|c| c != '"').value;
+        let span = self.end_span(start);
+        let tok = match self.consume() {
             Some('"') => {
-                Node::new(Token::Str(string), span)
+                Token::Str(string)
             }
             None => {
-                self.error("Unterminated string literal", start.span_to(start));
-                Node::new(Token::Error, span)
+                self.error("Unterminated string literal", span);
+                Token::Error
             }
             _ => {
                 unreachable!()
             }
+        };
+
+        WithLayout {
+            value: tok,
+            span,
+            col,
         }
     }
 
-    fn lex_char_literal(&mut self) -> Node<Token> {
-        let start = self.current_position();
+    fn lex_char_literal(&mut self) -> WithLayout<Token> {
+        let start = self.start_span();
+        let col = self.column;
         assert_eq!(self.consume(), Some('\''));
-        let span = start.span_to(self.current_position());
+        let span = self.end_span(start);
         let ch = match self.consume() {
             Some(c) if c != '\'' => c,
             _ => {
                 self.error("Invalid char literal", span);
-                return Node::new(Token::Error, span);
+                return WithLayout {
+                    value: Token::Error,
+                    span,
+                    col,
+                };
             }
         };
-        let span = start.span_to(self.current_position());
-        match self.consume() {
+        let span = self.end_span(start);
+        let tok = match self.consume() {
             Some('\'') => {
-                Node::new(Token::Char(ch), span)
+                Token::Char(ch)
             }
             _ => {
                 self.error("Invalid char literal", span);
-                Node::new(Token::Error, span)
+                Token::Error
             }
+        };
+        WithLayout {
+            value: tok,
+            span,
+            col,
         }
     }
 
-    fn next_raw_token(&mut self) -> Option<Node<Token>> {
+    fn next_raw_token(&mut self) -> Option<WithLayout<Token>> {
         loop {
             let next_char = match self.peek() {
                 Some(ch) => ch,
@@ -335,7 +407,10 @@ impl<'a, 'b> Lexer<'a, 'b> {
                     return Some(self.lex_operator());
                 }
                 '\t' => {
-                    let span = self.current_position().span_to(self.current_position());
+                    let span = self.span.subspan(
+                        self.current_offset,
+                        self.current_offset + 1,
+                    );
                     self.error("Found tab character. Please indent your code using spaces.", span);
                     self.advance();
                 }
@@ -349,7 +424,10 @@ impl<'a, 'b> Lexer<'a, 'b> {
                     return Some(self.lex_char_literal());
                 }
                 _ => {
-                    let span = self.current_position().span_to(self.current_position());
+                    let span = self.span.subspan(
+                        self.current_offset,
+                        self.current_offset + 1,
+                    );
                     self.error("Found unknown character.", span);
                     self.advance();
                 }
@@ -357,10 +435,9 @@ impl<'a, 'b> Lexer<'a, 'b> {
         }
     }
 
-    fn next_token(&mut self) -> Option<Node<Token>> {
+    fn next_token(&mut self) -> Option<WithLayout<Token>> {
         while let Some(tok) = self.next_raw_token() {
             let tok = tok.map(change_special);
-            self.set_eof_position(tok.span);
             if !tok.value.is_error() {
                 self.panicking = false;
                 return Some(tok);
@@ -372,15 +449,14 @@ impl<'a, 'b> Lexer<'a, 'b> {
         None
     }
 
-    fn set_eof_position(&mut self, after: Span) {
-        let pos = Position::new(after.end.line, after.end.column + 2);
-        self.eof_position = pos;
-    }
-
-    fn make_eof_token(&self) -> Node<Token> {
+    fn make_eof_token(&self) -> WithLayout<Token> {
         let token = Token::EndOfInput;
-        let span = self.eof_position.span_to(self.eof_position);
-        Node::new(token, span)
+        let span = self.span.subspan(self.span.len(), self.span.len());
+        WithLayout {
+            value: token,
+            span,
+            col: 0,
+        }
     }
 }
 
@@ -456,17 +532,15 @@ fn change_special(token: Token) -> Token {
 
 #[cfg(test)]
 mod tests {
-    use ast::{Node, Name};
     use ast::parsed::Symbol;
     use parsing::tokens::Token;
     use parsing::lexer::lex;
-    use position::{Position, Span};
     use CompileCtx;
 
     fn lex_no_positions(source: &str) -> Vec<Token> {
         let mut ctx = CompileCtx::new();
-        let name = Name::from_string("<test>".into());
-        let tokens = lex(source, name, &mut ctx);
+        let file = ctx.codemap.add_file("Main".into(), source.into());
+        let tokens = lex(&file, &mut ctx);
         assert!(!ctx.reporter.have_errors());
         tokens.into_iter().map(|tok| tok.value).collect()
     }
@@ -524,39 +598,15 @@ mod tests {
     #[test]
     fn positions() {
         let mut ctx = CompileCtx::new();
-        let name = Name::from_string("<test>".into());
-        let tokens = lex("a =\n1", name, &mut ctx);
+        let source = "a = \n1";
+        let file = ctx.codemap.add_file("<test>".into(), source.into());
+        let tokens = lex(&file, &mut ctx);
         assert!(!ctx.reporter.have_errors());
-        assert_eq!(tokens, vec![
-            Node {
-                value: Token::Ident(Symbol::Unqualified("a".to_string())),
-                span: Span {
-                    start: Position { line: 1, column: 1 },
-                    end: Position { line: 1, column: 1 }
-                },
-            },
-            Node {
-                value: Token::Equals,
-                span: Span {
-                    start: Position { line: 1, column: 3 },
-                    end: Position { line: 1, column: 3 }
-                },
-            },
-            Node {
-                value: Token::Int(1),
-                span: Span {
-                    start: Position { line: 2, column: 1 },
-                    end: Position { line: 2, column: 1 }
-                },
-            },
-            Node {
-                value: Token::EndOfInput,
-                span: Span {
-                    start: Position { line: 2, column: 3 },
-                    end: Position { line: 2, column: 3 }
-                },
-            }
-        ]);
+        assert_eq!(tokens.len(), 4);
+        assert_eq!(tokens[0].value, Token::Ident(Symbol::Unqualified("a".to_string())));
+        assert_eq!(tokens[1].value, Token::Equals);
+        assert_eq!(tokens[2].value, Token::Int(1));
+        assert_eq!(tokens[3].value, Token::EndOfInput);
     }
 
     #[test]

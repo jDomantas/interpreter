@@ -1,5 +1,5 @@
+use codemap::Span;
 use ast::{Node, Literal, Associativity};
-use position::Span;
 
 
 #[derive(Debug, Clone)]

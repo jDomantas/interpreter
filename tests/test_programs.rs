@@ -7,7 +7,7 @@ use std::str;
 use std::collections::HashMap;
 use std::path::Path;
 use interpreter::HashMapProvider;
-use interpreter::position::Position;
+use interpreter::diagnostics::Pos;
 use interpreter::vm::{self, EvalError};
 
 
@@ -107,13 +107,13 @@ fn run_program(source: &str) -> Outcome {
         let pos = err.primary_span.unwrap().start;
         let message = err.message.clone();
         match err.phase {
-            Phase::Parsing => Outcome::ParseError(pos, message),
+            Phase::Parsing => Outcome::ParseError(shift_pos(pos), message),
             Phase::SymbolResolution => {
                 let errors = errors
                     .into_iter()
                     .map(|e| {
                         assert_eq!(e.phase, Phase::SymbolResolution);
-                        (e.primary_span.unwrap().start, e.message.clone())
+                        (shift_pos(e.primary_span.unwrap().start), e.message.clone())
                     })
                     .collect();
                 Outcome::SymbolError(errors)
@@ -123,23 +123,31 @@ fn run_program(source: &str) -> Outcome {
                     .into_iter()
                     .map(|e| {
                         assert_eq!(e.phase, Phase::TypeAliasExpansion);
-                        (e.primary_span.unwrap().start, e.message)
+                        (shift_pos(e.primary_span.unwrap().start), e.message)
                     })
                     .collect();
                 Outcome::AliasError(errors)
             }
-            Phase::FixityResolution => Outcome::FixityError(pos, message),
-            Phase::KindChecking => Outcome::KindError(pos, message),
-            Phase::TypeChecking => Outcome::TypeError(pos, message),
-            Phase::TraitChecking => Outcome::TraitError(pos, message),
+            Phase::FixityResolution => Outcome::FixityError(shift_pos(pos), message),
+            Phase::KindChecking => Outcome::KindError(shift_pos(pos), message),
+            Phase::TypeChecking => Outcome::TypeError(shift_pos(pos), message),
+            Phase::TraitChecking => Outcome::TraitError(shift_pos(pos), message),
             Phase::PatternError => unimplemented!(),
         }
     }
 }
 
+fn shift_pos(pos: Pos) -> Pos {
+    let Pos { line, col } = pos;
+    Pos {
+        line: line + 1,
+        col: col + 1,
+    }
+}
+
 fn parse_expectation(source: &str) -> Expectation {
     fn single_pos_error<F>(source: &str, kind: &str, builder: F) -> Option<Expectation>
-        where F: FnOnce(Position) -> Expectation
+        where F: FnOnce(Pos) -> Expectation
     {
         for line in source.lines() {
             let parts = line.split(' ').collect::<Vec<_>>();
@@ -150,8 +158,8 @@ fn parse_expectation(source: &str) -> Expectation {
                 parts[3] == "error:"
             {
                 let line = str::parse::<usize>(parts[5]).unwrap();
-                let column = str::parse::<usize>(parts[7]).unwrap();
-                return Some(builder(Position::new(line, column)));
+                let col = str::parse::<usize>(parts[7]).unwrap();
+                return Some(builder(Pos { line, col }));
             }
         }
         None
@@ -167,8 +175,8 @@ fn parse_expectation(source: &str) -> Expectation {
             for pos in line.split(' ').skip(4) {
                 let parts = pos.split(':').collect::<Vec<_>>();
                 let line = str::parse::<usize>(parts[0]).unwrap();
-                let column = str::parse::<usize>(parts[1]).unwrap();
-                positions.push(Position::new(line, column));
+                let col = str::parse::<usize>(parts[1]).unwrap();
+                positions.push(Pos { line, col });
             }
             return Expectation::SymbolError(positions);
         } 
@@ -232,13 +240,13 @@ impl Value {
 }
 
 enum Expectation {
-    ParseError(Position),
-    SymbolError(Vec<Position>),
+    ParseError(Pos),
+    SymbolError(Vec<Pos>),
     RecursiveAliasError,
-    FixityError(Position),
-    KindError(Position),
-    TypeError(Position),
-    TraitError(Position),
+    FixityError(Pos),
+    KindError(Pos),
+    TypeError(Pos),
+    TraitError(Pos),
     Ok(Value),
 }
 
@@ -246,28 +254,28 @@ impl Expectation {
     fn report(&self) {
         match *self {
             Expectation::ParseError(pos) => {
-                println!("parse error at line {}, column {}", pos.line, pos.column);
+                println!("parse error at line {}, column {}", pos.line, pos.col);
             }
             Expectation::SymbolError(ref pos) => {
                 println!("symbol errors at:");
                 for pos in pos {
-                    println!("line {}, column {}", pos.line, pos.column);
+                    println!("line {}, column {}", pos.line, pos.col);
                 }
             }
             Expectation::RecursiveAliasError => {
                 println!("recursive alias error");
             }
             Expectation::FixityError(pos) => {
-                println!("fixity error at line {}, column {}", pos.line, pos.column);
+                println!("fixity error at line {}, column {}", pos.line, pos.col);
             }
             Expectation::KindError(pos) => {
-                println!("kind error at line {}, column {}", pos.line, pos.column);
+                println!("kind error at line {}, column {}", pos.line, pos.col);
             }
             Expectation::TypeError(pos) => {
-                println!("type error at line {}, column {}", pos.line, pos.column);
+                println!("type error at line {}, column {}", pos.line, pos.col);
             }
             Expectation::TraitError(pos) => {
-                println!("trait error at line {}, column {}", pos.line, pos.column);
+                println!("trait error at line {}, column {}", pos.line, pos.col);
             }
             Expectation::Ok(ref value) => {
                 println!("success: {:?}", value);
@@ -277,13 +285,13 @@ impl Expectation {
 }
 
 enum Outcome {
-    ParseError(Position, String),
-    SymbolError(Vec<(Position, String)>),
-    AliasError(Vec<(Position, String)>),
-    FixityError(Position, String),
-    KindError(Position, String),
-    TypeError(Position, String),
-    TraitError(Position, String),
+    ParseError(Pos, String),
+    SymbolError(Vec<(Pos, String)>),
+    AliasError(Vec<(Pos, String)>),
+    FixityError(Pos, String),
+    KindError(Pos, String),
+    TypeError(Pos, String),
+    TraitError(Pos, String),
     EvalError(EvalError),
     Ok(vm::Value),
 }
@@ -292,7 +300,7 @@ impl Outcome {
     fn report(&self) {
         match *self {
             Outcome::ParseError(pos, ref msg) => {
-                println!("parse error at line {}, column {}", pos.line, pos.column);
+                println!("parse error at line {}, column {}", pos.line, pos.col);
                 println!("reason: {}", msg);
             }
             Outcome::SymbolError(ref pos) => {
@@ -300,7 +308,7 @@ impl Outcome {
                 for &(pos, ref msg) in pos {
                     println!("line {}, column {}, reason: {}",
                         pos.line,
-                        pos.column,
+                        pos.col,
                         msg);
                 }
             }
@@ -309,24 +317,24 @@ impl Outcome {
                 for &(pos, ref msg) in pos {
                     println!("line {}, column {}, reason: {}",
                         pos.line,
-                        pos.column,
+                        pos.col,
                         msg);
                 }
             }
             Outcome::FixityError(pos, ref msg) => {
-                println!("fixity error at line {}, column {}", pos.line, pos.column);
+                println!("fixity error at line {}, column {}", pos.line, pos.col);
                 println!("reason: {}", msg);
             }
             Outcome::KindError(pos, ref msg) => {
-                println!("kind error at line {}, column {}", pos.line, pos.column);
+                println!("kind error at line {}, column {}", pos.line, pos.col);
                 println!("reason: {}", msg);
             }
             Outcome::TypeError(pos, ref msg) => {
-                println!("type error at line {}, column {}", pos.line, pos.column);
+                println!("type error at line {}, column {}", pos.line, pos.col);
                 println!("reason: {}", msg);
             }
             Outcome::TraitError(pos, ref msg) => {
-                println!("trait error at line {}, column {}", pos.line, pos.column);
+                println!("trait error at line {}, column {}", pos.line, pos.col);
                 println!("reason: {}", msg);
             }
             Outcome::EvalError(ref err) => {

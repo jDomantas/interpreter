@@ -5,7 +5,7 @@ pub mod monomorphised;
 
 use std::fmt;
 use std::rc::Rc;
-use position::Span;
+use codemap::Span;
 pub use symbols::Sym;
 
 

@@ -28,14 +28,11 @@ intMul = intMul
 intDiv : Int -> Int -> Int
 intDiv = intDiv
 
-intLe : Int -> Int -> Bool
-intLe = intLe
-
 intEq : Int -> Int -> Bool
 intEq = intEq
 
-intGr : Int -> Int -> Bool
-intGr = intGr
+intCmp : Int -> Int -> Ordering
+intCmp = intCmp
 
 intToString : Int -> String
 intToString = intToString
@@ -52,26 +49,20 @@ fracMul = fracMul
 fracDiv : Frac -> Frac -> Frac
 fracDiv = fracDiv
 
-fracLe : Frac -> Frac -> Bool
-fracLe = fracLe
-
 fracEq : Frac -> Frac -> Bool
 fracEq = fracEq
 
-fracGr : Frac -> Frac -> Bool
-fracGr = fracGr
+fracCmp : Frac -> Frac -> Ordering
+fracCmp = fracCmp
 
 fracToString : Frac -> String
 fracToString = fracToString
 
-charLe : Char -> Char -> Bool
-charLe = charLe
-
 charEq : Char -> Char -> Bool
 charEq = charEq
 
-charGr : Char -> Char -> Bool
-charGr = charGr
+charCmp : Char -> Char -> Ordering
+charCmp = charCmp
 
 charToString : Char -> String
 charToString = charToString
@@ -165,22 +156,10 @@ infix 4 >
 infix 4 >=
 
 impl Int : Ord where
-    compare a b =
-        if intLe a b then
-            LT
-        else if intEq a b then
-            EQ
-        else
-            GT
+    compare = intCmp
 
 impl Frac : Ord where
-    compare a b =
-        if fracLe a b then
-            LT
-        else if fracEq a b then
-            EQ
-        else
-            GT
+    compare = fracCmp
 
 impl Bool : Ord where
     compare a b =
@@ -195,13 +174,7 @@ impl Bool : Ord where
             EQ
 
 impl Char : Ord where
-    compare a b =
-        if charLe a b then
-            LT
-        else if charEq a b then
-            EQ
-        else
-            GT
+    compare = charCmp
 
 impl Ordering : Ord where
     compare a b =

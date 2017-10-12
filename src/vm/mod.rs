@@ -1,5 +1,6 @@
 pub(crate) mod internal;
 
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 use ast::Sym;
@@ -385,20 +386,15 @@ impl Vm {
                 let b = self.pop_int();
                 self.stack.push(RawValue::Int(a / b));
             }
-            IntLe => {
-                let a = self.pop_int();
-                let b = self.pop_int();
-                self.stack.push(RawValue::Bool(a < b));
-            }
             IntEq => {
                 let a = self.pop_int();
                 let b = self.pop_int();
                 self.stack.push(RawValue::Bool(a == b));
             }
-            IntGr => {
+            IntCmp => {
                 let a = self.pop_int();
                 let b = self.pop_int();
-                self.stack.push(RawValue::Bool(a > b));
+                self.stack.push(make_ordering(a.cmp(&b)));
             }
             IntToString => {
                 let a = self.pop_int();
@@ -424,20 +420,15 @@ impl Vm {
                 let b = self.pop_frac();
                 self.stack.push(RawValue::Frac(a / b));
             }
-            FracLe => {
-                let a = self.pop_frac();
-                let b = self.pop_frac();
-                self.stack.push(RawValue::Bool(a < b));
-            }
             FracEq => {
                 let a = self.pop_frac();
                 let b = self.pop_frac();
                 self.stack.push(RawValue::Bool(a == b));
             }
-            FracGr => {
+            FracCmp => {
                 let a = self.pop_frac();
                 let b = self.pop_frac();
-                self.stack.push(RawValue::Bool(a > b));
+                self.stack.push(make_ordering(a.partial_cmp(&b).expect("comparing NaN")));
             }
             FracToString => {
                 let a = self.pop_frac();
@@ -447,20 +438,15 @@ impl Vm {
                 let a = self.pop_char();
                 self.stack.push(RawValue::Str(Rc::new(a.to_string())));
             }
-            CharLe => {
-                let a = self.pop_char();
-                let b = self.pop_char();
-                self.stack.push(RawValue::Bool(a < b));
-            }
             CharEq => {
                 let a = self.pop_char();
                 let b = self.pop_char();
                 self.stack.push(RawValue::Bool(a == b));
             }
-            CharGr => {
+            CharCmp => {
                 let a = self.pop_char();
                 let b = self.pop_char();
-                self.stack.push(RawValue::Bool(a > b));
+                self.stack.push(make_ordering(a.cmp(&b)));
             }
             StrLength => {
                 let s = self.pop_string();
@@ -487,15 +473,10 @@ impl Vm {
                 let s = s.chars().skip(index).take(length).collect();
                 self.stack.push(RawValue::Str(Rc::new(s)));
             }
-            StrLe => {
+            StrCmp => {
                 let a = self.pop_string();
                 let b = self.pop_string();
-                self.stack.push(RawValue::Bool(a < b));
-            }
-            StrEq => {
-                let a = self.pop_string();
-                let b = self.pop_string();
-                self.stack.push(RawValue::Bool(a == b));
+                self.stack.push(make_ordering(a.cmp(&b)));
             }
         }
         Ok(())
@@ -547,6 +528,19 @@ fn make_some(value: RawValue) -> RawValue {
 fn make_none() -> RawValue {
     RawValue::Object(Rc::new(Object {
         tag: ::compiler::builtins::values::NONE,
+        items: Vec::new(),
+    }))
+}
+
+fn make_ordering(o: Ordering) -> RawValue {
+    use compiler::builtins::values;
+    let tag = match o {
+        Ordering::Less => values::LT,
+        Ordering::Equal => values::EQ,
+        Ordering::Greater => values::GT,
+    };
+    RawValue::Object(Rc::new(Object {
+        tag,
         items: Vec::new(),
     }))
 }

@@ -86,7 +86,7 @@ impl SymbolSource {
     }
 }
 
-pub const BUILTIN_SYMBOLS: [(Sym, &'static str, &'static str); 48] = [
+pub const BUILTIN_SYMBOLS: [(Sym, &'static str, &'static str); 44] = [
     (types::INT,             "Basics",       "Int"),
     (types::FRAC,            "Basics",       "Frac"),
     (types::BOOL,            "Basics",       "Bool"),
@@ -112,27 +112,23 @@ pub const BUILTIN_SYMBOLS: [(Sym, &'static str, &'static str); 48] = [
     (values::INT_SUB,        "Basics",       "intSub"),
     (values::INT_MUL,        "Basics",       "intMul"),
     (values::INT_DIV,        "Basics",       "intDiv"),
-    (values::INT_LE,         "Basics",       "intLe"),
     (values::INT_EQ,         "Basics",       "intEq"),
-    (values::INT_GR,         "Basics",       "intGr"),
+    (values::INT_CMP,        "Basics",       "intCmp"),
     (values::INT_TO_STR,     "Basics",       "intToString"),
     (values::FRAC_ADD,       "Basics",       "fracAdd"),
     (values::FRAC_SUB,       "Basics",       "fracSub"),
     (values::FRAC_MUL,       "Basics",       "fracMul"),
     (values::FRAC_DIV,       "Basics",       "fracDiv"),
-    (values::FRAC_LE,        "Basics",       "fracLe"),
     (values::FRAC_EQ,        "Basics",       "fracEq"),
-    (values::FRAC_GR,        "Basics",       "fracGr"),
+    (values::FRAC_CMP,       "Basics",       "fracCmp"),
     (values::FRAC_TO_STR,    "Basics",       "fracToString"),
     (values::CHAR_TO_STR,    "Basics",       "charToString"),
-    (values::CHAR_LE,        "Basics",       "charLe"),
     (values::CHAR_EQ,        "Basics",       "charEq"),
-    (values::CHAR_GR,        "Basics",       "charGr"),
+    (values::CHAR_CMP,       "Basics",       "charCmp"),
     (values::STR_APPEND,     "String",       "append"),
     (values::STR_CHAR_AT,    "String",       "charAt"),
     (values::STR_LENGTH,     "String",       "length"),
     (values::STR_SUBSTRING,  "String",       "substring"),
-    (values::STR_LE,         "String",       "less"),
-    (values::STR_EQ,         "String",       "equals"),
+    (values::STR_CMP,        "String",       "cmp"),
     (values::MAIN,           "Main",         "main"),
 ];

@@ -42,31 +42,31 @@ pub mod values {
     pub const INT_SUB: Sym = Sym(51);
     pub const INT_MUL: Sym = Sym(52);
     pub const INT_DIV: Sym = Sym(53);
-    pub const INT_LE: Sym = Sym(54);
-    pub const INT_EQ: Sym = Sym(55);
-    pub const INT_GR: Sym = Sym(56);
-    pub const INT_TO_STR: Sym = Sym(57);
+    pub const INT_EQ: Sym = Sym(54);
+    pub const INT_CMP: Sym = Sym(55);
+    pub const INT_TO_STR: Sym = Sym(56);
     
     pub const FRAC_ADD: Sym = Sym(60);
     pub const FRAC_SUB: Sym = Sym(61);
     pub const FRAC_MUL: Sym = Sym(62);
     pub const FRAC_DIV: Sym = Sym(63);
-    pub const FRAC_LE: Sym = Sym(64);
-    pub const FRAC_EQ: Sym = Sym(65);
-    pub const FRAC_GR: Sym = Sym(66);
-    pub const FRAC_TO_STR: Sym = Sym(67);
+    pub const FRAC_EQ: Sym = Sym(64);
+    pub const FRAC_CMP: Sym = Sym(65);
+    pub const FRAC_TO_STR: Sym = Sym(66);
 
     pub const CHAR_TO_STR: Sym = Sym(70);
-    pub const CHAR_LE: Sym = Sym(71);
-    pub const CHAR_EQ: Sym = Sym(72);
-    pub const CHAR_GR: Sym = Sym(73);
+    pub const CHAR_EQ: Sym = Sym(71);
+    pub const CHAR_CMP: Sym = Sym(72);
 
     pub const STR_LENGTH: Sym = Sym(80);
     pub const STR_CHAR_AT: Sym = Sym(81);
     pub const STR_APPEND: Sym = Sym(82);
     pub const STR_SUBSTRING: Sym = Sym(83);
-    pub const STR_LE: Sym = Sym(84);
-    pub const STR_EQ: Sym = Sym(85);
+    pub const STR_CMP: Sym = Sym(84);
+
+    pub const LT: Sym = Sym(90);
+    pub const EQ: Sym = Sym(91);
+    pub const GT: Sym = Sym(92);
 }
 
 pub mod modules {

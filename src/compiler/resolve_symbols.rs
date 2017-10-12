@@ -245,33 +245,29 @@ impl<'a> Resolver<'a> {
             ("Basics", None, "intSub") => values::INT_SUB,
             ("Basics", None, "intMul") => values::INT_MUL,
             ("Basics", None, "intDiv") => values::INT_DIV,
-            ("Basics", None, "intLe") => values::INT_LE,
             ("Basics", None, "intEq") => values::INT_EQ,
-            ("Basics", None, "intGr") => values::INT_GR,
+            ("Basics", None, "intCmp") => values::INT_CMP,
             ("Basics", None, "intToString") => values::INT_TO_STR,
             ("Basics", None, "fracAdd") => values::FRAC_ADD,
             ("Basics", None, "fracSub") => values::FRAC_SUB,
             ("Basics", None, "fracMul") => values::FRAC_MUL,
             ("Basics", None, "fracDiv") => values::FRAC_DIV,
-            ("Basics", None, "fracLe") => values::FRAC_LE,
             ("Basics", None, "fracEq") => values::FRAC_EQ,
-            ("Basics", None, "fracGr") => values::FRAC_GR,
+            ("Basics", None, "fracCmp") => values::FRAC_CMP,
             ("Basics", None, "fracToString") => values::FRAC_TO_STR,
             ("Basics", None, "charToString") => values::CHAR_TO_STR,
-            ("Basics", None, "charLe") => values::CHAR_LE,
             ("Basics", None, "charEq") => values::CHAR_EQ,
-            ("Basics", None, "charGr") => values::CHAR_GR,
+            ("Basics", None, "charCmp") => values::CHAR_CMP,
+            ("Basics", Some("Ordering"), "LT") => values::LT,
+            ("Basics", Some("Ordering"), "EQ") => values::EQ,
+            ("Basics", Some("Ordering"), "GT") => values::GT,
             ("String", None, "append") => values::STR_APPEND,
             ("String", None, "charAt") => values::STR_CHAR_AT,
             ("String", None, "length") => values::STR_LENGTH,
             ("String", None, "substring") => values::STR_SUBSTRING,
-            ("String", None, "equals") => values::STR_EQ,
-            ("String", None, "less") => values::STR_LE,
+            ("String", None, "cmp") => values::STR_CMP,
             ("Main", None, "main") => values::MAIN,
-            _ => {
-                //let name = name.into();
-                self.fresh_sym(name)
-            }
+            _ => self.fresh_sym(name),
         }
     }
 

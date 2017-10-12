@@ -385,28 +385,24 @@ impl Compiler {
         self.make_builtin(values::INT_SUB, 2, Instruction::IntSub);
         self.make_builtin(values::INT_MUL, 2, Instruction::IntMul);
         self.make_builtin(values::INT_DIV, 2, Instruction::IntDiv);
-        self.make_builtin(values::INT_LE, 2, Instruction::IntLe);
         self.make_builtin(values::INT_EQ, 2, Instruction::IntEq);
-        self.make_builtin(values::INT_GR, 2, Instruction::IntGr);
+        self.make_builtin(values::INT_CMP, 2, Instruction::IntCmp);
         self.make_builtin(values::INT_TO_STR, 1, Instruction::IntToString);
         self.make_builtin(values::FRAC_ADD, 2, Instruction::FracAdd);
         self.make_builtin(values::FRAC_SUB, 2, Instruction::FracSub);
         self.make_builtin(values::FRAC_MUL, 2, Instruction::FracMul);
         self.make_builtin(values::FRAC_DIV, 2, Instruction::FracDiv);
-        self.make_builtin(values::FRAC_LE, 2, Instruction::FracLe);
         self.make_builtin(values::FRAC_EQ, 2, Instruction::FracEq);
-        self.make_builtin(values::FRAC_GR, 2, Instruction::FracGr);
+        self.make_builtin(values::FRAC_CMP, 2, Instruction::FracCmp);
         self.make_builtin(values::FRAC_TO_STR, 1, Instruction::FracToString);
-        self.make_builtin(values::CHAR_LE, 2, Instruction::CharLe);
         self.make_builtin(values::CHAR_EQ, 2, Instruction::CharEq);
-        self.make_builtin(values::CHAR_GR, 2, Instruction::CharGr);
+        self.make_builtin(values::CHAR_CMP, 2, Instruction::CharCmp);
         self.make_builtin(values::CHAR_TO_STR, 1, Instruction::CharToString);
         self.make_builtin(values::STR_APPEND, 2, Instruction::StrAppend);
         self.make_builtin(values::STR_CHAR_AT, 2, Instruction::StrCharAt);
         self.make_builtin(values::STR_LENGTH, 1, Instruction::StrLength);
         self.make_builtin(values::STR_SUBSTRING, 3, Instruction::StrSubstring);
-        self.make_builtin(values::STR_EQ, 2, Instruction::StrEq);
-        self.make_builtin(values::STR_LE, 2, Instruction::StrLe);
+        self.make_builtin(values::STR_CMP, 2, Instruction::StrCmp);
     }
 
     fn make_builtin(&mut self, sym: Sym, arg_count: usize, instr: Instruction) {

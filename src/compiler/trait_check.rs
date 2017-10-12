@@ -202,7 +202,7 @@ impl<'a, 'b> SolverCtx<'a, 'b> {
             }
             Expr::Let(ref mut defs, ref mut expr) => {
                 for def in defs {
-                    self.check_def(&mut def.value);
+                    self.check_def(def);
                 }
                 self.check_expr(&mut **expr);
             }

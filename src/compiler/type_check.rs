@@ -1,7 +1,7 @@
 use std::collections::{BTreeSet, BTreeMap};
 use std::mem;
 use std::rc::Rc;
-use ast::{Node, NodeView, Name, Literal, Symbol, Sym};
+use ast::{Node, Name, Literal, Symbol, Sym};
 use ast::resolved as r;
 use ast::typed::{self as t, Type, Scheme, SchemeVar, ImplSym, ImplDef, Impls};
 use compiler::{builtins, util};
@@ -432,7 +432,7 @@ impl<'a, 'b, 'c> InferCtx<'a, 'b, 'c> {
                 let mut typed_defs = self.infer_defs(defs, true);
                 // infer typed ones after untyped
                 for def in defs {
-                    if self.annotations.contains_key(&def.value.sym.value) {
+                    if self.annotations.contains_key(&def.sym.value) {
                         let slice = util::slice_from_ref(def);
                         typed_defs.extend(self.infer_defs(slice, false));
                     }
@@ -592,18 +592,16 @@ impl<'a, 'b, 'c> InferCtx<'a, 'b, 'c> {
             .extend(bounds);
     }
 
-    fn infer_defs<T: NodeView<r::Def>>(&mut self, defs: &[T], skip_typed: bool) -> Vec<Node<t::Def>> {
+    fn infer_defs(&mut self, defs: &[r::Def], skip_typed: bool) -> Vec<t::Def> {
         let free_vars = self.free_env_vars();
         for def in defs {
             let type_ = empty_scheme(Type::Var(self.fresh_var()));
-            self.add_symbol(def.inner().sym.value, type_);
+            self.add_symbol(def.sym.value, type_);
         }
         let mut result = Vec::new();
         let mut constraints = Vec::new();
         mem::swap(&mut self.constraints, &mut constraints);
         for def in defs {
-            let span = def.get_span();
-            let def = def.inner();
             if skip_typed && self.annotations.contains_key(&def.sym.value) {
                 continue;
             }
@@ -615,10 +613,10 @@ impl<'a, 'b, 'c> InferCtx<'a, 'b, 'c> {
                 let source = ConstraintSource::Annotated(def.sym.value, def.sym.span, scheme_span);
                 self.add_constraint(&type_, &annotated, source);
             } else {
-                let given_type = self.lookup_env(def.inner().sym.value).type_;
+                let given_type = self.lookup_env(def.sym.value).type_;
                 let source = ConstraintSource::Infered(
-                    def.inner().sym.value,
-                    def.inner().sym.span);
+                    def.sym.value,
+                    def.sym.span);
                 self.add_constraint(&type_, &given_type, source);
             }
             let typed = t::Def {
@@ -627,7 +625,7 @@ impl<'a, 'b, 'c> InferCtx<'a, 'b, 'c> {
                 scheme: Scheme { vars: Vec::new(), type_ },
                 module: def.module.clone(),
             };
-            result.push(Node::new(typed, span));
+            result.push(typed);
         }
         // solve constraints, apply substitution
         mem::swap(&mut self.constraints, &mut constraints);
@@ -645,13 +643,6 @@ impl<'a, 'b, 'c> InferCtx<'a, 'b, 'c> {
         for val in self.new_env.values_mut() {
             val.type_ = val.type_.map_vars(&substitution);
         }
-        /*println!("have substitution: {:?}", substitution);
-        for constraint in &mut self.constraints {
-            println!("constraint prev: {:?} ~ {:?}", constraint.0, constraint.1);
-            constraint.0 = constraint.0.map_vars(&substitution);
-            constraint.1 = constraint.1.map_vars(&substitution);
-            println!("constraint after: {:?} ~ {:?}", constraint.0, constraint.1);
-        }*/
         // get free variables after substitution
         let free_vars = {
             let mut result = BTreeSet::new();
@@ -666,7 +657,7 @@ impl<'a, 'b, 'c> InferCtx<'a, 'b, 'c> {
         };
         // generalize def types
         for def in &mut result {
-            let mut scheme = def.value.scheme.clone();
+            let mut scheme = def.scheme.clone();
             scheme.type_ = scheme.type_.map_vars(&substitution);
             let mut vars = BTreeSet::new();
             scheme.type_.collect_vars(&mut vars);
@@ -689,20 +680,20 @@ impl<'a, 'b, 'c> InferCtx<'a, 'b, 'c> {
                 vars: scheme_vars,
                 .. scheme
             };
-            self.new_env.insert(def.value.sym.value, scheme.clone());
-            def.value.scheme = scheme;
-            def.value.value.value.substitute_inner(&substitution);
+            self.new_env.insert(def.sym.value, scheme.clone());
+            def.scheme = scheme;
+            def.value.value.substitute_inner(&substitution);
         }
 
         result
     }
 
-    fn infer_top_level_defs<T: NodeView<r::Def>>(&mut self, defs: &[T]) -> Vec<t::Def> {
+    fn infer_top_level_defs(&mut self, defs: &[r::Def]) -> Vec<t::Def> {
         debug_assert!(self.new_env.is_empty());
         let mut typed_defs = self.infer_defs(&defs, true);
         // infer typed ones after untyped
         for def in defs {
-            if self.annotations.contains_key(&def.inner().sym.value) {
+            if self.annotations.contains_key(&def.sym.value) {
                 let slice = util::slice_from_ref(def);
                 typed_defs.extend(self.infer_defs(slice, false));
             }
@@ -713,7 +704,7 @@ impl<'a, 'b, 'c> InferCtx<'a, 'b, 'c> {
                 self.env.insert(k, v);
             }
         }
-        typed_defs.into_iter().map(|d| d.value).collect()
+        typed_defs
     }
 }
 
@@ -1480,7 +1471,7 @@ fn make_impl_annotations(
     for impl_ in &items.impls {
         let impl_scheme = convert_resolved_scheme(&impl_.scheme.value, &Type::Any);
         for def in impl_.values.iter().flat_map(|group| group.iter()) {
-            let def_sym = def.value.sym.value;
+            let def_sym = def.sym.value;
             let trait_item_sym = if let Some(sym) = impl_.trait_items.get(&def_sym) {
                 *sym
             } else {

@@ -12,7 +12,7 @@ pub enum Expr {
     Parenthesised(Box<Node<Expr>>),
     Lambda(Node<Sym>, Box<Node<Expr>>),
     Case(Box<Node<Expr>>, Vec<Node<CaseBranch>>),
-    Let(Vec<Node<Def>>, Box<Node<Expr>>),
+    Let(Vec<Def>, Box<Node<Expr>>),
     List(Vec<Node<Expr>>),
     Tuple(Vec<Node<Expr>>),
     Bind(Node<Pattern>, Box<Node<Expr>>, Box<Node<Expr>>),
@@ -254,7 +254,7 @@ pub struct Trait {
 pub struct Impl {
     pub scheme: Node<Scheme>,
     pub trait_: Node<Symbol>,
-    pub values: Vec<Node<Def>>,
+    pub values: Vec<Def>,
     // mapping from impl symbols to trait symbols
     pub trait_items: BTreeMap<Sym, Sym>,
     pub module: Name,
@@ -264,7 +264,7 @@ pub struct Impl {
 pub struct GroupedImpl {
     pub scheme: Node<Scheme>,
     pub trait_: Node<Symbol>,
-    pub values: Vec<Vec<Node<Def>>>,
+    pub values: Vec<Vec<Def>>,
     // mapping from impl symbols to trait symbols
     pub trait_items: BTreeMap<Sym, Sym>,
     pub module: Name,
@@ -418,7 +418,7 @@ pub mod printer {
                     self.indent += 1;
                     for def in defs {
                         self.print_indent();
-                        self.print_def(&def.value);
+                        self.print_def(def);
                     }
                     self.indent -= 1;
                     self.print_indent();

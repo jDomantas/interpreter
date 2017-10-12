@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use ast::{Node, NodeView, Sym, Symbol};
+use ast::{Node, Sym, Symbol};
 use ast::resolved::{Def, Expr, Items, GroupedItems, Impl, GroupedImpl};
 use compiler::util::Graph;
 
@@ -35,7 +35,7 @@ fn collect_deps<'a>(expr: &'a Expr, deps: &mut Vec<&'a Sym>) {
         }
         Expr::Let(ref defs, ref val) => {
             for def in defs {
-                collect_deps(&def.value.value.value, deps);
+                collect_deps(&def.value.value, deps);
             }
             collect_deps(&val.value, deps);
         }
@@ -57,16 +57,16 @@ fn collect_deps<'a>(expr: &'a Expr, deps: &mut Vec<&'a Sym>) {
     }
 }
 
-fn make_graph<'a, D: 'a + NodeView<Def>, I: Iterator<Item=&'a D>>(defs: I) -> Graph<'a, Sym> {
+fn make_graph<'a, I: Iterator<Item=&'a Def>>(defs: I) -> Graph<'a, Sym> {
     let nodes = defs.map(|def| {
         let mut deps = Vec::new();
-        collect_deps(&def.inner().value.value, &mut deps);
-        (&def.inner().sym.value, deps)
+        collect_deps(&def.value.value, &mut deps);
+        (&def.sym.value, deps)
     });
     Graph::new(nodes)
 }
 
-fn group_defs<T: NodeView<Def>>(defs: Vec<T>) -> Vec<Vec<T>> {
+fn group_defs(defs: Vec<Def>) -> Vec<Vec<Def>> {
     let sccs = make_graph(defs.iter())
         .to_strongly_connected_components()
         .into_iter()
@@ -74,7 +74,7 @@ fn group_defs<T: NodeView<Def>>(defs: Vec<T>) -> Vec<Vec<T>> {
         .collect::<Vec<_>>();
     let mut by_name = defs
         .into_iter()
-        .map(|def| (def.inner().sym.value, def))
+        .map(|def| (def.sym.value, def))
         .collect::<BTreeMap<_, _>>();
     let mut grouped = Vec::new();
     for scc in sccs {
@@ -85,14 +85,6 @@ fn group_defs<T: NodeView<Def>>(defs: Vec<T>) -> Vec<Vec<T>> {
         grouped.push(defs);
     }
     grouped
-}
-
-fn group_let_defs(defs: Vec<Node<Def>>) -> Vec<Vec<Node<Def>>> {
-    group_defs(defs)
-}
-
-fn group_top_level_defs(defs: Vec<Def>) -> Vec<Vec<Def>> {
-    group_defs(defs)
 }
 
 fn group_in_expr(expr: &mut Node<Expr>) {
@@ -126,7 +118,7 @@ fn group_in_expr(expr: &mut Node<Expr>) {
             let mut result = Node::new(Expr::Tuple(Vec::new()), ::position::DUMMY_SPAN);
             ::std::mem::swap(&mut defs_vec, defs);
             ::std::mem::swap(&mut result, val);
-            let defs_vec = group_let_defs(defs_vec);
+            let defs_vec = group_defs(defs_vec);
             for group in defs_vec.into_iter().rev() {
                 debug_assert!(group.len() > 0);
                 let e = Expr::Let(group, Box::new(result));
@@ -158,9 +150,9 @@ fn group_in_expr(expr: &mut Node<Expr>) {
 fn group_impl_items(impl_: Impl) -> GroupedImpl {
     let Impl { scheme, trait_, mut values, trait_items, module } = impl_;
     for value in &mut values {
-        group_in_expr(&mut value.value.value);
+        group_in_expr(&mut value.value);
     }
-    let values = group_let_defs(values);
+    let values = group_defs(values);
     GroupedImpl { scheme, trait_, values, trait_items, module }
 }
 
@@ -176,7 +168,7 @@ pub fn group_items(items: Items) -> GroupedItems {
     for item in &mut items {
         group_in_expr(&mut item.value);
     }
-    let items = group_top_level_defs(items);
+    let items = group_defs(items);
     let impls = impls.into_iter().map(group_impl_items).collect();
     GroupedItems {
         types,

@@ -146,7 +146,7 @@ impl<'a, 'b> Context<'a, 'b> {
                 }
                 Expr::Let(defs, value) => {
                     let defs = defs.into_iter().map(|def| {
-                        def.map(|def| self.fix_def(def))
+                        self.fix_def(def)
                     }).collect();
                     let value = Box::new(self.fix_expr(*value));
                     Expr::Let(defs, value)
@@ -255,7 +255,7 @@ impl<'a, 'b> Context<'a, 'b> {
 
     fn fix_impl(&mut self, mut impl_: Impl) -> Impl {
         impl_.values = impl_.values.into_iter().map(|def| {
-            def.map(|def| self.fix_def(def))
+            self.fix_def(def)
         }).collect();
         impl_
     }

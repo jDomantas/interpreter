@@ -1262,7 +1262,7 @@ impl<'a> Resolver<'a> {
                 .map(|def| Node::new(def, span));
             for def in defs {
                 if trait_items.contains_key(&def.value.sym.value) {
-                    impl_defs.push(def);
+                    impl_defs.push(def.value);
                 } else {
                     other_defs.push(def.value);
                 }
@@ -1924,9 +1924,7 @@ impl<'a> Resolver<'a> {
                     Some(ref v) => self.resolve_expr_with_locals(v, ctx, locals),
                     None => continue,
                 };
-                let defs = self.resolve_def_raw(pat, value, ctx)
-                    .into_iter()
-                    .map(|def| Node::new(def, decl.span));
+                let defs = self.resolve_def_raw(pat, value, ctx);
                 resolved_defs.extend(defs);
             }
         }

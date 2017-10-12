@@ -163,15 +163,15 @@ impl<'a> Solver<'a> {
                 let mut prev_context = BTreeMap::new();
                 let context = self.create_context();
                 for def in defs {
-                    if !is_parametrised(&def.value) {
-                        simple_defs.push(def.value.sym.value);
+                    if !is_parametrised(&def) {
+                        simple_defs.push(def.sym.value);
                     }
-                    let d = (def.value.clone(), impls.clone());
-                    self.defs.insert((def.value.sym.value, context), d);
-                    if let Some(&ctx) = self.current_context.get(&def.value.sym.value) {
-                        prev_context.insert(def.value.sym.value, ctx);
+                    let d = (def.clone(), impls.clone());
+                    self.defs.insert((def.sym.value, context), d);
+                    if let Some(&ctx) = self.current_context.get(&def.sym.value) {
+                        prev_context.insert(def.sym.value, ctx);
                     }
-                    self.current_context.insert(def.value.sym.value, context);
+                    self.current_context.insert(def.sym.value, context);
                 }
                 for def in simple_defs {
                     self.instantiate_symbol(def, &Impls::empty(), impls);
@@ -182,7 +182,7 @@ impl<'a> Solver<'a> {
                 }
                 let mut instantiations = Vec::new();
                 for def in defs {
-                    let key = (def.value.sym.value, context);
+                    let key = (def.sym.value, context);
                     if let Some(inst) = self.instantiations.remove(&key) {
                         instantiations.extend(inst
                             .into_iter()

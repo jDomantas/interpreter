@@ -159,7 +159,7 @@ pub enum Expr {
     Var(Symbol, Type, Impls),
     Apply(Box<Node<Expr>>, Box<Node<Expr>>),
     Lambda(Node<Sym>, Box<Node<Expr>>),
-    Let(Vec<Node<Def>>, Box<Node<Expr>>),
+    Let(Vec<Def>, Box<Node<Expr>>),
     Tuple(Vec<Node<Expr>>),
     Case(Box<Node<Expr>>, Vec<Node<CaseBranch>>),
 }
@@ -182,8 +182,8 @@ impl Expr {
             Expr::Let(ref mut defs, ref mut value) => {
                 value.value.substitute_inner(substitution);
                 for def in defs {
-                    def.value.scheme.type_.map_vars(substitution);
-                    def.value.value.value.substitute_inner(substitution);
+                    def.scheme.type_.map_vars(substitution);
+                    def.value.value.substitute_inner(substitution);
                 }
             }
             Expr::Tuple(ref mut items) => {
@@ -581,7 +581,7 @@ pub mod printer {
                     self.indent += 1;
                     for def in defs {
                         self.print_indent();
-                        self.print_def(&def.value);
+                        self.print_def(def);
                     }
                     self.indent -= 1;
                     self.print_indent();

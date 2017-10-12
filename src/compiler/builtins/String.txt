@@ -1,6 +1,6 @@
 module String exposing
     ( String
-    , append, charAt, subString, length
+    , append, charAt, substring, length
     )
 
 import Basics exposing (..)
@@ -15,8 +15,8 @@ append = append
 charAt : Int -> String -> Option Char
 charAt = charAt
 
-subString : Int -> Int -> String -> String
-subString = subString
+substring : Int -> Int -> String -> String
+substring = substring
 
 length : String -> Int
 length = length

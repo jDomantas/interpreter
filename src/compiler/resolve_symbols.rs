@@ -264,7 +264,7 @@ impl<'a> Resolver<'a> {
             ("String", None, "append") => values::STR_APPEND,
             ("String", None, "charAt") => values::STR_CHAR_AT,
             ("String", None, "length") => values::STR_LENGTH,
-            ("String", None, "subString") => values::STR_SUBSTRING,
+            ("String", None, "substring") => values::STR_SUBSTRING,
             ("String", None, "equals") => values::STR_EQ,
             ("String", None, "less") => values::STR_LE,
             ("Main", None, "main") => values::MAIN,

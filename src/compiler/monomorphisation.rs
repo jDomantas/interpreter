@@ -288,13 +288,6 @@ fn make_constructors(types: &[t::TypeDecl]) -> Vec<m::Def> {
     let mut defs = Vec::new();
     for decl in types {
         match *decl {
-            t::TypeDecl::Record(ref record) => {
-                defs.push(m::Def {
-                    sym: record.name.value,
-                    value: m::Expr::Constructor(record.name.value, record.fields.len()),
-                });
-                // TODO: make field getters
-            }
             t::TypeDecl::Union(ref union) => {
                 for &(ref sym, ref args) in &union.cases {
                     defs.push(m::Def {

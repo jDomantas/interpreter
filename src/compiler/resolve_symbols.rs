@@ -3,7 +3,7 @@ use std::collections::btree_map::Entry;
 use std::fmt;
 use ast::{Node, Name, Sym, Symbol};
 use ast::parsed::{
-    self as p, Module, Decl, LetDecl, ItemList, Impl, Def, RecordType, Trait,
+    self as p, Module, Decl, LetDecl, ItemList, Impl, Def, Trait,
     TypeAlias, UnionType, Type, Expr, Pattern, Scheme, DoExpr, ModuleDef,
 };
 use ast::resolved as r;
@@ -436,81 +436,6 @@ impl<'a> Resolver<'a> {
                                     var,
                                     span,
                                     another,
-                                    module_name);
-                            }
-                        }
-                    }
-                }
-                Decl::Record(ref record) => {
-                    let mut reported = false;
-                    let sym = self.fresh_type_sym(module_name, &record.name.value);
-                    match types.entry(&record.name.value) {
-                        Entry::Vacant(entry) => {
-                            entry.insert((record.name.span, sym));
-                        }
-                        Entry::Occupied(entry) => {
-                            let span = entry.get().0;
-                            // duplicate type, defined at `record.name.span` and `span`
-                            self.double_definition(
-                                &record.name.value,
-                                record.name.span,
-                                span,
-                                module_name);
-                            reported = true;
-                        }
-                    }
-                    match values.entry(&record.name.value) {
-                        Entry::Vacant(entry) => {
-                            entry.insert((None, record.name.span, sym));
-                        }
-                        Entry::Occupied(entry) => {
-                            if !reported {
-                                let span = entry.get().1;
-                                // duplicate value, defined at `record.name.span` and `span`
-                                self.double_definition(
-                                    &record.name.value,
-                                    record.name.span,
-                                    span,
-                                    module_name);
-                                reported = true;
-                            }
-                        }
-                    }
-                    match patterns.entry(&record.name.value) {
-                        Entry::Vacant(entry) => {
-                            entry.insert((None, record.name.span, sym));
-                        }
-                        Entry::Occupied(entry) => {
-                            if !reported {
-                                let span = entry.get().1;
-                                // duplicate pattern, defined at `record.name.span` and `span`
-                                self.double_definition(
-                                    &record.name.value,
-                                    record.name.span,
-                                    span,
-                                    module_name);
-                            }
-                        }
-                    }
-                    for field in &record.fields {
-                        match values.entry(&field.0.value) {
-                            Entry::Vacant(entry) => {
-                                let sym = self.fresh_value_sym(
-                                        module_name,
-                                        &field.0.value,
-                                        Some(&record.name.value));
-                                entry.insert((
-                                    Some(&record.name.value),
-                                    field.0.span,
-                                    sym));
-                            }
-                            Entry::Occupied(entry) => {
-                                let span = entry.get().1;
-                                // duplicate value, defined at `field.0.span` and `span`
-                                self.double_definition(
-                                    &field.0.value,
-                                    field.0.span,
-                                    span,
                                     module_name);
                             }
                         }
@@ -1174,10 +1099,6 @@ impl<'a> Resolver<'a> {
                             &ctx.module);
                     }
                 }
-                Decl::Record(ref record) => {
-                    let type_ = self.resolve_record(record, &ctx);
-                    self.result.types.push(r::TypeDecl::Record(type_));
-                }
                 Decl::Trait(ref trait_) => {
                     let trait_ = self.resolve_trait(trait_, &ctx);
                     self.result.traits.push(trait_);
@@ -1399,35 +1320,6 @@ impl<'a> Resolver<'a> {
                 });
             }
             defs
-        }
-    }
-
-    fn resolve_record(
-                        &mut self,
-                        record: &RecordType,
-                        ctx: &Context) -> r::RecordType {
-        let mut vars = Vec::new();
-        let mut var_symbols = BTreeMap::new();
-        for var in &record.vars {
-            let sym = self.fresh_var_sym(&var.value);
-            vars.push(Node::new(sym, var.span));
-            var_symbols.insert(var.value.as_str(), sym);
-        }
-        self.check_dupe_vars(&vars, ctx);
-        let mut resolved_fields = Vec::new();
-        for &(ref name, ref type_) in &record.fields {
-            let resolved_type = self.resolve_type(type_, &mut var_symbols, ctx, false);
-            let field_sym = ctx.locals.get_value(&name.value).unwrap();
-            let field_name = Node::new(field_sym, name.span);
-            resolved_fields.push((field_name, resolved_type));
-        }
-        
-        let sym = ctx.locals.get_type(&record.name.value).unwrap();
-        r::RecordType {
-            name: Node::new(sym, record.name.span),
-            vars: vars,
-            fields: resolved_fields,
-            module: ctx.module.clone(),
         }
     }
 

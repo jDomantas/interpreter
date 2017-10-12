@@ -174,15 +174,6 @@ fn check_arg_count(
     let mut ok = true;
     for type_ in &items.types {
         match *type_ {
-            TypeDecl::Record(ref record) => {
-                for field in &record.fields {
-                    ok = check_in_type(
-                        &field.1,
-                        &replacements,
-                        &record.module,
-                        ctx) && ok;
-                }
-            }
             TypeDecl::Union(ref union) => {
                 for case in &union.cases {
                     for arg in &case.value.args {
@@ -390,16 +381,6 @@ pub(crate) fn expand_aliases(mut items: Items, ctx: &mut CompileCtx) -> Items {
     }
     for type_ in &mut items.types {
         match *type_ {
-            TypeDecl::Record(ref mut record) => {
-                for field in &mut record.fields {
-                    let expanded = expand_in_type(
-                        &field.1,
-                        &replacements,
-                        &record.module,
-                        ctx);
-                    field.1 = expanded;
-                }
-            }
             TypeDecl::Union(ref mut union) => {
                 for case in &mut union.cases {
                     for arg in &mut case.value.args {

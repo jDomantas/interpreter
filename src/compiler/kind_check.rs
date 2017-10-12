@@ -537,9 +537,6 @@ fn rename_vars(kinds: &mut [Kind]) {
 
 fn contained_types(decl: &TypeDecl) -> Vec<&Node<Type>> {
     match *decl {
-        TypeDecl::Record(ref record) => {
-            record.fields.iter().map(|&(_, ref t)| t).collect()
-        }
         TypeDecl::TypeAlias(ref alias) => {
             alias.type_.iter().collect()
         }
@@ -552,11 +549,6 @@ fn contained_types(decl: &TypeDecl) -> Vec<&Node<Type>> {
 fn contained_concrete_types<'a>(decl: &'a TypeDecl) -> Vec<&'a Sym> {
     let mut result = Vec::new();
     match *decl {
-        TypeDecl::Record(ref record) => {
-            for &(_, ref type_) in &record.fields {
-                util::collect_concrete_types(type_, &mut result);
-            }
-        }
         TypeDecl::TypeAlias(ref alias) => {
             if let Some(ref type_) = alias.type_ {
                 util::collect_concrete_types(type_, &mut result);
@@ -577,7 +569,6 @@ fn make_graph<'a, I: Iterator<Item=&'a TypeDecl>>(decls: I) -> Graph<'a, Sym> {
     let nodes = decls.map(|decl| {
         let depends_on = contained_concrete_types(decl);
         let name = match *decl {
-            TypeDecl::Record(ref record) => &record.name.value,
             TypeDecl::TypeAlias(ref alias) => &alias.name.value,
             TypeDecl::Union(ref union) => &union.name.value,
         };

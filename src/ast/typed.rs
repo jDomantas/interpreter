@@ -413,14 +413,6 @@ impl<'a, 'b> fmt::Display for SchemeFormatter<'a, 'b> {
 }
 
 #[derive(Debug, Clone)]
-pub struct Record {
-    pub name: Node<Sym>,
-    pub vars: Vec<u64>,
-    pub fields: Vec<(Node<Sym>, Type)>,
-    pub module: Name,
-}
-
-#[derive(Debug, Clone)]
 pub struct Union {
     pub name: Node<Sym>,
     pub vars: Vec<u64>,
@@ -430,7 +422,6 @@ pub struct Union {
 
 #[derive(Debug, Clone)]
 pub enum TypeDecl {
-    Record(Record),
     Union(Union),
 }
 
@@ -495,20 +486,10 @@ pub mod printer {
             indent: 0,
             symbols,
         };
-        for typ in &items.types {
-            match *typ {
-                TypeDecl::Record(ref record) => {
-                    if record.module.as_str() == "Main" {
-                        printer.print_record(record);
-                        println!("");
-                    }
-                }
-                TypeDecl::Union(ref union) => {
-                    if union.module.as_str() == "Main" {
-                        printer.print_union(union);
-                        println!("");
-                    }
-                }
+        for &TypeDecl::Union(ref union) in &items.types {
+            if union.module.as_str() == "Main" {
+                printer.print_union(union);
+                println!("");
             }
         }
         for def in &items.items {
@@ -690,31 +671,6 @@ pub mod printer {
                 println!("");
             }
             self.indent -= 1;
-        }
-
-        fn print_record(&mut self, record: &Record) {
-            print!("type ");
-            self.print_sym(record.name.value);
-            for var in &record.vars {
-                print!(" t{}", var);
-            }
-            if record.fields.len() == 0 {
-                println!(" = {{}}");
-            } else {
-                println!(" =");
-                self.indent += 1;
-                let mut first = true;
-                for &(ref name, ref type_) in &record.fields {
-                    self.print_indent();
-                    if first { print!("{{ "); } else { print!(", "); }
-                    self.print_sym(name.value);
-                    println!(" : {}", type_.display(self.symbols));
-                    first = false;
-                }
-                self.print_indent();
-                println!("}}");
-                self.indent -= 1;
-            }
         }
 
         fn print_def(&mut self, def: &Def) {

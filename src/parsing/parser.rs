@@ -3,7 +3,7 @@ use std::iter::Peekable;
 use ast::{Node, Name, Literal, Associativity};
 use ast::parsed::{
     Expr, Pattern, CaseBranch, LetDecl, Decl, Def, TypeAnnot, Scheme, Type,
-    TypeAlias, UnionType, UnionCase, RecordType, Symbol, Trait, Impl, ItemList,
+    TypeAlias, UnionType, UnionCase, Symbol, Trait, Impl, ItemList,
     ExposedItem, ModuleDef, Import, Module, DoExpr,
 };
 use parsing::tokens::{Token, TokenKind};
@@ -1433,24 +1433,6 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
                     }), span))
                 }
             }
-        } else if self.eat(Token::OpenBrace) {
-            match self.record() {
-                Ok(fields) => {
-                    let span = span.merge(self.previous_span());
-                    PartialResult::Ok(Node::new(Decl::Record(RecordType {
-                        name: name,
-                        vars: vars,
-                        fields: fields,
-                    }), span))
-                }
-                Err(()) => {
-                    PartialResult::Partial(Node::new(Decl::Record(RecordType {
-                        name: name,
-                        vars: vars,
-                        fields: Vec::new(),
-                    }), span))
-                }
-            }
         } else {
             // allow pipe before first case, but not mandatory
             self.eat(Token::Pipe);
@@ -1483,31 +1465,6 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
                 PartialResult::Partial(node)
             }
         }
-    }
-
-    fn record(&mut self) -> ParseResult<Vec<(Node<String>, Node<Type>)>> {
-        let mut fields = Vec::new();
-        while !self.eat(Token::CloseBrace) {
-            let name = match self.eat_unqualified_name() {
-                Some(name) => name,
-                None => {
-                    self.emit_error();
-                    return Err(());
-                }
-            };
-            try!(self.expect(Token::Colon));
-            let type_ = try!(self.type_());
-            fields.push((name, type_));
-            if !self.eat(Token::Comma) {
-                if !self.eat(Token::CloseBrace) {
-                    return Err(());
-                } else {
-                    break;
-                }
-            }
-        }
-        
-        Ok(fields)
     }
 
     fn union_case(&mut self) -> ParseResult<Node<UnionCase>> {

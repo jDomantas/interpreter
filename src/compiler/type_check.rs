@@ -1206,23 +1206,6 @@ fn convert_resolved_scheme(scheme: &r::Scheme, self_to: &Type) -> Scheme {
     }
 }
 
-fn convert_resolved_record(record: &r::RecordType) -> t::Record {
-    let vars = record.vars.iter().map(|v| v.value.0).collect();
-    let fields = record.fields
-        .iter()
-        .map(|&(ref name, ref type_)| {
-            let type_ = convert_resolved_type(&type_.value, &Type::Any);
-            (name.clone(), type_)
-        })
-        .collect();
-    t::Record {
-        name: record.name.clone(),
-        vars,
-        fields,
-        module: record.module.clone(),
-    }
-}
-
 fn convert_resolved_union(union: &r::UnionType) -> t::Union {
     let vars = union.vars.iter().map(|v| v.value.0).collect();
     let cases = union.cases
@@ -1246,9 +1229,6 @@ fn convert_resolved_union(union: &r::UnionType) -> t::Union {
 
 fn convert_resolved_type_decl(decl: &r::TypeDecl) -> Option<t::TypeDecl> {
     match *decl {
-        r::TypeDecl::Record(ref record) => {
-            Some(t::TypeDecl::Record(convert_resolved_record(record)))
-        }
         r::TypeDecl::Union(ref union) => {
             Some(t::TypeDecl::Union(convert_resolved_union(union)))
         }
@@ -1307,21 +1287,6 @@ fn collect_pattern_types(items: &r::GroupedItems) -> BTreeMap<Sym, PatternTy> {
                     types.insert(case.value.tag.value, pattern_ty);
                 }
             }
-            r::TypeDecl::Record(ref record) => {
-                let vars = record.vars.iter().map(|v| v.value.0).collect::<Vec<_>>();
-                let mut whole_type = Type::Concrete(record.name.value);
-                for &var in &vars {
-                    whole_type = Type::Apply(
-                        Rc::new(whole_type),
-                        Rc::new(Type::Var(var)));
-                }
-                let mut items = Vec::new();
-                for &(_, ref type_) in &record.fields {
-                    items.push(convert_resolved_type(&type_.value, &Type::Any));
-                }
-                let pattern_ty = PatternTy { vars, whole_type, items };
-                types.insert(record.name.value, pattern_ty);
-            }
             r::TypeDecl::TypeAlias(_) => { }
         }
     }
@@ -1359,36 +1324,6 @@ fn collect_constructor_types(items: &r::GroupedItems) -> BTreeMap<Sym, (Scheme, 
                     };
                     types.insert(case.value.tag.value, (scheme, case.value.tag.span));
                 }
-            }
-            r::TypeDecl::Record(ref record) => {
-                let vars = record.vars.iter().map(|v| v.value.0).collect::<Vec<_>>();
-                let mut type_ = Type::Concrete(record.name.value);
-                let mut scheme_vars = Vec::new();
-                for &var in &vars {
-                    type_ = Type::Apply(
-                        Rc::new(type_),
-                        Rc::new(Type::Var(var)));
-                    scheme_vars.push(SchemeVar {
-                        id: var,
-                        bounds: Vec::new()
-                    });
-                }
-                for &(ref sym, ref ty) in record.fields.iter().rev() {
-                    let arg = Rc::new(convert_resolved_type(&ty.value, &Type::Any));
-                    let ty = Rc::new(type_);
-                    let getter = Type::Function(ty.clone(), arg.clone());
-                    let getter_scheme = Scheme {
-                        vars: scheme_vars.clone(),
-                        type_: getter,
-                    };
-                    types.insert(sym.value, (getter_scheme, sym.span));
-                    type_ = Type::Function(arg, ty);
-                }
-                let scheme = Scheme {
-                    vars: scheme_vars,
-                    type_,
-                };
-                types.insert(record.name.value, (scheme, record.name.span));
             }
             r::TypeDecl::TypeAlias(_) => { }
         }

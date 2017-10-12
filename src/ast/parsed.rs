@@ -160,7 +160,6 @@ pub enum Decl {
     Infix(Associativity, Node<String>, Node<u64>),
     TypeAlias(TypeAlias),
     Union(UnionType),
-    Record(RecordType),
     Trait(Trait),
     Impl(Impl),
 }
@@ -184,13 +183,6 @@ pub struct UnionType {
 pub struct UnionCase {
     pub tag: Node<String>,
     pub args: Vec<Node<Type>>,
-}
-
-#[derive(Debug, Clone)]
-pub struct RecordType {
-    pub name: Node<String>,
-    pub vars: Vec<Node<String>>,
-    pub fields: Vec<(Node<String>, Node<Type>)>,
 }
 
 #[derive(Debug, Clone)]

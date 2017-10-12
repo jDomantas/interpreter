@@ -183,13 +183,11 @@ pub struct Scheme {
 pub enum TypeDecl {
     TypeAlias(TypeAlias),
     Union(UnionType),
-    Record(RecordType),
 }
 
 impl TypeDecl {
     pub fn name(&self) -> Sym {
         match *self {
-            TypeDecl::Record(ref record) => record.name.value,
             TypeDecl::TypeAlias(ref alias) => alias.name.value,
             TypeDecl::Union(ref union) => union.name.value,
         }
@@ -197,7 +195,6 @@ impl TypeDecl {
 
     pub fn var_list(&self) -> &[Node<Sym>] {
         match *self {
-            TypeDecl::Record(ref record) => &record.vars,
             TypeDecl::TypeAlias(ref alias) => &alias.vars,
             TypeDecl::Union(ref union) => &union.vars,
         }
@@ -205,7 +202,6 @@ impl TypeDecl {
 
     pub fn module(&self) -> &Name {
         match *self {
-            TypeDecl::Record(ref record) => &record.module,
             TypeDecl::TypeAlias(ref alias) => &alias.module,
             TypeDecl::Union(ref union) => &union.module,
         }
@@ -232,14 +228,6 @@ pub struct UnionType {
 pub struct UnionCase {
     pub tag: Node<Sym>,
     pub args: Vec<Node<Type>>,
-}
-
-#[derive(Debug, Clone)]
-pub struct RecordType {
-    pub name: Node<Sym>,
-    pub vars: Vec<Node<Sym>>,
-    pub fields: Vec<(Node<Sym>, Node<Type>)>,
-    pub module: Name,
 }
 
 #[derive(Debug, Clone)]
@@ -310,7 +298,6 @@ pub mod printer {
         };
         for typ in &items.types {
             match *typ {
-                TypeDecl::Record(ref record) => printer.print_record(record),
                 TypeDecl::TypeAlias(ref alias) => printer.print_alias(alias),
                 TypeDecl::Union(ref union) => printer.print_union(union),
             }
@@ -619,34 +606,6 @@ pub mod printer {
             print!(" = ");
             self.print_type(alias.type_.as_ref().map(|n| &n.value).unwrap());
             println!("");
-        }
-
-        fn print_record(&mut self, record: &RecordType) {
-            print!("type ");
-            self.print_sym(record.name.value);
-            for var in &record.vars {
-                print!(" ");
-                self.print_sym(var.value);
-            }
-            if record.fields.len() == 0 {
-                println!(" = {{}}");
-            } else {
-                println!(" =");
-                self.indent += 1;
-                let mut first = true;
-                for &(ref name, ref type_) in &record.fields {
-                    self.print_indent();
-                    if first { print!("{{ "); } else { print!(", "); }
-                    self.print_sym(name.value);
-                    print!(" : ");
-                    self.print_type(&type_.value);
-                    println!("");
-                    first = false;
-                }
-                self.print_indent();
-                println!("}}");
-                self.indent -= 1;
-            }
         }
 
         fn print_def(&mut self, def: &Def) {

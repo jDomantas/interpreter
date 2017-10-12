@@ -4,7 +4,7 @@ use std::fmt;
 use ast::{Node, Name, Sym, Symbol};
 use ast::parsed::{
     self as p, Module, Decl, LetDecl, ItemList, Impl, Def, RecordType, Trait,
-    TypeAlias, UnionType, Type, Expr, Pattern, Scheme, DoExpr,
+    TypeAlias, UnionType, Type, Expr, Pattern, Scheme, DoExpr, ModuleDef,
 };
 use ast::resolved as r;
 use position::Span;
@@ -678,9 +678,14 @@ impl<'a> Resolver<'a> {
 
     fn collect_exports<'b>(&mut self, module: &'b Module, items: &Exports<'b>) -> Exports<'b> {
         let module_name = &Name::from_string(module.name().into());
-        let exposed = match module.def.value.exposing.value {
-            ItemList::All => return items.clone(),
-            ItemList::Some(ref items) => items,
+        let exposed = match module.def {
+            ModuleDef::Implicit { .. } => return items.clone(),
+            ModuleDef::Explicit { ref exposing, .. } => {
+                match exposing.value {
+                    ItemList::All => return items.clone(),
+                    ItemList::Some(ref items) => items,
+                }
+            }
         };
 
         let mut result = Exports::empty();

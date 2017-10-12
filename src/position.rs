@@ -40,8 +40,3 @@ impl Span {
         Span::new(start, end)
     }
 }
-
-pub static DUMMY_SPAN: Span = Span {
-    start: Position { line: 0, column: 0 },
-    end: Position { line: 0, column: 0 },
-};

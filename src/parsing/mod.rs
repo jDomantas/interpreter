@@ -100,7 +100,7 @@ pub(crate) fn parse_modules<T: SourceProvider>(
             }
             checked.insert(name.clone());
         }
-        let name = Name::from_string(module.def.value.name.value.clone());
+        let name = Name::from_string(module.name().into());
         modules.insert(name, module);
     }
 

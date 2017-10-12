@@ -208,9 +208,15 @@ pub struct Impl {
 }
 
 #[derive(Debug, Clone)]
-pub struct ModuleDef {
-    pub name: Node<String>,
-    pub exposing: Node<ItemList<Node<ExposedItem>>>,
+pub enum ModuleDef {
+    Implicit {
+        name: String,
+    },
+    Explicit {
+        name: Node<String>,
+        exposing: Node<ItemList<Node<ExposedItem>>>,
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -234,14 +240,17 @@ pub enum ItemList<T> {
 
 #[derive(Debug, Clone)]
 pub struct Module {
-    pub def: Node<ModuleDef>,
+    pub def: ModuleDef,
     pub imports: Vec<Node<Import>>,
     pub items: Vec<Node<Decl>>,
 }
 
 impl Module {
     pub fn name(&self) -> &str {
-        &self.def.value.name.value
+        match self.def {
+            ModuleDef::Implicit { ref name } => name,
+            ModuleDef::Explicit { ref name, .. } => &name.value,
+        }
     }
 }
 

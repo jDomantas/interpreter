@@ -7,7 +7,7 @@ use ast::parsed::{
     ExposedItem, ModuleDef, Import, Module, DoExpr,
 };
 use parsing::tokens::{Token, TokenKind};
-use position::{Position, Span, DUMMY_SPAN};
+use position::Span;
 use CompileCtx;
 
 
@@ -69,7 +69,7 @@ struct Parser<'a, I: Iterator<Item=Node<Token>>> {
     ctx: &'a mut CompileCtx,
     current_indent: usize,
     accept_aligned: bool,
-    last_token_span: Span,
+    last_token_span: Option<Span>,
     module: Name,
 }
 
@@ -83,7 +83,7 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
             ctx,
             current_indent: 0,
             accept_aligned: false,
-            last_token_span: DUMMY_SPAN,
+            last_token_span: None,
             module,
         }
     }
@@ -142,7 +142,7 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
     }
 
     fn previous_span(&self) -> Span {
-        self.last_token_span
+        self.last_token_span.expect("no previous token")
     }
 
     fn next_span(&self) -> Span {
@@ -244,10 +244,9 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
     }
 
     fn consume(&mut self) -> Option<Node<Token>> {
-        self.last_token_span = match self.peek() {
-            Some(tok) => tok.span,
-            None => DUMMY_SPAN,
-        };
+        if let Some(span) = self.peek().map(|t| t.span){
+            self.last_token_span = Some(span);
+        }
         self.accept_aligned = false;
         self.expected_tokens.clear();
         let tok = self.next_token.take();
@@ -536,7 +535,11 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
     }
 
     fn expr_operation(&mut self, mut can_section: bool) -> ParseResult<ExprNode> {
-        let start_span = self.previous_span();
+        let start_span = if can_section {
+            Some(self.previous_span())
+        } else {
+            None
+        };
         let mut result = try!(self.application());
         
         loop {
@@ -547,7 +550,7 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
 
             if can_section && self.peek().map(|x| &x.value) == Some(&Token::CloseParen) {
                 // got something like (a +)
-                let span = start_span.merge(self.next_span());
+                let span = start_span.unwrap().merge(self.next_span());
                 let operator = Node::new(operator.value, operator.span);
                 return Ok(operator_left_section(operator, result, span));
             } else if can_section {
@@ -1846,7 +1849,7 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
         Ok(Node::new(ItemList::Some(subitems), span))
     }
 
-    fn module_def(&mut self) -> ParseResult<Node<ModuleDef>> {
+    fn module_def(&mut self) -> ParseResult<ModuleDef> {
         try!(self.expect(Token::Module));
         let span_start = self.previous_span();
 
@@ -1866,13 +1869,14 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
         try!(self.expect(Token::Exposing));
         try!(self.expect(Token::OpenParen));
 
-        let items = try!(self.exposed_item_list());
+        let exposing = try!(self.exposed_item_list());
         let span = span_start.merge(self.previous_span());
 
-        Ok(Node::new(ModuleDef {
-            name: name,
-            exposing: items,
-        }, span))
+        Ok(ModuleDef::Explicit {
+            name,
+            exposing,
+            span
+        })
     }
 
     fn import(&mut self) -> ParseResult<Node<Import>> {
@@ -1929,12 +1933,7 @@ impl<'a, I: Iterator<Item=Node<Token>>> Parser<'a, I> {
                 }
             }
         } else {
-            let span = Span::new(Position::new(1, 1), Position::new(1, 1));
-            let def = ModuleDef {
-                name: Node::new(self.module.to_string(), span),
-                exposing: Node::new(ItemList::All, DUMMY_SPAN),
-            };
-            Node::new(def, span)
+            ModuleDef::Implicit { name: self.module.to_string() }
         };
 
         let mut imports = Vec::new();

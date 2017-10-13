@@ -3,13 +3,15 @@ mod lexer;
 mod parser;
 
 use std::collections::{BTreeSet, BTreeMap, HashMap};
+use std::fmt::Display;
 use codemap::File;
 use ast::parsed::Module;
 use CompileCtx;
 
 
 pub trait SourceProvider {
-    fn get_module_source(&self, name: &str) -> Result<&str, String>;
+    type Error: Display;
+    fn get_module_source(&self, name: &str) -> Result<String, Self::Error>;
 }
 
 pub struct HashMapProvider(HashMap<String, String>);
@@ -21,36 +23,45 @@ impl HashMapProvider {
 }
 
 impl SourceProvider for HashMapProvider {
-    fn get_module_source(&self, name: &str) -> Result<&str, String> {
-        match self.0.get(name) {
+    type Error = String;
+
+    fn get_module_source(&self, name: &str) -> Result<String, Self::Error> {
+        match self.0.get(name).cloned() {
             Some(source) => Ok(source),
-            None => Err(format!("module unavailable: {}", name)),
+            None => Err(format!("module `{}` is unavailable", name)),
         }
     }
 }
 
-struct WrappingProvider<'a, 'b, T: 'a> {
+struct WrappingProvider<'a, T: 'a> {
     inner: &'a T,
-    main: &'b str,
+    main: &'a str,
 }
 
-impl<'a, 'b, T: 'a + SourceProvider> SourceProvider for WrappingProvider<'a, 'b, T> {
-    fn get_module_source(&self, name: &str) -> Result<&str, String> {
+impl<'a, T: 'a + SourceProvider> SourceProvider for WrappingProvider<'a, T> {
+    type Error = T::Error;
+
+    fn get_module_source(&self, name: &str) -> Result<String, T::Error> {
         use compiler::builtins::modules;
         match name {
-            "Main" => Ok(self.main),
-            "Basics" => Ok(modules::BASICS),
-            "Option" => Ok(modules::OPTION),
-            "List" => Ok(modules::LIST),
-            "String" => Ok(modules::STRING),
-            "Computation" => Ok(modules::COMPUTATION),
-            "Result" => Ok(modules::RESULT),
+            "Main" => Ok(self.main.into()),
+            "Basics" => Ok(modules::BASICS.into()),
+            "Option" => Ok(modules::OPTION.into()),
+            "List" => Ok(modules::LIST.into()),
+            "String" => Ok(modules::STRING.into()),
+            "Computation" => Ok(modules::COMPUTATION.into()),
+            "Result" => Ok(modules::RESULT.into()),
             _ => self.inner.get_module_source(name),
         }
     }
 }
 
-fn parse_module(file: &File, module: &str, require_def: bool, ctx: &mut CompileCtx) -> Option<Module> {
+fn parse_module(
+    file: &File,
+    module: &str,
+    require_def: bool,
+    ctx: &mut CompileCtx,
+) -> Option<Module> {
     let tokens = lexer::lex(file, ctx);
     let module = parser::parse_module(tokens.into_iter(), module, require_def, ctx);
     module
@@ -85,13 +96,14 @@ pub(crate) fn parse_modules<T: SourceProvider>(
             }
             match provider.get_module_source(name) {
                 Ok(source) => {
-                    let file = ctx.codemap.add_file(name.clone(), source.into());
+                    let file = ctx.codemap.add_file(name.clone(), source);
                     let module = parse_module(&file, name, true, ctx);
                     if let Some(module) = module {
                         to_walk.push(module);
                     }
                 }
-                Err(message) => {
+                Err(err) => {
+                    let message = err.to_string();
                     ctx.reporter
                         .parse_error(message.as_str(), import.value.name.span)
                         .span_note(message, import.value.name.span)

@@ -21,12 +21,26 @@ pub struct CompileResult {
     pub diagnostics: Diagnostics,
 }
 
-pub fn compile<S>(provider: &S, main: &str) -> CompileResult
-    where S: SourceProvider
+pub struct CompileParams<'a, S: 'a> {
+    main: &'a str,
+    provider: &'a mut S,
+}
+
+impl<'a, S: SourceProvider + 'a> CompileParams<'a, S> {
+    pub fn new(main: &'a str, provider: &'a mut S) -> Self {
+        CompileParams {
+            main,
+            provider,
+        }
+    }
+}
+
+pub fn compile<'a, S>(params: CompileParams<'a, S>) -> CompileResult
+    where S: SourceProvider + 'a
 {
     let mut ctx = CompileCtx::new();
 
-    let modules = parsing::parse_modules(main, provider, &mut ctx);
+    let modules = parsing::parse_modules(params.main, params.provider, &mut ctx);
     let vm = compiler::compile(&modules, &mut ctx).ok();
 
     let diagnostics = Diagnostics::new(
@@ -38,6 +52,12 @@ pub fn compile<S>(provider: &S, main: &str) -> CompileResult
         vm,
         diagnostics,
     }
+}
+
+pub fn check<'a, S>(params: CompileParams<'a, S>) -> Diagnostics
+    where S: SourceProvider + 'a
+{
+    compile(params).diagnostics
 }
 
 struct CompileCtx {

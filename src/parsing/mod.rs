@@ -11,7 +11,7 @@ use CompileCtx;
 
 pub trait SourceProvider {
     type Error: Display;
-    fn get_module_source(&self, name: &str) -> Result<String, Self::Error>;
+    fn get_module_source(&mut self, name: &str) -> Result<String, Self::Error>;
 }
 
 pub struct HashMapProvider(HashMap<String, String>);
@@ -25,7 +25,7 @@ impl HashMapProvider {
 impl SourceProvider for HashMapProvider {
     type Error = String;
 
-    fn get_module_source(&self, name: &str) -> Result<String, Self::Error> {
+    fn get_module_source(&mut self, name: &str) -> Result<String, Self::Error> {
         match self.0.get(name).cloned() {
             Some(source) => Ok(source),
             None => Err(format!("module `{}` is unavailable", name)),
@@ -34,14 +34,14 @@ impl SourceProvider for HashMapProvider {
 }
 
 struct WrappingProvider<'a, T: 'a> {
-    inner: &'a T,
+    inner: &'a mut T,
     main: &'a str,
 }
 
 impl<'a, T: 'a + SourceProvider> SourceProvider for WrappingProvider<'a, T> {
     type Error = T::Error;
 
-    fn get_module_source(&self, name: &str) -> Result<String, T::Error> {
+    fn get_module_source(&mut self, name: &str) -> Result<String, T::Error> {
         use compiler::builtins::modules;
         match name {
             "Main" => Ok(self.main.into()),
@@ -69,10 +69,10 @@ fn parse_module(
 
 pub(crate) fn parse_modules<T: SourceProvider>(
     main: &str,
-    provider: &T,
+    provider: &mut T,
     ctx: &mut CompileCtx
 ) -> BTreeMap<String, Module> {
-    let provider = WrappingProvider {
+    let mut provider = WrappingProvider {
         inner: provider,
         main: main,
     };

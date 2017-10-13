@@ -88,7 +88,7 @@ impl Diagnostics {
             d.primary_span.map(|span| {
                 let file = codemap.find_file(span.low()).name();
                 let loc = codemap.look_up_pos(span.low()).position;
-                (file, loc.line, loc.column)
+                (d.phase, file, loc.line, loc.column)
             })
         });
         Diagnostics {
@@ -97,7 +97,7 @@ impl Diagnostics {
         }
     }
 
-    pub fn into_diagnostics(self) -> Vec<Diagnostic<Span>> {
+    pub fn into_vec(self) -> Vec<Diagnostic<Span>> {
         let Diagnostics { raw_diagnostics, codemap } = self;
         let translator = |span| {
             let spanloc = codemap.look_up_span(span);

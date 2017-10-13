@@ -15,8 +15,9 @@ fn main() {
 fn run(source: &str) {
     use interpreter::HashMapProvider;
 
-    let modules = HashMapProvider::new(HashMap::new());
-    let result = interpreter::compile(&modules, source);
+    let mut modules = HashMapProvider::new(HashMap::new());
+    let params = interpreter::CompileParams::new(source, &mut modules);
+    let result = interpreter::compile(params);
     
     result.diagnostics.emit(io::stderr()).expect("failed to print");
 

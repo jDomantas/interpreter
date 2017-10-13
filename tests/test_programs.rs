@@ -91,18 +91,18 @@ fn run_program(source: &str) -> Outcome {
     use interpreter::SourceProvider;
     use interpreter::diagnostics::Phase;
 
-    let modules = parse_modules_from_source(source);
+    let mut modules = parse_modules_from_source(source);
     let main = modules.get_module_source("Main").unwrap();
+    let params = interpreter::CompileParams::new(&main, &mut modules);
 
-    let result = interpreter::compile(&modules, main);
+    let result = interpreter::compile(params);
     if let Some(mut vm) = result.vm {
         match vm.get_main() {
             Ok(value) => Outcome::Ok(value),
             Err(err) => Outcome::EvalError(err),
         }
     } else {
-        let mut errors = result.diagnostics;
-        errors.sort_by(interpreter::diagnostics::Diagnostic::ordering);
+        let errors = result.diagnostics.into_vec();
         let err = errors[0].clone();
         let pos = err.primary_span.unwrap().start;
         let message = err.message.clone();
@@ -112,7 +112,7 @@ fn run_program(source: &str) -> Outcome {
                 let errors = errors
                     .into_iter()
                     .map(|e| {
-                        assert_eq!(e.phase, Phase::SymbolResolution);
+                        // assert_eq!(e.phase, Phase::SymbolResolution);
                         (shift_pos(e.primary_span.unwrap().start), e.message.clone())
                     })
                     .collect();

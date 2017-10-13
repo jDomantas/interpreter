@@ -156,9 +156,15 @@ impl<'a> Printer<'a> {
     fn add_note_markers(&mut self, codemap: &CodeMap, note: &'a Note<Span>, style: MarkerStyle) {
         let span = codemap.look_up_span(note.span);
         if span.begin.line == span.end.line {
+            let start_col = span.begin.column + 1;
+            let end_col = if start_col == span.end.column + 1 {
+                start_col + 1
+            } else {
+                span.end.column + 1
+            };
             self.add_line_marker(span.begin.line + 1, LineMarker::FromTo {
-                start_col: span.begin.column + 1,
-                end_col: span.end.column + 1,
+                start_col,
+                end_col,
                 message: note.message.as_ref().map(AsRef::as_ref),
                 style,
             });

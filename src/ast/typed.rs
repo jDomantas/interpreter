@@ -58,7 +58,7 @@ impl Type {
         }
     }
 
-    pub fn display<'a, 'b>(&'a self, symbols: &'b SymbolSource) -> TypeFormatter<'a, 'b> {
+    pub fn display<'a>(&'a self, symbols: &'a SymbolSource) -> TypeFormatter<'a> {
         TypeFormatter {
             type_: self,
             symbols,
@@ -101,12 +101,12 @@ impl Type {
     }
 }
 
-pub struct TypeFormatter<'a, 'b> {
+pub struct TypeFormatter<'a> {
     type_: &'a Type,
-    symbols: &'b SymbolSource,
+    symbols: &'a SymbolSource,
 }
 
-impl<'a, 'b> fmt::Display for TypeFormatter<'a, 'b> {
+impl<'a> fmt::Display for TypeFormatter<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self.type_ {
             Type::Any => write!(f, "?"),
@@ -368,9 +368,7 @@ pub struct Scheme {
 }
 
 impl Scheme {
-    pub fn display<'a, 'b>(
-                        &'a self,
-                        symbols: &'b SymbolSource) -> SchemeFormatter<'a, 'b> {
+    pub fn display<'a>(&'a self, symbols: &'a SymbolSource) -> SchemeFormatter<'a> {
         SchemeFormatter {
             scheme: self,
             symbols,
@@ -378,12 +376,12 @@ impl Scheme {
     }
 }
 
-pub struct SchemeFormatter<'a, 'b> {
+pub struct SchemeFormatter<'a> {
     scheme: &'a Scheme,
-    symbols: &'b SymbolSource,
+    symbols: &'a SymbolSource,
 }
 
-impl<'a, 'b> fmt::Display for SchemeFormatter<'a, 'b> {
+impl<'a> fmt::Display for SchemeFormatter<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         try!(write!(f, "["));
         let mut need_comma = false;

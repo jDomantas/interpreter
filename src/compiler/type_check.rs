@@ -60,22 +60,23 @@ enum ConstraintSource {
 #[derive(Debug)]
 struct Constraint(Type, Type, ConstraintSource);
 
-struct InferCtx<'a, 'b, 'c> {
+struct InferCtx<'a> {
     pattern_types: &'a BTreeMap<Sym, PatternTy>,
     env: BTreeMap<Sym, Scheme>,
     new_env: BTreeMap<Sym, Scheme>,
     next_var: u64,
     var_bounds: BTreeMap<u64, BTreeSet<Sym>>,
-    ctx: &'b mut CompileCtx,
+    ctx: &'a mut CompileCtx,
     constraints: Vec<Constraint>,
-    annotations: &'c BTreeMap<Sym, (Scheme, Span)>,
+    annotations: &'a BTreeMap<Sym, (Scheme, Span)>,
 }
 
-impl<'a, 'b, 'c> InferCtx<'a, 'b, 'c> {
+impl<'a> InferCtx<'a> {
     fn new(
-            pattern_types: &'a BTreeMap<Sym, PatternTy>,
-            annotations: &'c BTreeMap<Sym, (Scheme, Span)>,
-            ctx: &'b mut CompileCtx) -> Self {
+        pattern_types: &'a BTreeMap<Sym, PatternTy>,
+        annotations: &'a BTreeMap<Sym, (Scheme, Span)>,
+        ctx: &'a mut CompileCtx,
+    ) -> Self {
         InferCtx {
             pattern_types,
             env: BTreeMap::new(),

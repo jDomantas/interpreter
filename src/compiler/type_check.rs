@@ -810,17 +810,17 @@ fn empty_scheme(type_: Type) -> Scheme {
     }
 }
 
-struct Solver<'a, 'b> {
+struct Solver<'a> {
     constraints: &'a [Constraint],
-    ctx: &'b mut CompileCtx,
+    ctx: &'a mut CompileCtx,
     substitution: BTreeMap<u64, Type>,
     var_unifications: Vec<(u64, u64)>,
 }
 
-impl<'a, 'b> Solver<'a, 'b> {
+impl<'a> Solver<'a> {
     fn new(
         constraints: &'a [Constraint],
-        ctx: &'b mut CompileCtx,
+        ctx: &'a mut CompileCtx,
     ) -> Self {
         Solver {
             constraints,

@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use ast::{Node, Name, Literal, Associativity, Sym, Symbol};
+use ast::{Node, Literal, Associativity, Sym, Symbol};
 
 
 #[derive(Debug, Clone)]
@@ -119,7 +119,6 @@ impl Pattern {
 pub struct Def {
     pub sym: Node<Sym>,
     pub value: Node<Expr>,
-    pub module: Name,
     pub artificial: bool,
 }
 
@@ -127,7 +126,6 @@ pub struct Def {
 pub struct TypeAnnot {
     pub value: Node<Sym>,
     pub type_: Node<Scheme>,
-    pub module: Name,
 }
 
 #[derive(Debug, Clone)]
@@ -199,13 +197,6 @@ impl TypeDecl {
             TypeDecl::Union(ref union) => &union.vars,
         }
     }
-
-    pub fn module(&self) -> &Name {
-        match *self {
-            TypeDecl::TypeAlias(ref alias) => &alias.module,
-            TypeDecl::Union(ref union) => &union.module,
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -213,7 +204,6 @@ pub struct TypeAlias {
     pub name: Node<Sym>,
     pub vars: Vec<Node<Sym>>,
     pub type_: Option<Node<Type>>,
-    pub module: Name,
 }
 
 #[derive(Debug, Clone)]
@@ -221,7 +211,6 @@ pub struct UnionType {
     pub name: Node<Sym>,
     pub vars: Vec<Node<Sym>>,
     pub cases: Vec<Node<UnionCase>>,
-    pub module: Name,
 }
 
 #[derive(Debug, Clone)]
@@ -235,7 +224,6 @@ pub struct Trait {
     pub name: Node<Sym>,
     pub base_traits: Vec<Node<Symbol>>,
     pub values: Vec<Node<TypeAnnot>>,
-    pub module: Name,
 }
 
 #[derive(Debug, Clone)]
@@ -245,7 +233,6 @@ pub struct Impl {
     pub values: Vec<Def>,
     // mapping from impl symbols to trait symbols
     pub trait_items: BTreeMap<Sym, Sym>,
-    pub module: Name,
 }
 
 #[derive(Debug, Clone)]
@@ -255,7 +242,6 @@ pub struct GroupedImpl {
     pub values: Vec<Vec<Def>>,
     // mapping from impl symbols to trait symbols
     pub trait_items: BTreeMap<Sym, Sym>,
-    pub module: Name,
 }
 
 #[derive(Default)]

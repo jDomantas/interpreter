@@ -1,12 +1,11 @@
 use std::collections::BTreeMap;
-use ast::{Node, Associativity, Name, Sym, Symbol};
+use ast::{Node, Associativity, Sym, Symbol};
 use ast::resolved::{Expr, Pattern, Def, Impl, Items, CaseBranch};
 use CompileCtx;
 
 
 struct Context<'a, 'b> {
     ctx: &'b mut CompileCtx,
-    current_module: Option<Name>,
     operators: &'a BTreeMap<Sym, (Associativity, u64)>, 
 }
 
@@ -17,7 +16,6 @@ impl<'a, 'b> Context<'a, 'b> {
         Context {
             ctx,
             operators,
-            current_module: None,
         }
     }
 
@@ -57,7 +55,6 @@ impl<'a, 'b> Context<'a, 'b> {
         };
         let span = left.span.merge(right.span);
         self.ctx.reporter
-                //self.current_module.as_ref().unwrap()
             .fixity_error(message.as_str(), span)
             .span_note(message, span)
             .done();
@@ -248,7 +245,6 @@ impl<'a, 'b> Context<'a, 'b> {
     }
 
     fn fix_def(&mut self, mut def: Def) -> Def {
-        self.current_module = Some(def.module.clone());
         def.value = self.fix_expr(def.value);
         def
     }

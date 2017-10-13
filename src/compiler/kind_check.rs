@@ -2,7 +2,7 @@ use std::collections::{BTreeSet, BTreeMap};
 use std::collections::btree_map::Entry;
 use std::fmt;
 use codemap::Span;
-use ast::{Node, Name, Sym, Symbol};
+use ast::{Node, Sym, Symbol};
 use ast::resolved::{TypeDecl, Type, Items, Trait, TypeAnnot, Scheme, Impl};
 use compiler::util::{self, Graph};
 use CompileCtx;
@@ -83,8 +83,8 @@ impl fmt::Display for Kind {
 }
 
 enum ConstraintSource<'a> {
-    Value(&'a Node<Type>, &'a Name),
-    Function(&'a Node<Type>, &'a Node<Type>, &'a Name),
+    Value(&'a Node<Type>),
+    Function(&'a Node<Type>, &'a Node<Type>),
     ShouldNotFail,
 }
 
@@ -119,52 +119,52 @@ impl<'a, 'b> InferCtx<'a, 'b> {
     fn unsolved_constraint(&mut self, constraint: Constraint) {
         let mut kinds = [constraint.0, constraint.1];
         rename_vars(&mut kinds);
-        let (message, _module, span) = match constraint.2 {
+        let (message, span) = match constraint.2 {
             ConstraintSource::ShouldNotFail => {
                 panic!("failed to solve kind constraint \
                         that should not have failed")
             }
-            ConstraintSource::Value(type_, module) => {
+            ConstraintSource::Value(type_) => {
                 debug_assert_eq!(kinds[1], Kind::Star);
                 let msg = format!(
                     "Previously inferred kind `{}` for this type, but it must have kind `*`.",
                     kinds[0]);
-                (msg, module, type_.span)
+                (msg, type_.span)
             }
-            ConstraintSource::Function(f, _, module) => {
+            ConstraintSource::Function(f, _) => {
                 let msg = format!(
                     "Previously inferred kind `{}` for this type, but here it is expected to be `{}`.",
                     kinds[0],
                     kinds[1]);
-                (msg, module, f.span)
+                (msg, f.span)
             }
         };
         self.ctx.reporter
-            .kind_error(message.as_str(), span) // module
+            .kind_error(message.as_str(), span)
             .span_note(message, span)
             .done();
     }
 
-    fn invalid_self(&mut self, span: Span, _module: &Name) {
+    fn invalid_self(&mut self, span: Span) {
         let msg = "`self` type can only be used in trait definitions.";
         self.ctx.reporter
-            .kind_error(msg, span) // module
+            .kind_error(msg, span)
             .span_note(msg, span)
             .done();
     }
 
-    fn missing_self(&mut self, span: Span, _module: &Name) {
+    fn missing_self(&mut self, span: Span) {
         let msg = "`self` must be mentioned at least once in every trait member.";
         self.ctx.reporter
-            .kind_error(msg, span) // module
+            .kind_error(msg, span)
             .span_note(msg, span)
             .done();
     }
 
-    fn unused_var(&mut self, span: Span, _module: &Name) {
+    fn unused_var(&mut self, span: Span) {
         let msg = "Constrained type variable must be used in implementing type.";
         self.ctx.reporter
-            .kind_error(msg, span) // module
+            .kind_error(msg, span)
             .span_note(msg, span)
             .done();
     }
@@ -202,8 +202,8 @@ impl<'a, 'b> InferCtx<'a, 'b> {
             let source = ConstraintSource::ShouldNotFail;
             self.constraints.push(Constraint(current_kind, Kind::Star, source));
             for type_ in contained_types(decl) {
-                let kind = self.infer_for_type(type_, decl.module(), false);
-                let source = ConstraintSource::Value(&type_, decl.module());
+                let kind = self.infer_for_type(type_, false);
+                let source = ConstraintSource::Value(&type_);
                 self.constraints.push(Constraint(kind, Kind::Star, source));
             }
             self.var_kinds.clear();
@@ -223,10 +223,10 @@ impl<'a, 'b> InferCtx<'a, 'b> {
     }
 
     fn infer_for_type(
-                        &mut self,
-                        type_: &'a Node<Type>,
-                        module: &'a Name,
-                        allow_new_vars: bool) -> Kind {
+        &mut self,
+        type_: &'a Node<Type>,
+        allow_new_vars: bool,
+    ) -> Kind {
         match type_.value {
             Type::Any => {
                 Kind::Any
@@ -244,8 +244,8 @@ impl<'a, 'b> InferCtx<'a, 'b> {
             }
             Type::Tuple(ref items) => {
                 for item in items {
-                    let kind = self.infer_for_type(item, module, allow_new_vars);
-                    let source = ConstraintSource::Value(&item, module);
+                    let kind = self.infer_for_type(item, allow_new_vars);
+                    let source = ConstraintSource::Value(&item);
                     self.constraints.push(Constraint(kind, Kind::Star, source));
                 }
                 Kind::Star
@@ -255,16 +255,16 @@ impl<'a, 'b> InferCtx<'a, 'b> {
                 if self.var_kinds.contains_key(&self_) {
                     self.var_kinds[&self_].clone()
                 } else {
-                    self.invalid_self(type_.span, module);
+                    self.invalid_self(type_.span);
                     Kind::Any
                 }
             }
             Type::Function(ref a, ref b) => {
-                let a_kind = self.infer_for_type(a, module, allow_new_vars);
-                let b_kind = self.infer_for_type(b, module, allow_new_vars);
-                let source = ConstraintSource::Value(&a, module);
+                let a_kind = self.infer_for_type(a, allow_new_vars);
+                let b_kind = self.infer_for_type(b, allow_new_vars);
+                let source = ConstraintSource::Value(&a);
                 self.constraints.push(Constraint(a_kind, Kind::Star, source));
-                let source = ConstraintSource::Value(&b, module);
+                let source = ConstraintSource::Value(&b);
                 self.constraints.push(Constraint(b_kind, Kind::Star, source));
                 Kind::Star
             }
@@ -279,11 +279,11 @@ impl<'a, 'b> InferCtx<'a, 'b> {
                 }
             }
             Type::Apply(ref a, ref b) => {
-                let a_kind = self.infer_for_type(a, module, allow_new_vars);
-                let b_kind = self.infer_for_type(b, module, allow_new_vars);
+                let a_kind = self.infer_for_type(a, allow_new_vars);
+                let b_kind = self.infer_for_type(b, allow_new_vars);
                 let var = self.fresh_var();
                 let arr = Kind::arr(&b_kind, &var);
-                let source = ConstraintSource::Function(&a, &b, module);
+                let source = ConstraintSource::Function(&a, &b);
                 self.constraints.push(Constraint(a_kind, arr, source));
                 var
             }
@@ -360,9 +360,9 @@ impl<'a, 'b> InferCtx<'a, 'b> {
         self.var_kinds.insert(Sym(0), self_kind);
         for annot in &trait_.values {
             let scheme = &annot.value.type_;
-            self.infer_for_type(&scheme.value.type_, &trait_.module, true);
+            self.infer_for_type(&scheme.value.type_, true);
             if !scheme.value.type_.value.contains_self() {
-                self.missing_self(annot.span, &trait_.module);
+                self.missing_self(annot.span);
             }
         }
         let self_kind = if self.solve_constraints() {
@@ -387,7 +387,7 @@ impl<'a, 'b> InferCtx<'a, 'b> {
         }
     }
 
-    fn add_trait_bounds(&mut self, bounds: &'a [(Node<Sym>, Node<Symbol>)], _module: &'a Name) {
+    fn add_trait_bounds(&mut self, bounds: &'a [(Node<Sym>, Node<Symbol>)]) {
         for &(ref var, ref trait_) in bounds {
             let trait_name = match trait_.value {
                 Symbol::Known(sym) => sym,
@@ -407,7 +407,7 @@ impl<'a, 'b> InferCtx<'a, 'b> {
                                 kind,
                                 entry.get());
                             self.ctx.reporter
-                                .kind_error(message.as_str(), var.span) // module
+                                .kind_error(message.as_str(), var.span)
                                 .span_note(message, var.span)
                                 .done();
                         }
@@ -421,22 +421,22 @@ impl<'a, 'b> InferCtx<'a, 'b> {
         }
     }
 
-    fn validate_scheme(&mut self, scheme: &'a Scheme, module: &'a Name) {
-        self.add_trait_bounds(&scheme.bounds, module);
-        let kind = self.infer_for_type(&scheme.type_, module, true);
-        let source = ConstraintSource::Value(&scheme.type_, module);
+    fn validate_scheme(&mut self, scheme: &'a Scheme) {
+        self.add_trait_bounds(&scheme.bounds);
+        let kind = self.infer_for_type(&scheme.type_, true);
+        let source = ConstraintSource::Value(&scheme.type_);
         self.constraints.push(Constraint(kind, Kind::Star, source));
         self.solve_constraints();
         self.var_kinds.clear();
         self.substitutions.clear();
     }
 
-    fn validate_annotation(&mut self, annot: &'a TypeAnnot, module: &'a Name) {
+    fn validate_annotation(&mut self, annot: &'a TypeAnnot) {
         debug_assert!(self.constraints.is_empty());
         debug_assert!(self.new_kinds.is_empty());
         debug_assert!(self.var_kinds.is_empty());
         debug_assert!(self.substitutions.is_empty());
-        self.validate_scheme(&annot.type_.value, module);
+        self.validate_scheme(&annot.type_.value);
     }
 
     fn validate_trait(&mut self, trait_: &'a Trait) {
@@ -458,7 +458,7 @@ impl<'a, 'b> InferCtx<'a, 'b> {
                         self_kind,
                         kind);
                     self.ctx.reporter
-                        .kind_error(message.as_str(), base_trait.span) // &trait_.module
+                        .kind_error(message.as_str(), base_trait.span)
                         .span_note(message, base_trait.span)
                         .done();
                 }
@@ -466,7 +466,7 @@ impl<'a, 'b> InferCtx<'a, 'b> {
         }
         for annot in &trait_.values {
             self.var_kinds.insert(Sym(0), self_kind.clone());
-            self.validate_scheme(&annot.value.type_.value, &trait_.module);
+            self.validate_scheme(&annot.value.type_.value);
         }
     }
 
@@ -475,17 +475,17 @@ impl<'a, 'b> InferCtx<'a, 'b> {
         debug_assert!(self.new_kinds.is_empty());
         debug_assert!(self.var_kinds.is_empty());
         debug_assert!(self.substitutions.is_empty());
-        self.add_trait_bounds(&impl_.scheme.value.bounds, &impl_.module);
+        self.add_trait_bounds(&impl_.scheme.value.bounds);
         let mut checked_vars = BTreeSet::new();
         for &(ref var, _) in &impl_.scheme.value.bounds {
             if !checked_vars.contains(&var.value) {
                 checked_vars.insert(&var.value);
                 if !impl_.scheme.value.type_.value.contains_var(var.value) {
-                    self.unused_var(var.span, &impl_.module);
+                    self.unused_var(var.span);
                 }
             }
         }
-        let kind = self.infer_for_type(&impl_.scheme.value.type_, &impl_.module, true);
+        let kind = self.infer_for_type(&impl_.scheme.value.type_, true);
         if self.solve_constraints() {
             let mut kind = self.do_substitutions(kind);
             kind.default_vars();
@@ -497,7 +497,7 @@ impl<'a, 'b> InferCtx<'a, 'b> {
                             kind,
                             trait_);
                         self.ctx.reporter
-                            .kind_error(message.as_str(), impl_.scheme.value.type_.span) // &impl_.module
+                            .kind_error(message.as_str(), impl_.scheme.value.type_.span)
                             .span_note(message, impl_.scheme.value.type_.span)
                             .done();
                     }
@@ -589,7 +589,7 @@ pub(crate) fn find_kind_errors(items: &Items, ctx: &mut CompileCtx) {
     }
     inferer.infer_traits(&items.traits);
     for annot in items.annotations.values() {
-        inferer.validate_annotation(&annot.value, &annot.value.module);
+        inferer.validate_annotation(&annot.value);
     }
     for trait_ in &items.traits {
         inferer.validate_trait(trait_);

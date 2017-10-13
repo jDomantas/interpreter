@@ -12,13 +12,12 @@ mod compilation;
 mod util;
 
 use std::collections::BTreeMap;
-use ast::Name;
 use ast::parsed::Module;
 use vm::Vm;
 use CompileCtx;
 
 
-pub(crate) fn compile(modules: &BTreeMap<Name, Module>, ctx: &mut CompileCtx)
+pub(crate) fn compile(modules: &BTreeMap<String, Module>, ctx: &mut CompileCtx)
     -> Result<Vm, ()>
 {
     let items = resolve_symbols::resolve_symbols(modules, ctx);

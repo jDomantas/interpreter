@@ -2,7 +2,7 @@ use std::collections::{BTreeSet, BTreeMap};
 use std::mem;
 use std::rc::Rc;
 use codemap::Span;
-use ast::{Node, Name, Literal, Symbol, Sym};
+use ast::{Node, Literal, Symbol, Sym};
 use ast::resolved as r;
 use ast::typed::{self as t, Type, Scheme, SchemeVar, ImplSym, ImplDef, Impls};
 use compiler::{builtins, util};
@@ -58,7 +58,7 @@ enum ConstraintSource {
 }
 
 #[derive(Debug)]
-struct Constraint(Type, Type, ConstraintSource, Name);
+struct Constraint(Type, Type, ConstraintSource);
 
 struct InferCtx<'a, 'b, 'c> {
     pattern_types: &'a BTreeMap<Sym, PatternTy>,
@@ -68,7 +68,6 @@ struct InferCtx<'a, 'b, 'c> {
     var_bounds: BTreeMap<u64, BTreeSet<Sym>>,
     ctx: &'b mut CompileCtx,
     constraints: Vec<Constraint>,
-    current_module: Option<Name>,
     annotations: &'c BTreeMap<Sym, (Scheme, Span)>,
 }
 
@@ -85,7 +84,6 @@ impl<'a, 'b, 'c> InferCtx<'a, 'b, 'c> {
             var_bounds: BTreeMap::new(),
             ctx,
             constraints: Vec::new(),
-            current_module: None,
             annotations,
         }
     }
@@ -112,7 +110,6 @@ impl<'a, 'b, 'c> InferCtx<'a, 'b, 'c> {
             a.clone(),
             b.clone(),
             source,
-            self.current_module.as_ref().unwrap().clone()
         );
         self.constraints.push(constraint);
     }
@@ -210,14 +207,13 @@ impl<'a, 'b, 'c> InferCtx<'a, 'b, 'c> {
                         let (ty, args_types) = self.instantiate_pattern_ty(sym);
                         if args.len() != args_types.len() {
                             // TODO: maybe extract this into its own pass?
-                            let _module = self.current_module.as_ref().unwrap();
                             let msg = format!(
                                 "Pattern `{}` takes {} arguments, but here it has {}.",
                                 self.ctx.symbols.symbol_name(sym),
                                 args_types.len(),
                                 args.len());
                             self.ctx.reporter
-                                .pattern_error(msg.as_str(), pattern.span) // module
+                                .pattern_error(msg.as_str(), pattern.span)
                                 .span_note(msg, pattern.span)
                                 .done();
                             (t::Pattern::Wildcard, Type::Any)
@@ -605,7 +601,6 @@ impl<'a, 'b, 'c> InferCtx<'a, 'b, 'c> {
             if skip_typed && self.annotations.contains_key(&def.sym.value) {
                 continue;
             }
-            self.current_module = Some(def.module.clone());
             let (body, type_) = self.infer_expr(&def.value);
             let annot = self.annotations.get(&def.sym.value);
             if let Some(&(ref scheme, scheme_span)) = annot {
@@ -623,7 +618,6 @@ impl<'a, 'b, 'c> InferCtx<'a, 'b, 'c> {
                 sym: def.sym.clone(),
                 value: body,
                 scheme: Scheme { vars: Vec::new(), type_ },
-                module: def.module.clone(),
             };
             result.push(typed);
         }
@@ -824,8 +818,9 @@ struct Solver<'a, 'b> {
 
 impl<'a, 'b> Solver<'a, 'b> {
     fn new(
-            constraints: &'a [Constraint],
-            ctx: &'b mut CompileCtx) -> Self {
+        constraints: &'a [Constraint],
+        ctx: &'b mut CompileCtx,
+    ) -> Self {
         Solver {
             constraints,
             ctx,
@@ -912,7 +907,6 @@ impl<'a, 'b> Solver<'a, 'b> {
         let type1 = type1.display(&self.ctx.symbols);
         let type2 = self.do_substitutions(&constraint.1);
         let type2 = type2.display(&self.ctx.symbols);
-        let _module = &constraint.3;
         match constraint.2 {
             ConstraintSource::AlwaysStatisfied => {
                 panic!("failed to solve constraint \
@@ -924,7 +918,7 @@ impl<'a, 'b> Solver<'a, 'b> {
                     while it should be `m a`.",
                     type1);
                 self.ctx.reporter
-                    .type_error(msg.as_str(), span) // module
+                    .type_error(msg.as_str(), span)
                     .span_note(msg, span)
                     .done();
             }
@@ -937,7 +931,7 @@ impl<'a, 'b> Solver<'a, 'b> {
                     "but annotation says it should have type `{}`.",
                     type2);
                 self.ctx.reporter
-                    .type_error(msg1.as_str(), def_span) // module
+                    .type_error(msg1.as_str(), def_span)
                     .span_note(msg1, def_span)
                     .span_note(msg2, annot_span)
                     .done();
@@ -949,7 +943,7 @@ impl<'a, 'b> Solver<'a, 'b> {
                     type1,
                     type2);
                 self.ctx.reporter
-                    .type_error(msg.as_str(), span) // module
+                    .type_error(msg.as_str(), span)
                     .span_note(msg, span)
                     .done();
             }
@@ -959,7 +953,7 @@ impl<'a, 'b> Solver<'a, 'b> {
                     should be `m a`",
                     type1);
                 self.ctx.reporter
-                    .type_error(msg.as_str(), span) // module
+                    .type_error(msg.as_str(), span)
                     .span_note(msg, span)
                     .done();
             }
@@ -968,7 +962,7 @@ impl<'a, 'b> Solver<'a, 'b> {
                     "This expression has type `{}`, and cannot be used as a function.",
                     type1);
                 self.ctx.reporter
-                    .type_error(msg1.as_str(), span) // module
+                    .type_error(msg1.as_str(), span)
                     .span_note(msg1, span)
                     .done();
             }
@@ -982,7 +976,7 @@ impl<'a, 'b> Solver<'a, 'b> {
                     type1,
                     type2);
                 self.ctx.reporter
-                    .type_error(msg.as_str(), span) // module
+                    .type_error(msg.as_str(), span)
                     .span_note(msg, span)
                     .done();
             }
@@ -994,7 +988,7 @@ impl<'a, 'b> Solver<'a, 'b> {
                     "while else branch has type `{}`,",
                     type2);
                 self.ctx.reporter
-                    .type_error(msg1.as_str(), first_span) // module
+                    .type_error(msg1.as_str(), first_span)
                     .span_note(msg1, first_span)
                     .span_note(msg2, second_span)
                     .done();
@@ -1004,7 +998,7 @@ impl<'a, 'b> Solver<'a, 'b> {
                     "Condition has type `{}`, when it should be `Bool`.",
                     type1);
                 self.ctx.reporter
-                    .type_error(msg.as_str(), span) // module
+                    .type_error(msg.as_str(), span)
                     .span_note(msg, span)
                     .done();
             }
@@ -1014,7 +1008,7 @@ impl<'a, 'b> Solver<'a, 'b> {
                     function with two parameters.",
                     type1);
                 self.ctx.reporter
-                    .type_error(msg.as_str(), span) // module
+                    .type_error(msg.as_str(), span)
                     .span_note(msg, span)
                     .done();
             }
@@ -1030,7 +1024,7 @@ impl<'a, 'b> Solver<'a, 'b> {
                     number_suffix(first_index + 2),
                     type2);
                 self.ctx.reporter
-                    .type_error(msg1.as_str(), first_span) // module
+                    .type_error(msg1.as_str(), first_span)
                     .span_note(msg1, first_span)
                     .span_note(msg2, second_span)
                     .done();
@@ -1047,7 +1041,7 @@ impl<'a, 'b> Solver<'a, 'b> {
                     number_suffix(first_index + 2),
                     type2);
                 self.ctx.reporter
-                    .type_error(msg1.as_str(), first_span) // module
+                    .type_error(msg1.as_str(), first_span)
                     .span_note(msg1, first_span)
                     .span_note(msg2, second_span)
                     .done();
@@ -1059,7 +1053,7 @@ impl<'a, 'b> Solver<'a, 'b> {
                     type2,
                     type1);
                 self.ctx.reporter
-                    .type_error(msg.as_str(), span) // module
+                    .type_error(msg.as_str(), span)
                     .span_note(msg, span)
                     .done();
             }
@@ -1071,7 +1065,7 @@ impl<'a, 'b> Solver<'a, 'b> {
                     self.ctx.symbols.symbol_name(sym),
                     type2);
                 self.ctx.reporter
-                    .type_error(msg.as_str(), span) // module
+                    .type_error(msg.as_str(), span)
                     .span_note(msg, span)
                     .done();
             }
@@ -1223,7 +1217,6 @@ fn convert_resolved_union(union: &r::UnionType) -> t::Union {
         name: union.name.clone(),
         vars,
         cases,
-        module: union.module.clone(),
     }
 }
 
@@ -1239,7 +1232,7 @@ fn convert_resolved_type_decl(decl: &r::TypeDecl) -> Option<t::TypeDecl> {
 }
 
 fn convert_resolved_trait(trait_: r::Trait) -> t::Trait {
-    let r::Trait { name, base_traits, values, module } = trait_;
+    let r::Trait { name, base_traits, values } = trait_;
     let base_traits = base_traits
         .into_iter()
         .filter_map(|s| {
@@ -1259,7 +1252,7 @@ fn convert_resolved_trait(trait_: r::Trait) -> t::Trait {
             (t.value.value.value, scheme)
         })
         .collect();
-    t::Trait { name, base_traits, items, module }
+    t::Trait { name, base_traits, items }
 }
 
 fn collect_pattern_types(items: &r::GroupedItems) -> BTreeMap<Sym, PatternTy> {
@@ -1437,7 +1430,7 @@ fn infer_impl(
                 impl_: r::GroupedImpl,
                 impl_item_types: &BTreeMap<Sym, (Scheme, Span)>,
                 inferer: &mut InferCtx) -> t::Impl {
-    let r::GroupedImpl { scheme, trait_, values, trait_items, module } = impl_;
+    let r::GroupedImpl { scheme, trait_, values, trait_items } = impl_;
     let mut typed_values = Vec::new();
     for group in &values {
         for def in inferer.infer_top_level_defs(group) {
@@ -1461,7 +1454,6 @@ fn infer_impl(
         trait_,
         items: typed_values,
         trait_items,
-        module,
     }
 }
 
@@ -1529,7 +1521,7 @@ pub(crate) fn infer_types(mut items: r::GroupedItems, ctx: &mut CompileCtx) -> t
                     "while annotation says it should be `{}`.",
                     scheme.display(&ctx.symbols));
                 ctx.reporter
-                    .type_error(msg1.as_str(), def.sym.span) // &annot.value.module
+                    .type_error(msg1.as_str(), def.sym.span)
                     .span_note(msg1, def.sym.span)
                     .span_note(msg2, annot.value.value.span)
                     .done();
@@ -1548,7 +1540,7 @@ pub(crate) fn infer_types(mut items: r::GroupedItems, ctx: &mut CompileCtx) -> t
                     "while annotation says it should be `{}`.",
                     scheme.display(&ctx.symbols));
                 ctx.reporter
-                    .type_error(msg1.as_str(), def.def.sym.span) // &def.def.module
+                    .type_error(msg1.as_str(), def.def.sym.span)
                     .span_note(msg1, def.def.sym.span)
                     .span_note(msg2, span)
                     .done();

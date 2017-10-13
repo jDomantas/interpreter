@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 use std::fmt;
 use codemap::Span;
-use ast::{Node, Name, Sym, Symbol};
+use ast::{Node, Sym, Symbol};
 use ast::parsed::{
     self as p, Module, Decl, LetDecl, ItemList, Impl, Def, Trait,
     TypeAlias, UnionType, Type, Expr, Pattern, Scheme, DoExpr, ModuleDef,
@@ -118,7 +118,7 @@ impl<'a> Imports<'a> {
 
 #[derive(Debug)]
 struct Context<'a> {
-    module: Name,
+    module: String,
     locals: &'a Exports<'a>,
     imports: &'a Imports<'a>,
     exports: &'a BTreeMap<String, Exports<'a>>,
@@ -157,15 +157,15 @@ impl fmt::Display for Kind {
     }
 }
 
-pub(crate) fn resolve_symbols(modules: &BTreeMap<Name, Module>, ctx: &mut CompileCtx) -> r::Items {
+pub(crate) fn resolve_symbols(modules: &BTreeMap<String, Module>, ctx: &mut CompileCtx) -> r::Items {
     let mut resolver = Resolver::new(ctx);
     let mut items = BTreeMap::new();
     let mut exports = BTreeMap::new();
     for (name, module) in modules {
         let module_items = resolver.collect_items(module);
         let module_exports = resolver.collect_exports(module, &module_items);
-        items.insert(name.as_str().to_string(), module_items);
-        exports.insert(name.as_str().to_string(), module_exports);
+        items.insert(name.clone(), module_items);
+        exports.insert(name.clone(), module_exports);
     }
     for (name, module) in modules {
         let ctx = Context {
@@ -198,9 +198,9 @@ impl<'a> Resolver<'a> {
         self.ctx.symbols.fresh_sym(name.into())
     }
 
-    fn fresh_type_sym(&mut self, module: &Name, name: &str) -> Sym {
+    fn fresh_type_sym(&mut self, module: &str, name: &str) -> Sym {
         use compiler::builtins::types;
-        match (module.as_str(), name) {
+        match (module, name) {
             ("Basics", "Frac") => types::FRAC,
             ("Basics", "Bool") => types::BOOL,
             ("Basics", "Char") => types::CHAR,
@@ -213,9 +213,9 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    fn fresh_trait_sym(&mut self, module: &Name, name: &str) -> Sym {
+    fn fresh_trait_sym(&mut self, module: &str, name: &str) -> Sym {
         use compiler::builtins::traits;
-        match (module.as_str(), name) {
+        match (module, name) {
             ("Computation", "Computation") => traits::COMPUTATION,
             ("Computation", "Failable") => traits::FAILABLE,
             ("Basics", "Default") => traits::DEFAULT,
@@ -229,9 +229,9 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    fn fresh_value_sym(&mut self, module: &Name, name: &str, parent: Option<&str>) -> Sym {
+    fn fresh_value_sym(&mut self, module: &str, name: &str, parent: Option<&str>) -> Sym {
         use compiler::builtins::values;
-        match (module.as_str(), parent, name) {
+        match (module, parent, name) {
             ("List", Some("List"), "Nil") => values::NIL,
             ("List", Some("List"), "::") => values::CONS,
             ("Option", Some("Option"), "Some") => values::SOME,
@@ -279,7 +279,7 @@ impl<'a> Resolver<'a> {
         self.ctx.symbols.fresh_artificial_sym()
     }
 
-    fn double_definition(&mut self, name: &str, span: Span, previous: Span, _module: &Name) {
+    fn double_definition(&mut self, name: &str, span: Span, previous: Span) {
         let message = format!("Item `{}` is defined multiple times.", name);
         let previous_message = "Note: previously defined here.";
         self.ctx.reporter
@@ -289,7 +289,7 @@ impl<'a> Resolver<'a> {
             .done();
     }
 
-    fn duplicate_binding(&mut self, name: &str, span: Span, previous: Span, _module: &Name) {
+    fn duplicate_binding(&mut self, name: &str, span: Span, previous: Span) {
         let message = format!("Name `{}` is bound multiple times.", name);
         let previous_message = "Note: previously bound here.";
         self.ctx.reporter
@@ -299,14 +299,14 @@ impl<'a> Resolver<'a> {
             .done();
     }
 
-    fn bad_export(&mut self, message: String, span: Span, _module: &Name) {
+    fn bad_export(&mut self, message: String, span: Span) {
         self.ctx.reporter
             .symbol_error(message.as_str(), span)
             .span_note(message, span)
             .done();
     }
 
-    fn module_double_import(&mut self, offending: &str, span: Span, previous: Span, _module: &Name) {
+    fn module_double_import(&mut self, offending: &str, span: Span, previous: Span) {
         let message = format!("Module `{}` is imported twice.", offending);
         let previous_message = "Note: previously imported here.";
         self.ctx.reporter
@@ -316,7 +316,7 @@ impl<'a> Resolver<'a> {
             .done();
     }
 
-    fn double_import(&mut self, kind: Kind, item: &str, span: Span, previous: Span, _module: &Name) {
+    fn double_import(&mut self, kind: Kind, item: &str, span: Span, previous: Span) {
         let message = format!("{} `{}` is imported multiple times.", kind, item);
         let previous_message = "Note: previously imported here.";
         self.ctx.reporter
@@ -326,7 +326,7 @@ impl<'a> Resolver<'a> {
             .done();
     }
 
-    fn double_export(&mut self, kind: Kind, item: &str, span: Span, previous: Span, _module: &Name) {
+    fn double_export(&mut self, kind: Kind, item: &str, span: Span, previous: Span) {
         let message = format!("{} `{}` is exported multiple times.", kind, item);
         let previous_message = "Note: previously exported here.";
         self.ctx.reporter
@@ -336,7 +336,7 @@ impl<'a> Resolver<'a> {
             .done();
     }
 
-    fn double_fixity_decl(&mut self, name: &str, span: Span, previous: Span, _module: &Name) {
+    fn double_fixity_decl(&mut self, name: &str, span: Span, previous: Span) {
         let message = format!("Fixity of `{}` is declared twice.", name);
         let previous_message = "Note: previously declared here.";
         self.ctx.reporter
@@ -346,7 +346,7 @@ impl<'a> Resolver<'a> {
             .done();
     }
 
-    fn double_type_annotation(&mut self, name: &str, span: Span, previous: Span, _module: &Name) {
+    fn double_type_annotation(&mut self, name: &str, span: Span, previous: Span) {
         let message = format!("Type of `{}` is declared twice.", name);
         let previous_message = "Note: previously declared here.";
         self.ctx.reporter
@@ -356,7 +356,7 @@ impl<'a> Resolver<'a> {
             .done();
     }
 
-    fn not_exported(&mut self, item: &str, by: &str, span: Span, _module: &Name) {
+    fn not_exported(&mut self, item: &str, by: &str, span: Span) {
         let message = format!("Item `{}` is not exported by `{}`.", item, by);
         self.ctx.reporter
             .symbol_error(message.as_str(), span)
@@ -364,7 +364,7 @@ impl<'a> Resolver<'a> {
             .done();
     }
 
-    fn subitem_not_exported(&mut self, item: &str, parent: &str, by: &str, span: Span, _module: &Name) {
+    fn subitem_not_exported(&mut self, item: &str, parent: &str, by: &str, span: Span) {
         let message = format!("Module `{}` does not export `{}` as subitem of `{}`.", by, item, parent);
         self.ctx.reporter
             .symbol_error(message.as_str(), span)
@@ -372,7 +372,7 @@ impl<'a> Resolver<'a> {
             .done();
     }
 
-    fn no_subitems(&mut self, item: &str, by: &str, span: Span, _module: &Name) {
+    fn no_subitems(&mut self, item: &str, by: &str, span: Span) {
         let message = format!("Module `{}` does not export any subitems of `{}`.", by, item);
         self.ctx.reporter
             .symbol_error(message.as_str(), span)
@@ -380,7 +380,7 @@ impl<'a> Resolver<'a> {
             .done();
     }
 
-    fn unknown_symbol(&mut self, kind: Kind, symbol: &Node<p::Symbol>, _module: &Name) {
+    fn unknown_symbol(&mut self, kind: Kind, symbol: &Node<p::Symbol>) {
         let message = format!("Unknown {}: `{}`.", kind, symbol.value.clone().full_name());
         self.ctx.reporter
             .symbol_error(message.as_str(), symbol.span)
@@ -388,7 +388,7 @@ impl<'a> Resolver<'a> {
             .done();
     }
 
-    fn unknown_type_var(&mut self, name: &str, span: Span, _module: &Name) {
+    fn unknown_type_var(&mut self, name: &str, span: Span) {
         let message = format!("Unknown type var: `{}`.", name);
         self.ctx.reporter
             .symbol_error(message.as_str(), span)
@@ -396,7 +396,7 @@ impl<'a> Resolver<'a> {
             .done();
     }
 
-    fn unknown_local_symbol(&mut self, kind: Kind, symbol: &Node<String>, _module: &Name) {
+    fn unknown_local_symbol(&mut self, kind: Kind, symbol: &Node<String>) {
         let message = format!("Unknown local {}: `{}`.", kind, symbol.value);
         self.ctx.reporter
             .symbol_error(message.as_str(), symbol.span)
@@ -404,7 +404,7 @@ impl<'a> Resolver<'a> {
             .done();
     }
 
-    fn unknown_module(&mut self, m: &str, span: Span, _module: &Name) {
+    fn unknown_module(&mut self, m: &str, span: Span) {
         let message = format!("Unknown module: `{}`.", m);
         self.ctx.reporter
             .symbol_error(message.as_str(), span)
@@ -418,7 +418,7 @@ impl<'a> Resolver<'a> {
         let mut traits: BTreeMap<&'b str, (Span, Sym)> = BTreeMap::new();
         let mut types: BTreeMap<&'b str, (Span, Sym)> = BTreeMap::new();
 
-        let module_name = &Name::from_string(module.name().into());
+        let module_name = module.name();
         for item in &module.items {
             match item.value {
                 Decl::Let(LetDecl::Def(ref def)) => {
@@ -436,7 +436,7 @@ impl<'a> Resolver<'a> {
                                     var,
                                     span,
                                     another,
-                                    module_name);
+                                );
                             }
                         }
                     }
@@ -455,7 +455,7 @@ impl<'a> Resolver<'a> {
                                 &trait_.name.value,
                                 trait_.name.span,
                                 span,
-                                module_name);
+                            );
                         }
                     }
 
@@ -474,7 +474,7 @@ impl<'a> Resolver<'a> {
                                     item,
                                     value.value.value.span,
                                     another,
-                                    module_name);
+                                );
                             }
                         }
                     }
@@ -494,7 +494,7 @@ impl<'a> Resolver<'a> {
                                 &type_.name.value,
                                 type_.name.span,
                                 span,
-                                module_name);
+                            );
                         }
                     }
                 }
@@ -511,7 +511,7 @@ impl<'a> Resolver<'a> {
                                 &union.name.value,
                                 union.name.span,
                                 span,
-                                module_name);
+                            );
                         }
                     }
                     for case in &union.cases {
@@ -524,7 +524,8 @@ impl<'a> Resolver<'a> {
                                 entry.insert((
                                     Some(&union.name.value),
                                     case.value.tag.span,
-                                    sym));
+                                    sym,
+                                ));
                                 false
                             }
                             Entry::Occupied(entry) => {
@@ -534,7 +535,7 @@ impl<'a> Resolver<'a> {
                                     &case.value.tag.value,
                                     case.value.tag.span,
                                     span,
-                                    module_name);
+                                );
                                 true
                             }
                         };
@@ -543,7 +544,7 @@ impl<'a> Resolver<'a> {
                                 entry.insert((
                                     Some(&union.name.value),
                                     case.value.tag.span,
-                                    sym
+                                    sym,
                                 ));
                             }
                             Entry::Occupied(entry) => {
@@ -554,7 +555,7 @@ impl<'a> Resolver<'a> {
                                         &case.value.tag.value,
                                         case.value.tag.span,
                                         span,
-                                        module_name);
+                                    );
                                 }
                             }
                         }
@@ -598,7 +599,6 @@ impl<'a> Resolver<'a> {
     }
 
     fn collect_exports<'b>(&mut self, module: &'b Module, items: &Exports<'b>) -> Exports<'b> {
-        let module_name = &Name::from_string(module.name().into());
         let exposed = match module.def {
             ModuleDef::Implicit { .. } => return items.clone(),
             ModuleDef::Explicit { ref exposing, .. } => {
@@ -627,7 +627,7 @@ impl<'a> Resolver<'a> {
                             name,
                             span,
                             *entry.get(),
-                            module_name);
+                        );
                     }
                 }
                 found = true;
@@ -648,7 +648,7 @@ impl<'a> Resolver<'a> {
                             name,
                             span,
                             *entry.get(),
-                            module_name);
+                        );
                     }
                 }
                 found = true;
@@ -665,7 +665,7 @@ impl<'a> Resolver<'a> {
                             name,
                             span,
                             *entry.get(),
-                            module_name);
+                        );
                     }
                 }
                 found = true;
@@ -676,7 +676,7 @@ impl<'a> Resolver<'a> {
                 self.bad_export(
                     format!("`{}` is not defined in this module.", name),
                     span,
-                    module_name);
+                );
                 continue;
             }
             match item.value.subitems {
@@ -702,7 +702,7 @@ impl<'a> Resolver<'a> {
                         self.bad_export(
                             format!("`{}` does not have any subitems.", name),
                             span,
-                            module_name);
+                        );
                     }
                 }
                 Some(Node { value: ItemList::Some(ref subitems), .. }) => {
@@ -722,7 +722,7 @@ impl<'a> Resolver<'a> {
                                         subname,
                                         item.span,
                                         *entry.get(),
-                                        module_name);
+                                    );
                                 }
                             }
                             is_ok = true;
@@ -736,7 +736,7 @@ impl<'a> Resolver<'a> {
                             self.bad_export(
                                 format!("`{}` does not have subitem `{}`.", name, subname),
                                 span,
-                                module_name);
+                            );
                         }
                     }
                 }
@@ -751,8 +751,6 @@ impl<'a> Resolver<'a> {
         let mut imports = Imports::empty();
         let mut import_span = BTreeMap::new();
         let mut first_import = BTreeMap::new();
-
-        let module_name = &Name::from_string(module.name().into());
 
         for import in &module.imports {
             let alias: &str = if let Some(ref alias) = import.value.alias {
@@ -773,7 +771,7 @@ impl<'a> Resolver<'a> {
                         alias,
                         import.value.name.span,
                         previous,
-                        module_name);
+                    );
                     continue;
                 }
             }
@@ -799,7 +797,7 @@ impl<'a> Resolver<'a> {
                                     type_,
                                     list_span,
                                     *entry.get(),
-                                    module_name);
+                                );
                             }
                         }
                     }
@@ -815,7 +813,7 @@ impl<'a> Resolver<'a> {
                                     trait_,
                                     list_span,
                                     *entry.get(),
-                                    module_name);
+                                );
                             }
                         }
                     }
@@ -843,7 +841,7 @@ impl<'a> Resolver<'a> {
                                     value,
                                     list_span,
                                     *entry.get(),
-                                    module_name);
+                                );
                             }
                         }
                     }
@@ -865,7 +863,7 @@ impl<'a> Resolver<'a> {
                                         item,
                                         span,
                                         *entry.get(),
-                                        module_name);
+                                    );
                                 }
                             }
                             is_ok = true;
@@ -883,7 +881,7 @@ impl<'a> Resolver<'a> {
                                         item,
                                         span,
                                         *entry.get(),
-                                        module_name);
+                                    );
                                 }
                             }
                             is_ok = true;
@@ -914,7 +912,7 @@ impl<'a> Resolver<'a> {
                                         item,
                                         span,
                                         *entry.get(),
-                                        module_name);
+                                    );
                                 }
                             }
                             is_ok = true;
@@ -923,7 +921,7 @@ impl<'a> Resolver<'a> {
                             // TODO: maybe check if item is instead a subitem of
                             // other item and change error message to be more
                             // helpful?
-                            self.not_exported(item, name, span, module_name);
+                            self.not_exported(item, name, span);
                             continue;
                         }
                         match item_.value.subitems {
@@ -958,12 +956,12 @@ impl<'a> Resolver<'a> {
                                                 value,
                                                 list_span,
                                                 *entry.get(),
-                                                module_name);
+                                            );
                                         }
                                     }
                                 }
                                 if !found_any {
-                                    self.no_subitems(item, name, span, module_name);
+                                    self.no_subitems(item, name, span);
                                 }
                             }
                             Some(Node { value: ItemList::Some(ref items), .. }) => {
@@ -981,7 +979,7 @@ impl<'a> Resolver<'a> {
                                                     &subitem.value,
                                                     subitem.span,
                                                     *entry.get(),
-                                                    module_name);
+                                                );
                                             }
                                         }
                                         is_ok = true;
@@ -1002,7 +1000,7 @@ impl<'a> Resolver<'a> {
                                             item,
                                             name,
                                             subitem.span,
-                                            module_name);
+                                        );
                                     }
                                 }
                             }
@@ -1051,12 +1049,12 @@ impl<'a> Resolver<'a> {
                                     sym_,
                                     sym.span,
                                     previous,
-                                    &ctx.module);
+                                );
                             }
                         }
                     } else {
                         let sym = sym.clone().map(p::Symbol::Unqualified);
-                        self.unknown_symbol(Kind::LocalValue, &sym, &ctx.module);
+                        self.unknown_symbol(Kind::LocalValue, &sym);
                     }
                 }
                 Decl::Let(LetDecl::Def(ref def)) => {
@@ -1078,7 +1076,6 @@ impl<'a> Resolver<'a> {
                                 let annotation = r::TypeAnnot {
                                     value: sym_node,
                                     type_: rtype,
-                                    module: ctx.module.clone(),
                                 };
                                 let annotation = Node::new(annotation, decl.span);
                                 self.result.annotations.insert(local, annotation);
@@ -1089,14 +1086,14 @@ impl<'a> Resolver<'a> {
                                     sym,
                                     type_.value.span,
                                     previous,
-                                    &ctx.module);
+                                );
                             }
                         }
                     } else {
                         self.unknown_local_symbol(
                             Kind::Value,
                             &type_.value,
-                            &ctx.module);
+                        );
                     }
                 }
                 Decl::Trait(ref trait_) => {
@@ -1132,7 +1129,7 @@ impl<'a> Resolver<'a> {
         for sym in defined_symbols {
             locals.push((sym.clone(), self.fresh_sym(sym.value.clone())));
         }
-        self.check_dupe_bindings(&locals, ctx);
+        self.check_dupe_bindings(&locals);
         let symbols = locals
             .iter()
             .cloned()
@@ -1153,7 +1150,7 @@ impl<'a> Resolver<'a> {
                             // symbol required in trait is missing in impl
                             let message = format!("Missing impl of `{}`.", name);
                             self.ctx.reporter
-                                .symbol_error(/*&ctx.module,*/ message.as_str(), impl_.scheme.value.type_.span)
+                                .symbol_error(message.as_str(), impl_.scheme.value.type_.span)
                                 .span_note(message, impl_.scheme.value.type_.span)
                                 .done();
                         }
@@ -1179,7 +1176,7 @@ impl<'a> Resolver<'a> {
                 Some(ref v) => self.resolve_expr_with_locals(v, ctx, &mut locals),
                 None => continue,
             };
-            let defs = self.resolve_def_raw(pat, value, ctx)
+            let defs = self.resolve_def_raw(pat, value)
                 .into_iter()
                 .map(|def| Node::new(def, span));
             for def in defs {
@@ -1196,7 +1193,6 @@ impl<'a> Resolver<'a> {
             trait_,
             values: impl_defs,
             trait_items,
-            module: ctx.module.clone(),
         };
 
         (impl_, other_defs)
@@ -1217,14 +1213,14 @@ impl<'a> Resolver<'a> {
             Some(expr) => expr,
             None => return Vec::new(),
         };
-        self.resolve_def_raw(pattern, expr, ctx)
+        self.resolve_def_raw(pattern, expr)
     }
 
     fn resolve_def_raw(
-                        &mut self,
-                        pattern: Node<r::Pattern>,
-                        expr: Node<r::Expr>,
-                        ctx: &Context) -> Vec<r::Def> {
+        &mut self,
+        pattern: Node<r::Pattern>,
+        expr: Node<r::Expr>,
+    ) -> Vec<r::Def> {
         let vars = pattern.value.bound_vars();
         let pattern_span = pattern.span;
         let expr_span = expr.span;
@@ -1249,7 +1245,6 @@ impl<'a> Resolver<'a> {
             let def = r::Def {
                 sym: Node::new(fresh, pattern_span),
                 value: case,
-                module: ctx.module.clone(),
                 artificial: false,
             };
             vec![def]
@@ -1275,7 +1270,6 @@ impl<'a> Resolver<'a> {
             let def = r::Def {
                 sym: Node::new(vars[0], pattern_span),
                 value: case,
-                module: ctx.module.clone(),
                 artificial: false,
             };
             vec![def]
@@ -1294,7 +1288,6 @@ impl<'a> Resolver<'a> {
             defs.push(r::Def {
                 sym: Node::new(val, pattern_span),
                 value: expr,
-                module: ctx.module.clone(),
                 artificial: false,
             });
             for var in vars {
@@ -1315,7 +1308,6 @@ impl<'a> Resolver<'a> {
                 defs.push(r::Def {
                     sym: Node::new(var, pattern_span),
                     value: case,
-                    module: ctx.module.clone(),
                     artificial: false,
                 });
             }
@@ -1342,7 +1334,6 @@ impl<'a> Resolver<'a> {
             let annot = r::TypeAnnot {
                 value: Node::new(sym, value.value.value.span),
                 type_: typ,
-                module: ctx.module.clone(),
             };
             values.push(Node::new(annot, value.span));
         }
@@ -1352,7 +1343,6 @@ impl<'a> Resolver<'a> {
             name: Node::new(sym, trait_.name.span),
             base_traits: base_traits,
             values: values,
-            module: ctx.module.clone(),
         }
     }
 
@@ -1377,7 +1367,6 @@ impl<'a> Resolver<'a> {
             name: Node::new(sym, alias.name.span),
             vars: vars,
             type_: resolved_type,
-            module: ctx.module.clone(),
         }
     }
 
@@ -1412,7 +1401,6 @@ impl<'a> Resolver<'a> {
             name: Node::new(sym, union.name.span),
             vars: vars,
             cases: resolved_cases,
-            module: ctx.module.clone(),
         }
     }
 
@@ -1431,7 +1419,7 @@ impl<'a> Resolver<'a> {
                     vars.insert(v, sym);
                     r::Type::Var(sym)
                 } else {
-                    self.unknown_type_var(v, type_.span, &ctx.module);
+                    self.unknown_type_var(v, type_.span);
                     r::Type::Any
                 }
             }
@@ -1574,7 +1562,7 @@ impl<'a> Resolver<'a> {
                         locals.push((var, sym));
                     }
                     let pat = self.resolve_pattern(&arm.value.pattern, &symbols, ctx);
-                    self.check_dupe_bindings(&locals[locals_before..], ctx);
+                    self.check_dupe_bindings(&locals[locals_before..]);
                     let guard = arm.value.guard.as_ref().map(|e| {
                         self.resolve_expr_with_locals(e, ctx, locals)
                     });
@@ -1705,7 +1693,7 @@ impl<'a> Resolver<'a> {
                     symbols.insert(var.value, sym);
                     locals.push((var, sym));
                 }
-                self.check_dupe_bindings(&locals[locals_before..], ctx);
+                self.check_dupe_bindings(&locals[locals_before..]);
                 let pat = self.resolve_pattern(pat, &symbols, ctx);
                 let rest = Node::new(self.resolve_do(rest, ctx, locals), rest.span);
                 while locals.len() > locals_before {
@@ -1764,7 +1752,7 @@ impl<'a> Resolver<'a> {
             }
             res
         };
-        self.check_dupe_bindings(&defined_symbols, ctx);
+        self.check_dupe_bindings(&defined_symbols);
         for decl in decls {
             if let LetDecl::Type(ref type_annot) = decl.value {
                 match annotation_pos.entry(type_annot.value.value.clone()) {
@@ -1776,7 +1764,7 @@ impl<'a> Resolver<'a> {
                             &type_annot.value.value,
                             type_annot.value.span,
                             *entry.get(),
-                            &ctx.module);
+                        );
                     }
                 }
                 let annotated = defined_symbols
@@ -1791,7 +1779,6 @@ impl<'a> Resolver<'a> {
                     let annot = r::TypeAnnot {
                         value: Node::new(sym, type_annot.value.span),
                         type_: type_,
-                        module: ctx.module.clone(),
                     };
                     let annot = Node::new(annot, decl.span);
                     self.result.annotations.insert(sym, annot);
@@ -1799,7 +1786,7 @@ impl<'a> Resolver<'a> {
                     self.unknown_local_symbol(
                         Kind::Value,
                         &type_annot.value,
-                        &ctx.module);
+                    );
                 }
             }
         }
@@ -1817,7 +1804,7 @@ impl<'a> Resolver<'a> {
                     Some(ref v) => self.resolve_expr_with_locals(v, ctx, locals),
                     None => continue,
                 };
-                let defs = self.resolve_def_raw(pat, value, ctx);
+                let defs = self.resolve_def_raw(pat, value);
                 resolved_defs.extend(defs);
             }
         }
@@ -1828,10 +1815,7 @@ impl<'a> Resolver<'a> {
         r::Expr::Let(resolved_defs, Box::new(value))
     }
 
-    fn check_dupe_bindings(
-                            &mut self, 
-                            locals: &[(Node<&str>, Sym)],
-                            ctx: &Context) {
+    fn check_dupe_bindings(&mut self, locals: &[(Node<&str>, Sym)]) {
         for (index, first) in locals.iter().enumerate() {
             for second in locals.iter().skip(index + 1) {
                 if first.0.value == second.0.value {
@@ -1839,7 +1823,7 @@ impl<'a> Resolver<'a> {
                         second.0.value,
                         second.0.span,
                         first.0.span,
-                        &ctx.module);
+                    );
                 }
             }
         }
@@ -1857,7 +1841,7 @@ impl<'a> Resolver<'a> {
                     let message = format!(
                         "Type variable `{}` is defined twice.", first_name);
                     self.ctx.reporter
-                        .symbol_error(/*&ctx.module*/ message.as_str(), second.span)
+                        .symbol_error(message.as_str(), second.span)
                         .span_note(message, second.span)
                         .span_note("Note: previously defined here.", first.span)
                         .done();
@@ -1877,7 +1861,7 @@ impl<'a> Resolver<'a> {
                 let m = if let Some(&m) = ctx.imports.modules.get(m.as_str()) {
                     m
                 } else {
-                    self.unknown_module(m, symbol.span, &ctx.module);
+                    self.unknown_module(m, symbol.span);
                     return unknown;
                 };
                 let exports = if let Some(exports) = ctx.exports.get(m) {
@@ -1888,7 +1872,7 @@ impl<'a> Resolver<'a> {
                 match exports.get_symbol(kind, n) {
                     Some(sym) => Symbol::Known(sym),
                     None => {
-                        self.not_exported(n, m, symbol.span, &ctx.module);
+                        self.not_exported(n, m, symbol.span);
                         Symbol::Unknown
                     }
                 }
@@ -1906,7 +1890,7 @@ impl<'a> Resolver<'a> {
                     // therefore unwrap
                     Symbol::Known(s.unwrap())
                 } else {
-                    self.unknown_symbol(kind, symbol, &ctx.module);
+                    self.unknown_symbol(kind, symbol);
                     Symbol::Unknown
                 }
             }

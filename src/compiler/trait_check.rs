@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use codemap::Span;
-use ast::{Name, Node, Sym, Symbol};
+use ast::{Node, Sym, Symbol};
 use ast::typed::{Expr, Impl, Impls, Items, Scheme, ImplSource, Type, Def};
 use compiler::builtins;
 use CompileCtx;
@@ -75,7 +75,6 @@ struct SolverCtx<'a, 'b> {
     ctx: &'b mut CompileCtx,
     known_impls: &'a BTreeSet<(u64, Sym)>,
     symbol_types: &'a BTreeMap<Sym, Scheme>,
-    module: Name,
 }
 
 impl<'a, 'b> SolverCtx<'a, 'b> {
@@ -92,7 +91,7 @@ impl<'a, 'b> SolverCtx<'a, 'b> {
                         var,
                         self.ctx.symbols.symbol_name(trait_));
                     self.ctx.reporter
-                        .trait_error(msg.as_str(), span) // &self.module
+                        .trait_error(msg.as_str(), span)
                         .span_note(msg, span)
                         .done();
                     None
@@ -158,7 +157,7 @@ impl<'a, 'b> SolverCtx<'a, 'b> {
                     t.display(&self.ctx.symbols),
                     self.ctx.symbols.symbol_name(trait_));
                 self.ctx.reporter
-                    .trait_error(msg.as_str(), span) // &self.module
+                    .trait_error(msg.as_str(), span)
                     .span_note(msg, span)
                     .done();
                 None
@@ -230,7 +229,6 @@ impl<'a, 'b> SolverCtx<'a, 'b> {
             ctx: self.ctx,
             known_impls: &known_impls,
             symbol_types: self.symbol_types,
-            module: self.module.clone(),
         };
         ctx.check_expr(&mut def.value);
     }
@@ -260,7 +258,6 @@ impl<'a, 'b> GlobalSolver<'a, 'b> {
             ctx: self.ctx,
             symbol_types: self.symbol_types,
             known_impls: &BTreeSet::new(),
-            module: def.module.clone(),
         };
 
         solver.check_def(def);
@@ -287,7 +284,6 @@ impl<'a, 'b> GlobalSolver<'a, 'b> {
                 ctx: self.ctx,
                 symbol_types: self.symbol_types,
                 known_impls: &known_impls,
-                module: impl_.module.clone(),
             };
             solver.check_def(&mut def.def);
         }

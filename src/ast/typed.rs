@@ -1,7 +1,7 @@
 use std::collections::{BTreeSet, BTreeMap};
 use std::fmt;
 use std::rc::Rc;
-use ast::{Node, Name, Literal, Sym, Symbol};
+use ast::{Node, Literal, Sym, Symbol};
 use symbols::SymbolSource;
 
 
@@ -353,7 +353,6 @@ pub struct Def {
     pub sym: Node<Sym>,
     pub value: Node<Expr>,
     pub scheme: Scheme,
-    pub module: Name,
 }
 
 #[derive(Debug, Clone)]
@@ -417,7 +416,6 @@ pub struct Union {
     pub name: Node<Sym>,
     pub vars: Vec<u64>,
     pub cases: Vec<(Node<Sym>, Vec<Type>)>,
-    pub module: Name,
 }
 
 #[derive(Debug, Clone)]
@@ -430,7 +428,6 @@ pub struct Trait {
     pub name: Node<Sym>,
     pub base_traits: Vec<Sym>,
     pub items: Vec<(Sym, Scheme)>,
-    pub module: Name,
 }
 
 #[derive(Debug, Clone)]
@@ -448,7 +445,6 @@ pub struct Impl {
     pub items: Vec<ImplDef>,
     // mapping from impl symbols to trait symbols
     pub trait_items: BTreeMap<Sym, Sym>,
-    pub module: Name,
 }
 
 impl Impl {
@@ -487,22 +483,16 @@ pub mod printer {
             symbols,
         };
         for &TypeDecl::Union(ref union) in &items.types {
-            if union.module.as_str() == "Main" {
-                printer.print_union(union);
-                println!("");
-            }
+            printer.print_union(union);
+            println!("");
         }
         for def in &items.items {
-            if def.module.as_str() == "Main" {
-                printer.print_def(def);
-                println!("");
-            }
+            printer.print_def(def);
+            println!("");
         }
         for impl_ in &items.impls {
-            if impl_.module.as_str() == "Main" {
-                printer.print_impl(impl_);
-                println!("");
-            }
+            printer.print_impl(impl_);
+            println!("");
         }
         for (&sym, typ) in &items.symbol_types {
             println!("symbol type:  {} ({:?}) : {}",

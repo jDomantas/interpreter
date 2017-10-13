@@ -86,7 +86,7 @@ impl SymbolSource {
     }
 }
 
-pub const BUILTIN_SYMBOLS: [(Sym, &'static str, &'static str); 44] = [
+pub const BUILTIN_SYMBOLS: [(Sym, &'static str, &'static str); 47] = [
     (types::INT,             "Basics",       "Int"),
     (types::FRAC,            "Basics",       "Frac"),
     (types::BOOL,            "Basics",       "Bool"),
@@ -108,6 +108,9 @@ pub const BUILTIN_SYMBOLS: [(Sym, &'static str, &'static str); 44] = [
     (values::DEFAULT,        "Basics",       "default"),
     (values::AND,            "Basics",       "&&"),
     (values::OR,             "Basics",       "||"),
+    (values::LT,             "Basics",       "LT"),
+    (values::EQ,             "Basics",       "EQ"),
+    (values::GT,             "Basics",       "GT"),
     (values::INT_ADD,        "Basics",       "intAdd"),
     (values::INT_SUB,        "Basics",       "intSub"),
     (values::INT_MUL,        "Basics",       "intMul"),

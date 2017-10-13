@@ -206,6 +206,14 @@ impl<'a> InferCtx<'a> {
                 match name.value {
                     Symbol::Known(sym) => {
                         let (ty, args_types) = self.instantiate_pattern_ty(sym);
+                        let mut typed_args = Vec::new();
+                        for (i, arg) in args.iter().enumerate() {
+                            let expected = args_types.get(i).unwrap_or(&Type::Any);
+                            let (arg, type_) = self.infer_pattern(arg);
+                            let source = ConstraintSource::MatchedValue(arg.span);
+                            self.add_constraint(&type_, expected, source);
+                            typed_args.push(arg);
+                        }
                         if args.len() != args_types.len() {
                             // TODO: maybe extract this into its own pass?
                             let msg = format!(
@@ -219,14 +227,6 @@ impl<'a> InferCtx<'a> {
                                 .done();
                             (t::Pattern::Wildcard, Type::Any)
                         } else {
-                            let mut typed_args = Vec::new();
-                            for (i, arg) in args.iter().enumerate() {
-                                let expected = &args_types[i];
-                                let (arg, type_) = self.infer_pattern(arg);
-                                let source = ConstraintSource::MatchedValue(arg.span);
-                                self.add_constraint(&type_, expected, source);
-                                typed_args.push(arg);
-                            }
                             let pat = t::Pattern::Deconstruct(name.clone(), typed_args);
                             (pat, ty)
                         }

@@ -112,7 +112,7 @@ fn run_program(source: &str) -> Outcome {
                 let errors = errors
                     .into_iter()
                     .map(|e| {
-                        // assert_eq!(e.phase, Phase::SymbolResolution);
+                        assert_eq!(e.phase, Phase::SymbolResolution);
                         (shift_pos(e.primary_span.unwrap().start), e.message.clone())
                     })
                     .collect();
@@ -132,7 +132,19 @@ fn run_program(source: &str) -> Outcome {
             Phase::KindChecking => Outcome::KindError(shift_pos(pos), message),
             Phase::TypeChecking => Outcome::TypeError(shift_pos(pos), message),
             Phase::TraitChecking => Outcome::TraitError(shift_pos(pos), message),
-            Phase::PatternError => unimplemented!(),
+            Phase::PatternError => {
+                let errors = errors
+                    .into_iter()
+                    .filter_map(|e| {
+                        if e.phase == Phase::PatternError {
+                            Some((shift_pos(e.primary_span.unwrap().start), e.message.clone()))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                Outcome::PatternError(errors)
+            }
         }
     }
 }
@@ -179,6 +191,19 @@ fn parse_expectation(source: &str) -> Expectation {
                 positions.push(Pos { line, col });
             }
             return Expectation::SymbolError(positions);
+        } 
+    }
+
+    for line in source.lines() {
+        if line.starts_with("-- expect pattern errors: ") {
+            let mut positions = Vec::new();
+            for pos in line.split(' ').skip(4) {
+                let parts = pos.split(':').collect::<Vec<_>>();
+                let line = str::parse::<usize>(parts[0]).unwrap();
+                let col = str::parse::<usize>(parts[1]).unwrap();
+                positions.push(Pos { line, col });
+            }
+            return Expectation::PatternError(positions);
         } 
     }
 
@@ -245,6 +270,7 @@ enum Expectation {
     RecursiveAliasError,
     FixityError(Pos),
     KindError(Pos),
+    PatternError(Vec<Pos>),
     TypeError(Pos),
     TraitError(Pos),
     Ok(Value),
@@ -271,6 +297,12 @@ impl Expectation {
             Expectation::KindError(pos) => {
                 println!("kind error at line {}, column {}", pos.line, pos.col);
             }
+            Expectation::PatternError(ref pos) => {
+                println!("pattern errors at:");
+                for pos in pos {
+                    println!("line {}, column {}", pos.line, pos.col);
+                }
+            }
             Expectation::TypeError(pos) => {
                 println!("type error at line {}, column {}", pos.line, pos.col);
             }
@@ -290,6 +322,7 @@ enum Outcome {
     AliasError(Vec<(Pos, String)>),
     FixityError(Pos, String),
     KindError(Pos, String),
+    PatternError(Vec<(Pos, String)>),
     TypeError(Pos, String),
     TraitError(Pos, String),
     EvalError(EvalError),
@@ -329,6 +362,15 @@ impl Outcome {
                 println!("kind error at line {}, column {}", pos.line, pos.col);
                 println!("reason: {}", msg);
             }
+            Outcome::PatternError(ref pos) => {
+                println!("pattern errors:");
+                for &(pos, ref msg) in pos {
+                    println!("line {}, column {}, reason: {}",
+                        pos.line,
+                        pos.col,
+                        msg);
+                }
+            }
             Outcome::TypeError(pos, ref msg) => {
                 println!("type error at line {}, column {}", pos.line, pos.col);
                 println!("reason: {}", msg);
@@ -364,7 +406,8 @@ impl TestResult {
                     return TestResult::Ok;
                 }
             }
-            (&Expectation::SymbolError(ref pos), &Outcome::SymbolError(ref pos2)) => {
+            (&Expectation::SymbolError(ref pos), &Outcome::SymbolError(ref pos2)) |
+            (&Expectation::PatternError(ref pos), &Outcome::PatternError(ref pos2)) => {
                 if pos.len() == pos2.len() {
                     let mut all_good = true;
                     for (p, &(p2, _)) in pos.iter().zip(pos2.iter()) {

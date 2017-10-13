@@ -10,7 +10,7 @@ pub mod vm;
 
 use codemap::CodeMap;
 pub use parsing::{SourceProvider, HashMapProvider};
-use diagnostics::{Diagnostic, Diagnostics, Span};
+use diagnostics::{Diagnostics};
 use reporting::Reporter;
 use symbols::SymbolSource;
 use vm::Vm;
@@ -18,7 +18,7 @@ use vm::Vm;
 
 pub struct CompileResult {
     pub vm: Option<Vm>,
-    pub diagnostics: Vec<Diagnostic<Span>>,
+    pub diagnostics: Diagnostics,
 }
 
 pub fn compile<S>(provider: &S, main: &str) -> CompileResult
@@ -29,14 +29,14 @@ pub fn compile<S>(provider: &S, main: &str) -> CompileResult
     let modules = parsing::parse_modules(main, provider, &mut ctx);
     let vm = compiler::compile(&modules, &mut ctx).ok();
 
-    let diagnostics = Diagnostics {
-        raw_diagnostics: ctx.reporter.into_diagnostics(),
-        codemap: ctx.codemap,
-    };
+    let diagnostics = Diagnostics::new(
+        ctx.reporter.into_diagnostics(),
+        ctx.codemap,
+    );
 
     CompileResult {
         vm,
-        diagnostics: diagnostics.into_diagnostics(),
+        diagnostics,
     }
 }
 

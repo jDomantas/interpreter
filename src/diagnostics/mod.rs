@@ -1,3 +1,6 @@
+mod emitter;
+
+use std::io::{self, Write};
 use codemap::CodeMap;
 
 
@@ -55,14 +58,6 @@ impl<Loc> Diagnostic<Loc> {
     }
 }
 
-impl<Loc: Ord> Diagnostic<Loc> {
-    pub fn ordering(&self, other: &Self) -> ::std::cmp::Ordering {
-        let by_phase = self.phase.cmp(&other.phase);
-        let by_position = self.primary_span.cmp(&other.primary_span);
-        by_phase.then(by_position)
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct Note<Loc> {
     pub span: Loc,
@@ -80,11 +75,28 @@ impl<Loc> Note<Loc> {
 }
 
 pub struct Diagnostics {
-    pub(crate) raw_diagnostics: Vec<Diagnostic<::codemap::Span>>,
-    pub(crate) codemap: CodeMap,
+    raw_diagnostics: Vec<Diagnostic<::codemap::Span>>,
+    codemap: CodeMap,
 }
 
 impl Diagnostics {
+    pub(crate) fn new(
+        mut raw_diagnostics: Vec<Diagnostic<::codemap::Span>>,
+        codemap: CodeMap,
+    ) -> Self {
+        raw_diagnostics.sort_by_key(|d| {
+            d.primary_span.map(|span| {
+                let file = codemap.find_file(span.low()).name();
+                let loc = codemap.look_up_pos(span.low()).position;
+                (file, loc.line, loc.column)
+            })
+        });
+        Diagnostics {
+            raw_diagnostics,
+            codemap,
+        }
+    }
+
     pub fn into_diagnostics(self) -> Vec<Diagnostic<Span>> {
         let Diagnostics { raw_diagnostics, codemap } = self;
         let translator = |span| {
@@ -105,5 +117,9 @@ impl Diagnostics {
             .into_iter()
             .map(|d| d.translate_loc(&translator))
             .collect()
+    }
+
+    pub fn emit<W: Write>(&self, to: W) -> io::Result<()> {
+        emitter::print_diagnostics(&self.codemap, &self.raw_diagnostics, to)
     }
 }

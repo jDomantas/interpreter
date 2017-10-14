@@ -134,7 +134,7 @@ impl<'a> Printer<'a> {
         &mut self,
         codemap: &CodeMap,
         notes: &'a [Note<Span>],
-        output: W,
+        mut output: W,
     ) -> io::Result<()> {
         assert!(self.line_markers.is_empty());
         assert_eq!(self.next_connect_col, 0);
@@ -146,6 +146,13 @@ impl<'a> Printer<'a> {
             markers.sort_by_key(LineMarker::end_col);
         }
         assert!(!self.line_markers.is_empty());
+        writeln!(
+            output,
+            "{: <width$}--> module: {}",
+            ' ',
+            self.file.name(),
+            width = self.number_width,
+        )?;
         self.print_annotations(output)?;
         self.line_markers.clear();
         assert!(self.full_connection_cols.is_empty());

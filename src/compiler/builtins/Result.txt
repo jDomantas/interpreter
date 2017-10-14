@@ -11,55 +11,55 @@ import Computation exposing (Computation)
 
 type Result e a = Ok a | Err e
 
-map : (a -> b) -> Result e a -> Result e b
+map : forall a b e . (a -> b) -> Result e a -> Result e b
 map f result = case result of
     Ok a -> Ok (f a)
     Err e -> Err e
 
-andThen : (a -> Result e b) -> Result e a -> Result e b
+andThen : forall a b e . (a -> Result e b) -> Result e a -> Result e b
 andThen f result = case result of
     Ok a -> f a
     Err e -> Err e
 
-toOption : Result e a -> Option a
+toOption : forall a e . Result e a -> Option a
 toOption result = case result of
     Ok a -> Some a
     _ -> None
 
-getOrElse : a -> Result e a -> a
+getOrElse : forall a e . a -> Result e a -> a
 getOrElse value result = case result of
     Ok a -> a
     Err _ -> value
 
-getOrDefault : [a : Default] Result e a -> a
+getOrDefault : forall a : Default; e . Result e a -> a
 getOrDefault = getOrElse default
 
-mapError : (e -> f) -> Result e a -> Result f a
+mapError : forall a e f . (e -> f) -> Result e a -> Result f a
 mapError f result = case result of
     Ok a -> Ok a
     Err e -> Err (f e)
 
-impl Result e : Computation where
+impl forall e . Result e : Computation where
     succeed = Ok
     andThen = andThen
 
-impl Result e : Mappable where
+impl forall e . Result e : Mappable where
     map = map
 
-impl [a : Eq, e : Eq] Result e a : Eq where
+impl forall a : Eq; e : Eq; . Result e a : Eq where
     a == b = case (a, b) of
         (Ok a, Ok b) -> a == b
         (Err a, Err b) -> a == b
         _ -> false
 
-impl [a : Ord, e : Ord] Result e a : Ord where
+impl forall a : Ord; e : Ord; . Result e a : Ord where
     compare a b = case (a, b) of
         (Ok _, Err _) -> GT
         (Err _, Ok _) -> LT
         (Ok a, Ok b) -> compare a b
         (Err a, Err b) -> compare a b
 
-impl [a : ToString, e : ToString] Result e a : ToString where
+impl forall a : ToString; e : ToString; . Result e a : ToString where
     toString res = case res of
         Ok a -> "Ok(" ++ toString a ++ ")"
         Err e -> "Err(" ++ toString e ++ ")"

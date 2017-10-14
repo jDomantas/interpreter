@@ -124,34 +124,22 @@ pub struct TypeAnnot {
 #[derive(Debug, Clone)]
 pub enum Type {
     SelfType,
-    Var(String),
-    Concrete(Symbol),
+    Name(Symbol),
     Apply(Box<Node<Type>>, Box<Node<Type>>),
     Function(Box<Node<Type>>, Box<Node<Type>>),
     Tuple(Vec<Node<Type>>),
 }
 
-impl Type {
-    pub fn from_symbol(symbol: Symbol) -> Type {
-        match symbol {
-            Symbol::Qualified(_, _) => {
-                Type::Concrete(symbol)
-            }
-            Symbol::Unqualified(name) => {
-                if name.chars().nth(0).unwrap().is_uppercase() {
-                    Type::Concrete(Symbol::Unqualified(name))
-                } else {
-                    Type::Var(name)
-                }
-            }
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct Scheme {
     pub type_: Node<Type>,
-    pub bounds: Vec<(Node<String>, Node<Symbol>)>,
+    pub vars: Vec<SchemeVar>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SchemeVar {
+    pub name: Node<String>,
+    pub bounds: Vec<Node<Symbol>>,
 }
 
 #[derive(Debug, Clone)]

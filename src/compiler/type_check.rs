@@ -1178,9 +1178,10 @@ fn convert_resolved_scheme(scheme: &r::Scheme, self_to: &Type) -> Scheme {
     }
     let type_ = convert_resolved_type(&scheme.type_.value, self_to);
     let mut vars = BTreeMap::new();
-    for &(ref var, ref trait_) in &scheme.bounds {
-        if let Symbol::Known(sym) = trait_.value {
-            vars.entry(var.value.0).or_insert_with(BTreeSet::new).insert(sym);
+    for var in &scheme.vars {
+        let bounds = vars.entry(var.name.value.0).or_insert_with(BTreeSet::new);
+        for trait_ in &var.bounds {
+            bounds.insert(trait_.value);
         }
     }
     collect_vars(&scheme.type_.value, &mut vars);

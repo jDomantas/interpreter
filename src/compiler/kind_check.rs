@@ -3,7 +3,7 @@ use std::collections::btree_map::Entry;
 use std::fmt;
 use codemap::Span;
 use ast::{Node, Sym, Symbol};
-use ast::resolved::{TypeDecl, Type, Items, Trait, TypeAnnot, Scheme, Impl};
+use ast::resolved::{TypeDecl, Type, Items, Trait, TypeAnnot, Scheme, Impl, SchemeVar};
 use compiler::util::{self, Graph};
 use CompileCtx;
 
@@ -387,42 +387,40 @@ impl<'a, 'b> InferCtx<'a, 'b> {
         }
     }
 
-    fn add_trait_bounds(&mut self, bounds: &'a [(Node<Sym>, Node<Symbol>)]) {
-        for &(ref var, ref trait_) in bounds {
-            let trait_name = match trait_.value {
-                Symbol::Known(sym) => sym,
-                Symbol::Unknown => continue,
-            };
-            let kind = match self.trait_kinds.get(&trait_name) {
-                Some(kind) => kind,
-                None => continue,
-            };
-            match self.var_kinds.entry(var.value) {
-                Entry::Occupied(mut entry) => {
-                    if entry.get() != kind {
-                        if entry.get() != &Kind::Any {
-                            let message = format!(
-                                "Variable {} here has kind `{}`, but in previous bound it was bound to `{}`.",
-                                self.ctx.symbols.symbol_name(var.value),
-                                kind,
-                                entry.get());
-                            self.ctx.reporter
-                                .kind_error(message.as_str(), var.span)
-                                .span_note(message, var.span)
-                                .done();
+    fn add_scheme_vars(&mut self, vars: &'a [SchemeVar]) {
+        for var in vars {
+            for trait_ in &var.bounds {
+                let kind = match self.trait_kinds.get(&trait_.value) {
+                    Some(kind) => kind,
+                    None => continue,
+                };
+                match self.var_kinds.entry(var.name.value) {
+                    Entry::Occupied(mut entry) => {
+                        if entry.get() != kind {
+                            if entry.get() != &Kind::Any {
+                                let message = format!(
+                                    "Variable {} here has kind `{}`, but in previous bound it was bound to `{}`.",
+                                    self.ctx.symbols.symbol_name(var.name.value),
+                                    kind,
+                                    entry.get());
+                                self.ctx.reporter
+                                    .kind_error(message.as_str(), var.name.span)
+                                    .span_note(message, var.name.span)
+                                    .done();
+                            }
+                            entry.insert(Kind::Any);
                         }
-                        entry.insert(Kind::Any);
                     }
-                }
-                Entry::Vacant(entry) => {
-                    entry.insert(kind.clone());
+                    Entry::Vacant(entry) => {
+                        entry.insert(kind.clone());
+                    }
                 }
             }
         }
     }
 
     fn validate_scheme(&mut self, scheme: &'a Scheme) {
-        self.add_trait_bounds(&scheme.bounds);
+        self.add_scheme_vars(&scheme.vars);
         let kind = self.infer_for_type(&scheme.type_, true);
         let source = ConstraintSource::Value(&scheme.type_);
         self.constraints.push(Constraint(kind, Kind::Star, source));
@@ -475,13 +473,13 @@ impl<'a, 'b> InferCtx<'a, 'b> {
         debug_assert!(self.new_kinds.is_empty());
         debug_assert!(self.var_kinds.is_empty());
         debug_assert!(self.substitutions.is_empty());
-        self.add_trait_bounds(&impl_.scheme.value.bounds);
+        self.add_scheme_vars(&impl_.scheme.value.vars);
         let mut checked_vars = BTreeSet::new();
-        for &(ref var, _) in &impl_.scheme.value.bounds {
-            if !checked_vars.contains(&var.value) {
-                checked_vars.insert(&var.value);
-                if !impl_.scheme.value.type_.value.contains_var(var.value) {
-                    self.unused_var(var.span);
+        for var in &impl_.scheme.value.vars {
+            if !checked_vars.contains(&var.name.value) {
+                checked_vars.insert(&var.name.value);
+                if !impl_.scheme.value.type_.value.contains_var(var.name.value) {
+                    self.unused_var(var.name.span);
                 }
             }
         }

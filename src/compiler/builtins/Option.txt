@@ -10,41 +10,41 @@ import Computation exposing (Computation, Failable)
 
 type Option a = None | Some a
 
-map : (a -> b) -> Option a -> Option b
+map : forall a b . (a -> b) -> Option a -> Option b
 map f opt = case opt of
     Some x -> Some (f x)
     None -> None
 
-isSome : Option a -> Bool
+isSome : forall a . Option a -> Bool
 isSome opt = case opt of
     Some _ -> true
     None -> false
 
-isNone : Option a -> Bool
+isNone : forall a . Option a -> Bool
 isNone = isSome >> not
 
-toList : Option a -> List a
+toList : forall a . Option a -> List a
 toList opt = case opt of
     Some x -> [x]
     None -> []
 
-flatMap : (a -> Option b) -> Option a -> Option b
+flatMap : forall a b . (a -> Option b) -> Option a -> Option b
 flatMap f opt = case opt of
     Some x -> f x
     None -> None
 
-getOrElse : a -> Option a -> a
+getOrElse : forall a . a -> Option a -> a
 getOrElse a opt = case opt of
     Some x -> x
     None -> a
 
-getOrDefault : [a : Default] Option a -> a
+getOrDefault : forall a : Default; . Option a -> a
 getOrDefault = getOrElse default
 
-flatten : Option (Option a) -> Option a
+flatten : forall a . Option (Option a) -> Option a
 flatten = flatMap id
 
-impl Option a : Default where
+impl forall a . Option a : Default where
     default = None
 
 impl Option : Computation where
@@ -57,20 +57,20 @@ impl Option : Failable where
 impl Option : Mappable where
     map = map
 
-impl [a : Eq] Option a : Eq where
+impl forall a : Eq; . Option a : Eq where
     a == b = case (a, b) of
         (Some a, Some b) -> a == b
         (None, None) -> true
         _ -> false
 
-impl [a : Ord] Option a : Ord where
+impl forall a : Ord; . Option a : Ord where
     compare a b = case (a, b) of
         (None, None) -> EQ
         (None, Some _) -> LT
         (Some _, None) -> GT
         (Some a, Some b) -> compare a b
 
-impl [a : ToString] Option a : ToString where
+impl forall a : ToString; . Option a : ToString where
     toString opt = case opt of
         Some x -> "Some(" ++ toString x ++ ")"
         None -> "None"

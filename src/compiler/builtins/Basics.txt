@@ -100,7 +100,7 @@ infixl 7 //
 trait Eq where
     (==) : self -> self -> Bool
 
-(!=) : [a : Eq] a -> a -> Bool
+(!=) : forall a : Eq; . a -> a -> Bool
 a != b = not (a == b)
 
 impl Int : Eq where
@@ -130,22 +130,22 @@ impl Ordering : Eq where
 trait Ord : Eq where
     compare : self -> self -> Ordering
 
-(>) : [a : Ord] a -> a -> Bool
+(>) : forall a : Ord; . a -> a -> Bool
 a > b = case compare a b of
     GT -> true
     _ -> false
 
-(>=) : [a : Ord] a -> a -> Bool
+(>=) : forall a : Ord; . a -> a -> Bool
 a >= b = case compare a b of
     LT -> false
     _ -> true
 
-(<) : [a : Ord] a -> a -> Bool
+(<) : forall a : Ord; . a -> a -> Bool
 a < b = case compare a b of
     LT -> true
     _ -> false
 
-(<=) : [a : Ord] a -> a -> Bool
+(<=) : forall a : Ord; . a -> a -> Bool
 a <= b = case compare a b of
     GT -> false
     _ -> true
@@ -206,19 +206,19 @@ impl Int : Default where
 impl Frac : Default where
     default = 0.0
 
-id : a -> a
+id : forall a . a -> a
 id x = x
 
-(|>) : a -> (a -> b) -> b
+(|>) : forall a b . a -> (a -> b) -> b
 x |> f = f x
 
-(<|) : (a -> b) -> a -> b
+(<|) : forall a b . (a -> b) -> a -> b
 f <| x = f x
 
-(<<) : (a -> b) -> (c -> a) -> (c -> b)
+(<<) : forall a b c . (a -> b) -> (c -> a) -> (c -> b)
 (<<) g f x = g (f x)
 
-(>>) : (a -> b) -> (b -> c) -> (a -> c)
+(>>) : forall a b c . (a -> b) -> (b -> c) -> (a -> c)
 (>>) f g x = g (f x)
 
 infixr 9 <<
@@ -226,15 +226,15 @@ infixl 9 >>
 infixr 1 <|
 infixl 1 |>
 
-flip : (a -> b -> c) -> b -> a -> c
+flip : forall a b c . (a -> b -> c) -> b -> a -> c
 flip f a b = f b a
 
-always : a -> (b -> a)
+always : forall a b . a -> (b -> a)
 always x _ = x
 
 type Never = JustOneMore Never
 
-never : Never -> a
+never : forall a . Never -> a
 never (JustOneMore x) = never x
 
 trait ToString where
@@ -256,6 +256,6 @@ trait Appendable where
     (++) : self -> self -> self
 
 trait Mappable where
-    map : (a -> b) -> self a -> self b
+    map : forall a b . (a -> b) -> self a -> self b
 
 infixr 5 ++

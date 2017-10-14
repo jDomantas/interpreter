@@ -5,8 +5,8 @@ module Computation exposing
 
 
 trait Computation where
-    succeed : a -> self a
-    andThen : (a -> self b) -> self a -> self b
+    succeed : forall a . a -> self a
+    andThen : forall a b . (a -> self b) -> self a -> self b
 
 trait Failable where
-    fail : self a
+    fail : forall a . self a

@@ -174,7 +174,13 @@ impl Type {
 #[derive(Debug, Clone)]
 pub struct Scheme {
     pub type_: Node<Type>,
-    pub bounds: Vec<(Node<Sym>, Node<Symbol>)>,
+    pub vars: Vec<SchemeVar>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SchemeVar {
+    pub name: Node<Sym>,
+    pub bounds: Vec<Node<Sym>>,
 }
 
 #[derive(Debug, Clone)]

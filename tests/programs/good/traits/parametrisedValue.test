@@ -1,7 +1,7 @@
 trait Foo where
     foo : self -> self -> self
 
-bar : [a : Foo] a -> a
+bar : forall a : Foo; . a -> a
 bar x = foo x x
 
 type T = A | B | C

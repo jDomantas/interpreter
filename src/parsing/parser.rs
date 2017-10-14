@@ -5,7 +5,7 @@ use ast::{Node, Literal, Associativity};
 use ast::parsed::{
     Expr, Pattern, CaseBranch, LetDecl, Decl, Def, TypeAnnot, Scheme, Type,
     TypeAlias, UnionType, UnionCase, Symbol, Trait, Impl, ItemList,
-    ExposedItem, ModuleDef, Import, Module, DoExpr,
+    ExposedItem, ModuleDef, Import, Module, DoExpr, SchemeVar,
 };
 use parsing::tokens::{Token, TokenKind, WithLayout};
 use CompileCtx;
@@ -939,9 +939,9 @@ impl<'a, I: Iterator<Item=WithLayout<Token>>> Parser<'a, I> {
     }
 
     fn scheme(&mut self) -> ParseResult<Node<Scheme>> {
-        if self.eat(Token::OpenBracket) {
+        if self.eat(Token::Forall) {
             let start_span = self.previous_span();
-            let mut constraints = Vec::new();
+            let mut vars = Vec::new();
             loop {
                 let var = match self.eat_var_name() {
                     Some(name) => name,
@@ -950,26 +950,35 @@ impl<'a, I: Iterator<Item=WithLayout<Token>>> Parser<'a, I> {
                         return Err(());
                     }
                 };
-                try!(self.expect(Token::Colon));
-                let bound = match self.eat_symbol() {
-                    Some(symbol) => symbol,
-                    None => {
-                        self.emit_error();
-                        return Err(());
+                let mut bounds = Vec::new();
+                if self.eat(Token::Colon) {
+                    loop {
+                        match self.eat_symbol() {
+                            Some(symbol) => bounds.push(symbol),
+                            None => {
+                                self.emit_error();
+                                return Err(());
+                            }
+                        }
+                        if self.eat(Token::Semicolon) {
+                            break;
+                        }
+                        self.expect(Token::Comma)?;
                     }
-                };
-                constraints.push((var, bound));
-                if self.eat(Token::CloseBracket) {
+                }
+                vars.push(SchemeVar {
+                    name: var,
+                    bounds,
+                });
+                if self.eat(Token::Dot) {
                     break;
-                } else {
-                    try!(self.expect(Token::Comma));
                 }
             }
             match self.type_() {
                 Ok(type_) => {
                     let span = start_span.merge(type_.span);
                     let scheme = Scheme {
-                        bounds: constraints,
+                        vars,
                         type_: type_,
                     };
                     Ok(Node::new(scheme, span))
@@ -980,7 +989,7 @@ impl<'a, I: Iterator<Item=WithLayout<Token>>> Parser<'a, I> {
             self.type_().map(|type_| {
                 let span = type_.span;
                 let scheme = Scheme {
-                    bounds: Vec::new(),
+                    vars: Vec::new(),
                     type_: type_,
                 };
                 Node::new(scheme, span)
@@ -990,7 +999,7 @@ impl<'a, I: Iterator<Item=WithLayout<Token>>> Parser<'a, I> {
 
     fn type_term(&mut self) -> Option<ParseResult<TypeNode>> {
         if let Some(sym) = self.eat_symbol() {
-            return Some(Ok(sym.map(Type::from_symbol)));
+            return Some(Ok(sym.map(Type::Name)));
         }
 
         if self.eat(Token::Self_) {
@@ -2205,7 +2214,7 @@ mod tests {
     }
 
     fn write_scheme(scheme: &Scheme, output: &mut String) {
-        if scheme.bounds.is_empty() {
+        if scheme.vars.is_empty() {
             write_type(&scheme.type_.value, output);
         } else {
             unimplemented!()
@@ -2217,11 +2226,6 @@ mod tests {
             Type::SelfType => {
                 output.push_str("self");
             }
-            Type::Var(ref var) => {
-                output.push_str("(var ");
-                output.push_str(var);
-                output.push_str(")");
-            }
             Type::Apply(ref a, ref b) => {
                 output.push_str("(apply ");
                 write_type(&a.value, output);
@@ -2229,7 +2233,7 @@ mod tests {
                 write_type(&b.value, output);
                 output.push(')');
             }
-            Type::Concrete(ref t) => {
+            Type::Name(ref t) => {
                 write_symbol(&t, output);
             }
             Type::Function(ref a, ref b) => {

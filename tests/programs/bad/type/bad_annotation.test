@@ -1,6 +1,6 @@
 -- expect type error: line 5 column 1
 type Wrap a = Wrap a
 
-unwrap : Wrap a -> a
+unwrap : forall a . Wrap a -> a
 unwrap wrapped = let a = wrapped in a
         

@@ -397,6 +397,9 @@ impl<'a> Lexer<'a> {
                 '}' => {
                     return Some(self.single_char_token(Token::CloseBrace));
                 }
+                ';' => {
+                    return Some(self.single_char_token(Token::Semicolon));
+                }
                 ch if ch.is_digit(10) => {
                     return Some(self.lex_number());
                 }
@@ -491,6 +494,7 @@ fn ident_keyword(ident: &str) -> Option<Token> {
         "then" => Some(Token::Then),
         "else" => Some(Token::Else),
         "do" => Some(Token::Do),
+        "forall" => Some(Token::Forall),
         "true" => Some(Token::Bool(true)),
         "false" => Some(Token::Bool(false)),
         "_" => Some(Token::Underscore),
@@ -504,6 +508,7 @@ fn special_operator(op: &str) -> Option<Token> {
         "->" => Some(Token::Arrow),
         "=" => Some(Token::Equals),
         "\\" => Some(Token::Backslash),
+        "." => Some(Token::Dot),
         ".." => Some(Token::DotDot),
         "," => Some(Token::Comma),
         "|" => Some(Token::Pipe),

@@ -388,14 +388,6 @@ impl<'a> Resolver<'a> {
             .done();
     }
 
-    fn unknown_type_var(&mut self, name: &str, span: Span) {
-        let message = format!("Unknown type var: `{}`.", name);
-        self.ctx.reporter
-            .symbol_error(message.as_str(), span)
-            .span_note(message, span)
-            .done();
-    }
-
     fn unknown_local_symbol(&mut self, kind: Kind, symbol: &Node<String>) {
         let message = format!("Unknown local {}: `{}`.", kind, symbol.value);
         self.ctx.reporter
@@ -1359,7 +1351,7 @@ impl<'a> Resolver<'a> {
         }
         self.check_dupe_vars(&vars, ctx);
         let resolved_type = alias.type_.as_ref().map(|t| {
-            self.resolve_type(t, &mut var_symbols, ctx, false)
+            self.resolve_type(t, &mut var_symbols, ctx)
         });
 
         let sym = ctx.locals.get_type(&alias.name.value).unwrap();
@@ -1386,7 +1378,7 @@ impl<'a> Resolver<'a> {
         for case in &union.cases {
             let mut args = Vec::new();
             for arg in &case.value.args {
-                args.push(self.resolve_type(arg, &mut var_symbols, ctx, false));
+                args.push(self.resolve_type(arg, &mut var_symbols, ctx));
             }
             let tag_sym = ctx.locals.get_value(&case.value.tag.value).unwrap();
             let resolved_case = r::UnionCase {
@@ -1405,45 +1397,47 @@ impl<'a> Resolver<'a> {
     }
 
     fn resolve_type<'b>(
-                    &mut self,
-                    type_: &'b Node<Type>,
-                    vars: &mut BTreeMap<&'b str, Sym>,
-                    ctx: &Context,
-                    allow_new_vars: bool) -> Node<r::Type> {
+        &mut self,
+        type_: &'b Node<Type>,
+        vars: &BTreeMap<&'b str, Sym>,
+        ctx: &Context,
+    ) -> Node<r::Type> {
         let resolved = match type_.value {
-            Type::Var(ref v) => {
-                if let Some(&sym) = vars.get(v.as_str()) {
-                    r::Type::Var(sym)
-                } else if allow_new_vars {
-                    let sym = self.fresh_var_sym(v);
-                    vars.insert(v, sym);
-                    r::Type::Var(sym)
+            Type::Name(ref symbol) => {
+                if let p::Symbol::Unqualified(ref name) = *symbol {
+                    if let Some(&sym) = vars.get(name.as_str()) {
+                        r::Type::Var(sym)
+                    } else {
+                        let resolved = self.resolve_symbol(
+                            &Node::new(symbol.clone(), type_.span),
+                            Kind::Type,
+                            ctx,
+                        );
+                        r::Type::Concrete(resolved.value)
+                    }
                 } else {
-                    self.unknown_type_var(v, type_.span);
-                    r::Type::Any
+                    let resolved = self.resolve_symbol(
+                        &Node::new(symbol.clone(), type_.span),
+                        Kind::Type,
+                        ctx,
+                    );
+                    r::Type::Concrete(resolved.value)
                 }
             }
-            Type::Concrete(ref symbol) => {
-                let resolved = self.resolve_symbol(
-                    &Node::new(symbol.clone(), type_.span),
-                    Kind::Type,
-                    ctx);
-                r::Type::Concrete(resolved.value)
-            }
             Type::Function(ref from, ref to) => {
-                let from = self.resolve_type(from, vars, ctx, allow_new_vars);
-                let to = self.resolve_type(to, vars, ctx, allow_new_vars);
+                let from = self.resolve_type(from, vars, ctx);
+                let to = self.resolve_type(to, vars, ctx);
                 r::Type::Function(Box::new(from), Box::new(to))
             }
             Type::SelfType => r::Type::SelfType,
             Type::Apply(ref a, ref b) => {
-                let a = self.resolve_type(a, vars, ctx, allow_new_vars);
-                let b = self.resolve_type(b, vars, ctx, allow_new_vars);
+                let a = self.resolve_type(a, vars, ctx);
+                let b = self.resolve_type(b, vars, ctx);
                 r::Type::Apply(Box::new(a), Box::new(b))
             }
             Type::Tuple(ref items) => {
                 r::Type::Tuple(items.iter().map(|t| {
-                    self.resolve_type(t, vars, ctx, allow_new_vars)
+                    self.resolve_type(t, vars, ctx)
                 }).collect())
             }
         };
@@ -1455,20 +1449,47 @@ impl<'a> Resolver<'a> {
                     &mut self,
                     type_: &Node<Scheme>,
                     ctx: &Context) -> Node<r::Scheme> {
-        let mut bounds = Vec::new();
-        let mut vars = BTreeMap::new();
-        for &(ref var, ref bound) in &type_.value.bounds {
-            let bound = self.resolve_trait_bound(bound, ctx);
-            let v = vars
-                .entry(var.value.as_str())
-                .or_insert_with(|| self.fresh_var_sym(&var.value));
-            bounds.push((Node::new(*v, var.span), bound));
+        let mut prev_def = BTreeMap::new();
+        let mut vars = Vec::new();
+        let mut resolve_vars = BTreeMap::new();
+        for var in &type_.value.vars {
+            match prev_def.entry(var.name.value.as_str()) {
+                Entry::Vacant(entry) => {
+                    entry.insert(var.name.span);
+                }
+                Entry::Occupied(entry) => {
+                    let msg = format!(
+                        "var `{}` bound multiple times in scheme",
+                        var.name.value,
+                    );
+                    self.ctx.reporter
+                        .symbol_error(msg, var.name.span)
+                        .span_note("bound here", var.name.span)
+                        .span_note("previously bound here", *entry.get())
+                        .done();
+                    continue;
+                }
+            }
+            // TODO: warn if same bound is mentioned twice
+            let mut bounds = Vec::new();
+            for bound in &var.bounds {
+                let bound = self.resolve_trait_bound(bound, ctx);
+                match bound.value {
+                    Symbol::Known(sym) => {
+                        bounds.push(Node::new(sym, bound.span));
+                    }
+                    Symbol::Unknown => {}
+                }
+            }
+            let var_sym = self.fresh_var_sym(&var.name.value);
+            vars.push(r::SchemeVar { name: Node::new(var_sym, var.name.span), bounds });
+            resolve_vars.insert(var.name.value.as_str(), var_sym);
         }
 
-        let typ = self.resolve_type(&type_.value.type_, &mut vars, ctx, true);
+        let typ = self.resolve_type(&type_.value.type_, &resolve_vars, ctx);
 
         Node::new(r::Scheme {
-            bounds: bounds,
+            vars,
             type_: typ,
         }, type_.span)
     }

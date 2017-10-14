@@ -13,51 +13,51 @@ type List a = Nil | (::) a (List a)
 
 infixr 5 ::
 
-map : (a -> b) -> List a -> List b
+map : forall a b . (a -> b) -> List a -> List b
 map f list = case list of
     [] -> []
     x :: xs -> f x :: map f xs
 
-flatMap : (a -> List b) -> List a -> List b
+flatMap : forall a b . (a -> List b) -> List a -> List b
 flatMap f list = fold (map f list)
 
-head : List a -> Option a
+head : forall a . List a -> Option a
 head list = case list of
     [] -> None
     x :: _ -> Some x
 
-tail : List a -> Option (List a)
+tail : forall a . List a -> Option (List a)
 tail list = case list of
     [] -> None
     _ :: xs -> Some xs
 
-length : List a -> Int
+length : forall a . List a -> Int
 length list = case list of
     [] -> 0
     _ :: xs -> 1 + length xs
 
-foldl : a -> (a -> b -> a) -> List b -> a
+foldl : forall a b . a -> (a -> b -> a) -> List b -> a
 foldl init f list = case list of
     [] -> init
     x :: xs -> foldl (f init x) f xs
 
-foldr : a -> (b -> a -> a) -> List b -> a
+foldr : forall a b . a -> (b -> a -> a) -> List b -> a
 foldr init f list = case list of
     [] -> init
     x :: xs -> f x (foldr init f xs)
 
-fold : [a : Appendable, a : Default] List a -> a
+fold : forall a : Appendable, Default; . List a -> a
 fold = foldl default (++)
 
-reverse : List a -> List a
+reverse : forall a . List a -> List a
 reverse list = foldl [] (flip (::)) list
 
-append : List a -> List a -> List a
+append : forall a . List a -> List a -> List a
 append a b = case a of
     [] -> b
     x :: xs -> x :: append xs b
 
-repeat : Int -> a -> List a
+repeat : forall a . Int -> a -> List a
 repeat amount value =
     if amount <= 0 then
         []
@@ -71,12 +71,12 @@ range from to =
     else
         from :: range (from + 1) to
 
-contains : [a : Eq] a -> List a -> Bool
+contains : forall a : Eq; . a -> List a -> Bool
 contains value list = case list of
     [] -> false
     x :: xs -> x == value || contains value xs
 
-impl List a : Appendable where
+impl forall a . List a : Appendable where
     (++) = append
 
 impl List : Computation where
@@ -86,19 +86,19 @@ impl List : Computation where
 impl List : Failable where
     fail = []
 
-impl List a : Default where
+impl forall a . List a : Default where
     default = []
 
 impl List : Mappable where
     map = map
 
-impl [a : Eq] List a : Eq where
+impl forall a : Eq; . List a : Eq where
     a == b = case (a, b) of
         ([], []) -> true
         (x :: xs, y :: ys) -> x == y && xs == ys
         _ -> false
 
-impl [a : Ord] List a : Ord where
+impl forall a : Ord; . List a : Ord where
     compare a b = case (a, b) of
         ([], []) -> EQ
         (_ :: _, []) -> GT
@@ -108,7 +108,7 @@ impl [a : Ord] List a : Ord where
                 EQ -> compare xs ys
                 other -> other
 
-impl [a : ToString] List a : ToString where
+impl forall a : ToString; . List a : ToString where
     toString list = 
         let
             items acc list = case list of

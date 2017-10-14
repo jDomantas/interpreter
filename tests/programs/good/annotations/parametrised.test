@@ -1,7 +1,7 @@
 trait Foo where
     foo : self
 
-f : [a : Foo] a -> a
+f : forall a : Foo; . a -> a
 f x = x
 
 type A = A

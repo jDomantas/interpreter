@@ -5,13 +5,13 @@ import Computation exposing (..)
 
 type State s a = State (s -> (s, a))
 
-get : State s s
+get : forall s . State s s
 get = State (\s -> (s, s))
 
-set : s -> State s ()
+set : forall s . s -> State s ()
 set state = State (\_ -> (state, ()))
 
-impl State s : Computation where
+impl forall s . State s : Computation where
     succeed x = State (\s -> (s, x))
     andThen f (State run) = State (\s ->
         case run s of
@@ -19,7 +19,7 @@ impl State s : Computation where
                 case f res of
                     (State run2) -> run2 newState)
 
-runState : s -> State s a -> a
+runState : forall s a . s -> State s a -> a
 runState init (State run) =
     case run init of
         (_, result) -> result

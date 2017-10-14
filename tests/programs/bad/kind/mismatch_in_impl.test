@@ -1,7 +1,7 @@
 -- expect kind error: line 8 column 6
 
 trait Foo where
-    bar : self a
+    bar : forall a . self a
 
 type Bar = Bar
 

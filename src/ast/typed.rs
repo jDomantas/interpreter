@@ -383,29 +383,24 @@ pub struct SchemeFormatter<'a> {
 
 impl<'a> fmt::Display for SchemeFormatter<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        try!(write!(f, "["));
-        let mut need_comma = false;
-        for var in &self.scheme.vars {
-            if need_comma {
-                try!(write!(f, ", "));
-            } else {
-                need_comma = true;
-            }
-            try!(write!(f, "t{}", var.id));
-            if !var.bounds.is_empty() {
-                try!(write!(f, " : "));
-                let mut need_plus = false;
-                for &bound in &var.bounds {
-                    if need_plus {
-                        try!(write!(f, " + "));
-                    } else {
-                        need_plus = true;
+        if !self.scheme.vars.is_empty() {
+            write!(f, "forall ")?;
+            for var in &self.scheme.vars {
+                write!(f, "t{}", var.id)?;
+                if !var.bounds.is_empty() {
+                    write!(f, " : ")?;
+                    for (index, &bound) in var.bounds.iter().enumerate() {
+                        write!(f, "{}", self.symbols.symbol_name(bound))?;
+                        if index < var.bounds.len() - 1 {
+                            write!(f, ", ")?;
+                        }
                     }
-                    try!(write!(f, "{}", self.symbols.symbol_name(bound)));
+                    write!(f, ";")?;
                 }
             }
+            write!(f, " . ")?;
         }
-        write!(f, "] {}", self.scheme.type_.display(self.symbols))
+        write!(f, "{}", self.scheme.type_.display(self.symbols))
     }
 }
 

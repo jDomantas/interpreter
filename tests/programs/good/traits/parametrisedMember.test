@@ -2,7 +2,7 @@ trait Foo where
     foo : self -> self
 
 trait Bar where
-    bar : [a : Foo] self -> a -> a
+    bar : forall a : Foo; . self -> a -> a
 
 type Bool = False | True
 
